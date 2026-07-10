@@ -1,6 +1,7 @@
 name = "website-maker-ai-api"
 main = "src/index.ts"
 compatibility_date = "2026-07-01"
+workers_dev = true
 
 [vars]
 APP_NAME = "Website Maker AI"
