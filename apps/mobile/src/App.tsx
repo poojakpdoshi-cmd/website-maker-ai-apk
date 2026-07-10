@@ -222,7 +222,7 @@ export default function App() {
   if (!approved) {
     return <main className="login-shell"><section className="login-card">
       <div className="top-actions"><button className="small-button" onClick={() => setShowSetup(true)}>Setup</button></div>
-      <div className="brand-mark">W</div><p className="eyebrow">MADE BY POOJAK DOSHI</p><h1>WebForge.Ai</h1><p className="muted">Approved users sign in with an email OTP.</p>
+      <div className="brand-mark">WF</div><p className="eyebrow">MADE BY POOJAK DOSHI</p><h1>WebForge.Ai</h1><p className="muted">Approved users sign in with an email OTP.</p>
       <form onSubmit={handleLogin}><label>Approved email</label><input value={email} onChange={(event) => { setEmail(event.target.value); setOtpSent(false); setOtp(''); }} type="email" placeholder="you@example.com" autoComplete="email" disabled={loginLoading} />{otpSent && <input value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, '').slice(0, 8))} inputMode="numeric" placeholder="Email OTP" autoComplete="one-time-code" />}<button type="submit" disabled={loginLoading}>{loginLoading ? 'Please wait…' : otpSent ? 'Verify OTP and continue' : 'Send email OTP'}</button></form>
       {email.trim().toLowerCase() === ownerEmail && <section className="admin-entry"><p><strong>Owner email recognised</strong><span>Admin controls are inside this APK.</span></p><button type="button" onClick={() => setMode('admin-login')}>Open Admin Login</button></section>}
       <p className="tiny">Only emails approved by the administrator can sign in.</p>{message && <p className="success">{message}</p>}{error && <p className="error" role="alert">{error}</p>}
@@ -230,7 +230,7 @@ export default function App() {
   }
 
   return <main className="app-shell">
-    <header><div><p className="eyebrow">WEBSITE MAKER AI</p><h1>Build and publish without coding</h1></div><span className="pill">APK V3</span></header>
+    <header><div><p className="eyebrow">WEBFORGE.AI</p><h1>Build and publish without coding</h1></div><span className="pill">APK V4</span></header>
     <nav>{(['create', 'preview', 'projects', 'connect', 'account'] as const).map((item) => <button key={item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}>{item}</button>)}</nav>
     {message && <p className="success notice-wide">{message}</p>}{error && <p className="error notice-wide" role="alert">{error}</p>}
     {tab === 'create' && <section className="panel"><p className="eyebrow">ORCHESTRATED AI BRAIN</p><h2>Describe the complete website</h2><p className="muted">Gemini assists with planning and content. The orchestrator, templates, validators, and build system remain in control.</p><div className="chips"><span>React source</span><span>Auto logo</span><span>SEO</span><span>Database form</span><span>Double validation</span><span>Vercel publish</span></div><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={10} maxLength={6000} /><p className="prompt-count">{prompt.length}/6000</p><button className="primary" onClick={generateWebsite} disabled={loading || prompt.trim().length < 20}>{loading ? 'Building project…' : 'Generate website'}</button></section>}
