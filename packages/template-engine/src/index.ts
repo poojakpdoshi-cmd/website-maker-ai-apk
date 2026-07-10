@@ -1,4 +1,4 @@
-import type { GeneratedProject, GeneratedProjectFile, WebsitePlan } from '@wmai/shared';
+import type { GeneratedProject, GeneratedProjectFile, WebsitePlan } from '../../shared/src/index';
 
 export type ProjectBuildOptions = {
   formApiBase?: string;

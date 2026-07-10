@@ -1,4 +1,4 @@
-import type { WebsitePlan } from '@wmai/shared';
+import type { WebsitePlan } from '../../shared/src/index';
 
 type Options = { apiKey?: string; model?: string };
 export type BrainMode = 'ai' | 'built-in';
