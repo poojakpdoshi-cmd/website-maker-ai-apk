@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.poojak.websitemakerai',
-  appName: 'Website Maker AI',
+  appName: 'WebForge.Ai',
   webDir: 'dist',
   server: { androidScheme: 'https', cleartext: true },
   android: { allowMixedContent: true }
