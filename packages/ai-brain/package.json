@@ -1,0 +1,10 @@
+{
+  "name": "@wmai/ai-brain",
+  "version": "2.2.0",
+  "private": true,
+  "type": "module",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "@wmai/shared": "file:../shared"
+  }
+}

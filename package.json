@@ -1,0 +1,27 @@
+{
+  "name": "website-maker-ai-v3-apk",
+  "private": true,
+  "version": "3.0.0",
+  "workspaces": [
+    "apps/mobile",
+    "apps/admin",
+    "apps/api-node",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:mobile": "npm run dev -w @wmai/mobile",
+    "dev:admin": "npm run dev -w @wmai/admin",
+    "build": "npm run build -w @wmai/mobile && npm run build -w @wmai/admin",
+    "build:api": "npm --prefix apps/api ci && npm --prefix apps/api run build",
+    "typecheck": "npm run typecheck -w @wmai/mobile && npm run typecheck -w @wmai/admin && npm run typecheck -w @wmai/api-node",
+    "typecheck:api": "npm --prefix apps/api run typecheck",
+    "test": "tsx scripts/smoke-test.ts",
+    "termux:check": "npm run typecheck && npm test && npm run build",
+    "dev:api": "npm run dev -w @wmai/api-node",
+    "start:api": "npm run start -w @wmai/api-node"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "tsx": "^4.20.3"
+  }
+}

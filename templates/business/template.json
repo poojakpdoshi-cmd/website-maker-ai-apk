@@ -1,0 +1,7 @@
+{
+  "id": "premium-business-v1",
+  "name": "Premium Business",
+  "category": "business",
+  "features": ["responsive-design", "seo", "contact-form", "whatsapp", "gallery"],
+  "description": "A fast, mobile-first business template used by the V1 template engine."
+}

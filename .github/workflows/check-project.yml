@@ -1,0 +1,24 @@
+name: Check Project
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build -w @wmai/mobile
+      - run: npm run build -w @wmai/admin
+      - name: Install Cloudflare API dependencies
+        run: npm --prefix apps/api install --no-audit --no-fund
+      - name: Build Cloudflare API
+        run: npm --prefix apps/api run build

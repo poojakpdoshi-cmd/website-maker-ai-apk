@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+android/
+.DS_Store
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example

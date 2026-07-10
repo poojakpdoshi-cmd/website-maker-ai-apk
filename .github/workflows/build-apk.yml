@@ -1,0 +1,53 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/mobile/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.npmrc'
+      - 'scripts/**'
+      - '.github/workflows/build-apk.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Type-check and smoke-test
+        run: |
+          npm run typecheck
+          npm test
+      - name: Build mobile web assets
+        run: npm run build -w @wmai/mobile
+      - name: Generate Android project
+        working-directory: apps/mobile
+        run: |
+          rm -rf android
+          npx cap add android
+          npx cap sync android
+      - name: Build APK
+        working-directory: apps/mobile/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Website-Maker-AI-V3-APK
+          path: apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
