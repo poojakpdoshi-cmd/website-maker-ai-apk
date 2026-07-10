@@ -12,6 +12,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.52.0",
     "@wmai/ai-brain": "file:../../packages/ai-brain",
+    "@wmai/shared": "file:../../packages/shared",
     "@wmai/template-engine": "file:../../packages/template-engine",
     "hono": "^4.8.5",
     "zod": "^3.25.76"
