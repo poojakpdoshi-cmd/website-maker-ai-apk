@@ -21,13 +21,19 @@ concurrency:
 
 jobs:
   build:
-    name: Build WebForge APK
+    name: Build WebForge V4.1 APK
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
 
     steps:
-      - name: Checkout project
+      - name: Checkout exact branch commit
         uses: actions/checkout@v4
+
+      - name: Show build identity
+        run: |
+          echo "Branch: $GITHUB_REF_NAME"
+          echo "Commit: $GITHUB_SHA"
+          git log -1 --oneline
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -47,31 +53,79 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
+      - name: Verify WebForge source
+        run: |
+          test -f apps/mobile/assets/icon.png
+          test -f apps/mobile/public/webforge-logo.svg
+
+          grep -n "OWNER LOGIN" apps/mobile/src/App.tsx
+          grep -n "USER LOGIN" apps/mobile/src/App.tsx
+          grep -n "V4.1.*NEW BUILD" apps/mobile/src/App.tsx
+
+          grep -n ">Setup<\|Connection settings" \
+            apps/mobile/src/App.tsx && exit 1 || true
+
       - name: Run project checks
         run: |
           npm run typecheck
           npm test
+          npm --prefix apps/api run typecheck
 
       - name: Build mobile frontend
         run: npm run build -w @wmai/mobile
 
-      - name: Generate Android project
+      - name: Generate branded Android project
         working-directory: apps/mobile
         run: |
           rm -rf android
+
+          cp -f assets/icon-only.png assets/icon.png
+
           npx cap add android
           npx capacitor-assets generate --android
           npx cap sync android
 
-      - name: Build debug APK
+          sed -i 's/versionCode 1/versionCode 41/' \
+            android/app/build.gradle
+
+          sed -i 's/versionName "1.0"/versionName "4.1.0"/' \
+            android/app/build.gradle
+
+          echo "===== ANDROID VERSION ====="
+          grep -n "versionCode\|versionName" \
+            android/app/build.gradle
+
+          echo "===== GENERATED ICONS ====="
+          find android/app/src/main/res \
+            -type f \
+            \( -name 'ic_launcher*.png' -o -name 'ic_launcher*.xml' \) \
+            -print
+
+          ICON_COUNT="$(find android/app/src/main/res \
+            -type f \
+            \( -name 'ic_launcher*.png' -o -name 'ic_launcher*.xml' \) \
+            | wc -l)"
+
+          if [ "$ICON_COUNT" -lt 1 ]; then
+            echo "No Android launcher icons were generated."
+            exit 1
+          fi
+
+      - name: Build completely clean APK
         working-directory: apps/mobile/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug
+          ./gradlew clean assembleDebug --no-daemon
 
-      - name: Upload APK
+          SHORT_SHA="${GITHUB_SHA::7}"
+
+          cp \
+            app/build/outputs/apk/debug/app-debug.apk \
+            "$GITHUB_WORKSPACE/WebForge-Ai-V4.1-${SHORT_SHA}.apk"
+
+      - name: Upload uniquely named APK
         uses: actions/upload-artifact@v4
         with:
-          name: WebForge-Ai-V4-APK
-          path: apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          name: WebForge-Ai-V4.1-${{ github.run_number }}
+          path: WebForge-Ai-V4.1-*.apk
           if-no-files-found: error

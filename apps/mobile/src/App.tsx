@@ -549,7 +549,7 @@ export default function App() {
   }
 
   return <main className="app-shell">
-    <header><div><p className="eyebrow">WEBFORGE.AI</p><h1>Build and publish without coding</h1></div><span className="pill">APK V4</span></header>
+    <header><div><p className="eyebrow">WEBFORGE.AI</p><h1>Build and publish without coding</h1></div><span className="pill">V4.1 • NEW BUILD</span></header>
     <nav className="webforge-app-nav">
       <button
         className={tab === 'create' ? 'active' : ''}
@@ -684,7 +684,7 @@ export default function App() {
     )}
     {tab === 'connect' && <section className="panel"><p className="eyebrow">PUBLISHING ACCOUNTS</p><h2>Connect the user’s accounts</h2><div className="connection-grid"><article className={connections.github ? 'connected' : ''}><h3>GitHub</h3><p>{connections.github ? `Connected as ${connections.github.external_account_name || 'GitHub user'}` : 'Required for source repository.'}</p><button onClick={() => void connect('github')}>{connections.github ? 'Reconnect' : 'Connect GitHub'}</button></article><article className={connections.vercel ? 'connected' : ''}><h3>Vercel</h3><p>{connections.vercel ? `Connected to ${connections.vercel.external_account_name || 'Vercel'}` : 'Required for the live deployment.'}</p><button onClick={() => void connect('vercel')}>{connections.vercel ? 'Reconnect' : 'Connect Vercel'}</button></article></div><button className="refresh" onClick={refreshConnections}>Refresh connections</button></section>}
     {tab === 'account' && <section className="panel"><p className="eyebrow">ACCOUNT</p><h2>{userSession?.username || email}</h2><div className="account-grid"><article><span>Role</span><strong>{access?.role}</strong></article><article><span>Devices</span><strong>{access?.activeDevices}/{access?.maxDevices}</strong></article><article><span>GitHub</span><strong>{connections.github ? 'Connected' : 'Not connected'}</strong></article><article><span>Vercel</span><strong>{connections.vercel ? 'Connected' : 'Not connected'}</strong></article></div>{!userSession && email === ownerEmail && <button onClick={() => setMode('admin-login')}>Open Admin</button>}<button className="logout" onClick={() => void logout()}>Log out</button></section>}
-    <footer>WebForge.Ai · Made by Poojak Doshi</footer>
+    <footer>WebForge.Ai V4.1 · Made by Poojak Doshi</footer>
   </main>;
 }
 
