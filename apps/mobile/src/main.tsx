@@ -11,3 +11,4 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 );
 
 import './webforge-final-ui.css';
+import './chat-studio.css';

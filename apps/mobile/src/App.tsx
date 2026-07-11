@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
 import { Browser } from '@capacitor/browser';
 import AdminPanelV5 from './AdminPanelV5';
+import ChatStudio from './ChatStudio';
 
 type RuntimeConfig = { apiBase: string; supabaseUrl: string; supabaseAnonKey: string };
 type WebsitePlan = { businessName: string; websiteType: string; tagline: string; pages: string[]; features: string[]; theme: { style: string; primary: string; secondary: string; background: string; text: string } };
@@ -97,7 +98,7 @@ export default function App() {
   const [showSetupGuide, setShowSetupGuide] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [tab, setTab] = useState<'create' | 'preview' | 'projects' | 'connect' | 'account'>('create');
+  const [tab, setTab] = useState<'chat' | 'create' | 'preview' | 'projects' | 'connect' | 'account'>('chat');
 
   const token = userSession?.token || session?.access_token || '';
   const status = useMemo(() => result ? `${result.plan.businessName} • ${result.framework} • ${result.fileCount} files • ${result.mode === 'ai' ? 'Gemini-assisted brain' : 'Built-in brain'}` : 'No website generated yet', [result]);
@@ -328,15 +329,60 @@ export default function App() {
     }
   }
 
-  async function generateWebsite() {
-    if (!token) return;
-    setLoading(true); setError(''); setMessage('The orchestrator is planning, generating, and validating the project…');
+  async function generateWebsite(
+    overridePrompt?: string,
+    stayInChat = false
+  ): Promise<GenerateResponse | null> {
+    const activePrompt = (overridePrompt || prompt).trim();
+
+    if (!token || activePrompt.length < 20) return null;
+
+    setLoading(true);
+    setError('');
+    setMessage(
+      'The orchestrator is planning, generating, and validating the project…'
+    );
+
     try {
-      const response = await fetch(`${config.apiBase}/generate`, { method: 'POST', headers: { 'content-type': 'application/json', ...authHeaders() }, body: JSON.stringify({ email, installationId, prompt }) });
+      const response = await fetch(`${config.apiBase}/generate`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...authHeaders()
+        },
+        body: JSON.stringify({
+          email,
+          installationId,
+          prompt: activePrompt
+        })
+      });
+
       const data = await readResponse(response) as GenerateResponse;
-      setResult(data); setMessage('React project generated. Review it before publishing.'); await loadProjects(); setTab('preview');
-    } catch (generationError) { setError(generationError instanceof Error ? generationError.message : 'Generation failed.'); }
-    finally { setLoading(false); }
+
+      setPrompt(activePrompt);
+      setResult(data);
+      setMessage(
+        'React project generated. Review it before publishing.'
+      );
+
+      await loadProjects();
+
+      if (!stayInChat) {
+        setTab('preview');
+      }
+
+      return data;
+    } catch (generationError) {
+      setError(
+        generationError instanceof Error
+          ? generationError.message
+          : 'Generation failed.'
+      );
+
+      return null;
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function editWebsite() {
@@ -469,7 +515,7 @@ export default function App() {
       github: null,
       vercel: null
     });
-    setTab('create');
+    setTab('chat');
     setError('');
     setMessage('');
   }
@@ -618,8 +664,15 @@ export default function App() {
   }
 
   return <main className="app-shell">
-    <header><div><p className="eyebrow">WEBFORGE.AI</p><h1>Build and publish without coding</h1></div><span className="pill">V4.1 • NEW BUILD</span></header>
+    <header><div><p className="eyebrow">WEBFORGE.AI</p><h1>Build and publish without coding</h1></div><span className="pill">V4.2 • CHAT BUILD</span></header>
     <nav className="webforge-app-nav">
+      <button
+        className={tab === 'chat' ? 'active' : ''}
+        onClick={() => setTab('chat')}
+      >
+        Chat
+      </button>
+
       <button
         className={tab === 'create' ? 'active' : ''}
         onClick={() => setTab('create')}
@@ -664,7 +717,21 @@ export default function App() {
       </button>
     </nav>
     {message && <p className="success notice-wide">{message}</p>}{error && <p className="error notice-wide" role="alert">{error}</p>}
-    {tab === 'create' && <section className="panel"><p className="eyebrow">ORCHESTRATED AI BRAIN</p><h2>Describe the complete website</h2><p className="muted">Gemini assists with planning and content. The orchestrator, templates, validators, and build system remain in control.</p><div className="chips"><span>React source</span><span>Auto logo</span><span>SEO</span><span>Database form</span><span>Double validation</span><span>Vercel publish</span></div><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={10} maxLength={6000} /><p className="prompt-count">{prompt.length}/6000</p><button className="primary" onClick={generateWebsite} disabled={loading || prompt.trim().length < 20}>{loading ? 'Building project…' : 'Generate website'}</button></section>}
+    {tab === 'chat' && (
+      <ChatStudio
+        busy={loading}
+        onOpenPreview={() => setTab('preview')}
+        onGenerate={async (chatPrompt) => {
+          const generated = await generateWebsite(chatPrompt, true);
+
+          return generated
+            ? { projectName: generated.plan.businessName }
+            : null;
+        }}
+      />
+    )}
+
+    {tab === 'create' && <section className="panel"><p className="eyebrow">ORCHESTRATED AI BRAIN</p><h2>Describe the complete website</h2><p className="muted">Gemini assists with planning and content. The orchestrator, templates, validators, and build system remain in control.</p><div className="chips"><span>React source</span><span>Auto logo</span><span>SEO</span><span>Database form</span><span>Double validation</span><span>Vercel publish</span></div><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={10} maxLength={6000} /><p className="prompt-count">{prompt.length}/6000</p><button className="primary" onClick={() => void generateWebsite()} disabled={loading || prompt.trim().length < 20}>{loading ? 'Building project…' : 'Generate website'}</button></section>}
     {tab === 'preview' && <section className="panel preview-panel">{result ? <><div className="preview-top"><div><p className="eyebrow">LIVE PREVIEW</p><h2>{status}</h2></div><button onClick={publishWebsite} disabled={publishing || !connections.github || !connections.vercel}>{publishing ? 'Publishing…' : 'Push + deploy'}</button></div>{(!connections.github || !connections.vercel) && <p className="notice">Connect GitHub and Vercel before publishing.</p>}<iframe title="Generated website preview" sandbox="allow-forms allow-scripts allow-popups" srcDoc={result.previewHtml} /><div className="editor-box"><h3>AI website editor</h3><textarea value={editInstruction} onChange={(event) => setEditInstruction(event.target.value)} rows={4} placeholder="Change the theme, add pricing, remove a section…" /><button onClick={editWebsite} disabled={loading || !editInstruction.trim()}>{loading ? 'Applying changes…' : 'Apply edit'}</button></div></> : <div className="empty">Generate or open a project first.</div>}</section>}
     {tab === 'projects' && (
       <section className="panel my-webs-panel">
@@ -933,7 +1000,7 @@ export default function App() {
       </section>
     )}
     {tab === 'account' && <section className="panel"><p className="eyebrow">ACCOUNT</p><h2>{userSession?.username || email}</h2><div className="account-grid"><article><span>Role</span><strong>{access?.role}</strong></article><article><span>Devices</span><strong>{access?.activeDevices}/{access?.maxDevices}</strong></article><article><span>GitHub</span><strong>{connections.github ? 'Connected' : 'Not connected'}</strong></article><article><span>Vercel</span><strong>{connections.vercel ? 'Connected' : 'Not connected'}</strong></article></div>{!userSession && email === ownerEmail && <button onClick={() => setMode('admin-login')}>Open Admin</button>}<button className="logout" onClick={() => void logout()}>Log out</button></section>}
-    <footer>WebForge.Ai V4.1 · Made by Poojak Doshi</footer>
+    <footer>WebForge.Ai V4.2 · Made by Poojak Doshi</footer>
   </main>;
 }
 
