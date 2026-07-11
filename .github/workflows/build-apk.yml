@@ -3,38 +3,58 @@ name: Build Android APK
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - webforge-v4-upgrade
     paths:
       - 'apps/mobile/**'
       - 'packages/**'
       - 'package.json'
       - 'package-lock.json'
-      - '.npmrc'
-      - 'scripts/**'
       - '.github/workflows/build-apk.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: webforge-v4-apk
+  cancel-in-progress: true
 
 jobs:
   build:
+    name: Build WebForge APK
     runs-on: ubuntu-latest
+    timeout-minutes: 35
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - uses: actions/setup-java@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
-      - uses: android-actions/setup-android@v3
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
-      - name: Type-check and smoke-test
+
+      - name: Run project checks
         run: |
           npm run typecheck
           npm test
-      - name: Build mobile web assets
+
+      - name: Build mobile frontend
         run: npm run build -w @wmai/mobile
+
       - name: Generate Android project
         working-directory: apps/mobile
         run: |
@@ -42,13 +62,16 @@ jobs:
           npx cap add android
           npx capacitor-assets generate --android
           npx cap sync android
-      - name: Build APK
+
+      - name: Build debug APK
         working-directory: apps/mobile/android
         run: |
           chmod +x gradlew
           ./gradlew assembleDebug
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: WebForge-Ai-V4-APK
           path: apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

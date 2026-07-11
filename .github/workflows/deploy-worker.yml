@@ -26,7 +26,7 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - name: Checkout WebForge branch
+      - name: Checkout project
         uses: actions/checkout@v4
 
       - name: Set up Node.js
@@ -35,7 +35,7 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install project dependencies
+      - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
       - name: Type-check backend
@@ -48,32 +48,30 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx wrangler deploy
 
-      - name: Verify live Worker routes
+      - name: Verify live authentication route
         run: |
-          sleep 8
+          sleep 10
 
           HEALTH_CODE="$(curl -sS -o /tmp/health.json -w '%{http_code}' \
             'https://website-maker-ai-api.poojakpdoshi.workers.dev/health')"
 
-          echo "Health response:"
           cat /tmp/health.json
           echo
 
           if [ "$HEALTH_CODE" != "200" ]; then
-            echo "Expected health status 200, received $HEALTH_CODE"
+            echo "Health check failed with HTTP $HEALTH_CODE"
             exit 1
           fi
 
           AUTH_CODE="$(curl -sS -o /tmp/auth.json -w '%{http_code}' \
             'https://website-maker-ai-api.poojakpdoshi.workers.dev/auth/me')"
 
-          echo "Auth response:"
           cat /tmp/auth.json
           echo
 
           if [ "$AUTH_CODE" != "401" ]; then
-            echo "Expected /auth/me status 401, received $AUTH_CODE"
+            echo "Expected /auth/me to return 401 but received $AUTH_CODE"
             exit 1
           fi
 
-          echo "WebForge username authentication routes are live."
+          echo "WebForge username authentication is live."
