@@ -204,6 +204,84 @@ export default function AdminPanelV5({
     }
   }
 
+  async function changeUserPassword(account: Account) {
+    const nextPassword = window.prompt(
+      `Enter a new password for ${account.username} (minimum 8 characters):`
+    );
+
+    if (nextPassword === null) return;
+
+    if (nextPassword.length < 8) {
+      setError('Password must be at least 8 characters.');
+      return;
+    }
+
+    setBusy(true);
+    setError('');
+    setMessage('');
+
+    try {
+      const response = await fetch(
+        `${apiBase}/admin/accounts/${encodeURIComponent(account.id)}/password`,
+        {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ password: nextPassword })
+        }
+      );
+
+      await parseResponse(response);
+      setMessage(`Password changed for ${account.username}. Existing user sessions were revoked.`);
+    } catch (changeError) {
+      setError(
+        changeError instanceof Error
+          ? changeError.message
+          : 'Could not change the user password.'
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteUser(account: Account) {
+    const confirmed = window.confirm(
+      `Delete ${account.username}? This permanently removes the account and revokes access on every device.`
+    );
+
+    if (!confirmed) return;
+
+    setBusy(true);
+    setError('');
+    setMessage('');
+
+    try {
+      const response = await fetch(
+        `${apiBase}/admin/accounts/${encodeURIComponent(account.id)}`,
+        {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+
+      await parseResponse(response);
+      setMessage(`${account.username} was deleted.`);
+      await loadDashboard();
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : 'Could not delete the user.'
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function logout() {
     if (token) {
       await fetch(`${apiBase}/admin/auth/logout`, {
@@ -507,11 +585,33 @@ export default function AdminPanelV5({
                         </span>
                       </div>
 
-                      <span
-                        className={`admin-status-v5 ${account.status}`}
-                      >
-                        {account.status}
-                      </span>
+                      <div className="admin-account-actions-v5">
+                        <span
+                          className={`admin-status-v5 ${account.status}`}
+                        >
+                          {account.status}
+                        </span>
+
+                        <button
+                          type="button"
+                          className="admin-user-action-v5"
+                          disabled={busy}
+                          onClick={() =>
+                            void changeUserPassword(account)
+                          }
+                        >
+                          Change Password
+                        </button>
+
+                        <button
+                          type="button"
+                          className="admin-user-action-v5 danger"
+                          disabled={busy}
+                          onClick={() => void deleteUser(account)}
+                        >
+                          Delete User
+                        </button>
+                      </div>
                     </article>
                   ))
                 ) : (

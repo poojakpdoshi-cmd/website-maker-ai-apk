@@ -47,7 +47,7 @@ const DEFAULT_ADMIN_USERNAME = 'Poojak@King';
 const DEFAULT_ADMIN_PASSWORD_SALT = '664ad767ddf31d232e775b07c4818233';
 const DEFAULT_ADMIN_PASSWORD_HASH = '2fb427fbbbd6bb2731268a2bce3ead659cbc90586b3df7a562d13cb8bc47bf85';
 const DEFAULT_ADMIN_PASSWORD_ITERATIONS = 60000;
-const ADMIN_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const ADMIN_SESSION_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 const ADMIN_LOCK_WINDOW_MS = 15 * 60 * 1000;
 const ADMIN_MAX_LOGIN_ATTEMPTS = 5;
 
@@ -1172,6 +1172,119 @@ app.post('/admin/accounts/create', async (c) => {
     created: true,
     account
   });
+});
+
+app.patch('/admin/accounts/:id/password', async (c) => {
+  if (!(await requireAdmin(c))) {
+    return c.json({ error: 'Admin access required.' }, 401);
+  }
+
+  const parsed = z.object({
+    password: z.string().min(8).max(200)
+  }).safeParse(await c.req.json().catch(() => null));
+
+  if (!parsed.success) {
+    return c.json({ error: 'Password must be at least 8 characters.' }, 400);
+  }
+
+  const supabase = requireSupabase(c.env);
+  const accountId = c.req.param('id');
+
+  const { data: account, error: lookupError } = await supabase
+    .from('user_accounts')
+    .select('id,username,internal_email')
+    .eq('id', accountId)
+    .maybeSingle();
+
+  if (lookupError || !account) {
+    return c.json({ error: 'User account not found.' }, 404);
+  }
+
+  const passwordSalt = bytesToHex(
+    crypto.getRandomValues(new Uint8Array(16))
+  );
+  const passwordIterations = 100000;
+  const passwordDigest = await passwordHash(
+    parsed.data.password,
+    passwordSalt,
+    passwordIterations
+  );
+
+  const { error: updateError } = await supabase
+    .from('user_accounts')
+    .update({
+      password_salt: passwordSalt,
+      password_hash: passwordDigest,
+      password_iterations: passwordIterations,
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', account.id);
+
+  if (updateError) {
+    return c.json({ error: 'Could not change the user password.' }, 500);
+  }
+
+  await supabase
+    .from('user_sessions')
+    .delete()
+    .eq('user_id', account.id);
+
+  await supabase.from('audit_logs').insert({
+    actor_email: adminUsername(c.env),
+    action: 'change_username_account_password',
+    target_type: 'user_account',
+    target_id: account.id,
+    metadata: { username: account.username }
+  });
+
+  return c.json({ changed: true });
+});
+
+app.delete('/admin/accounts/:id', async (c) => {
+  if (!(await requireAdmin(c))) {
+    return c.json({ error: 'Admin access required.' }, 401);
+  }
+
+  const supabase = requireSupabase(c.env);
+  const accountId = c.req.param('id');
+
+  const { data: account, error: lookupError } = await supabase
+    .from('user_accounts')
+    .select('id,username,internal_email')
+    .eq('id', accountId)
+    .maybeSingle();
+
+  if (lookupError || !account) {
+    return c.json({ error: 'User account not found.' }, 404);
+  }
+
+  await supabase.from('user_sessions').delete().eq('user_id', account.id);
+  await supabase.from('oauth_states').delete().eq('email', account.internal_email);
+  await supabase.from('provider_connections').delete().eq('email', account.internal_email);
+  await supabase.from('devices').delete().eq('email', account.internal_email);
+  await supabase.from('approved_users').delete().eq('email', account.internal_email);
+
+  const { error: deleteError } = await supabase
+    .from('user_accounts')
+    .delete()
+    .eq('id', account.id);
+
+  if (deleteError) {
+    return c.json({ error: 'Could not delete the user account.' }, 500);
+  }
+
+  await supabase.from('audit_logs').insert({
+    actor_email: adminUsername(c.env),
+    action: 'delete_username_account',
+    target_type: 'user_account',
+    target_id: account.id,
+    metadata: {
+      username: account.username,
+      internalEmail: account.internal_email
+    }
+  });
+
+  return c.json({ deleted: true });
 });
 
 app.notFound((c) => c.json({ error: 'Route not found.' }, 404));
