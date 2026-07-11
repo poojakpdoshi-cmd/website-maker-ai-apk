@@ -748,9 +748,26 @@ app.get('/projects', async (c) => {
   if (!access) return c.json({ error: 'Your login session is missing or expired.' }, 401);
   if (!access.ok) return c.json({ error: access.error }, access.status);
   const supabase = requireSupabase(c.env);
-  const { data, error } = await supabase.from('projects').select('id,name,website_type,status,framework,github_repository,production_url,deployment_state,created_at,updated_at').eq('email', parsed.data.email.toLowerCase()).order('created_at', { ascending: false }).limit(50);
-  if (error) return c.json({ error: 'Could not load projects.' }, 500);
-  return c.json({ projects: data || [] });
+  const { data, error } = await supabase
+    .from('projects')
+    .select('id,name,website_type,status,framework,created_at,updated_at')
+    .eq('email', parsed.data.email.toLowerCase())
+    .order('created_at', { ascending: false })
+    .limit(50);
+
+  if (error) {
+    console.error('Project list query failed:', error.message);
+    return c.json({ error: 'Could not load projects.' }, 500);
+  }
+
+  return c.json({
+    projects: (data || []).map((project) => ({
+      ...project,
+      github_repository: null,
+      production_url: null,
+      deployment_state: null
+    }))
+  });
 });
 
 app.get('/projects/:id', async (c) => {
