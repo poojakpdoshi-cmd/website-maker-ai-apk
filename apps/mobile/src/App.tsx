@@ -431,14 +431,10 @@ export default function App() {
               <label>
                 Owner email
                 <input
-                  value={email}
-                  onChange={(event) => {
-                    setEmail(event.target.value);
-                    setOtpSent(false);
-                    setOtp('');
-                  }}
+                  value={ownerEmail}
                   type="email"
-                  autoComplete="email"
+                  autoComplete="off"
+                  readOnly
                   disabled={loginLoading}
                 />
               </label>
@@ -493,7 +489,7 @@ export default function App() {
               Enter the username and password issued by the admin.
             </p>
 
-            <form onSubmit={handleUsernameLogin}>
+            <form onSubmit={handleUsernameLogin} autoComplete="off">
               <label>
                 Username
                 <input
@@ -501,8 +497,8 @@ export default function App() {
                   onChange={(event) =>
                     setUsername(event.target.value)
                   }
-                  placeholder="krish.doshi"
-                  autoComplete="username"
+                  placeholder=""
+                  autoComplete="off"
                   disabled={loginLoading}
                   required
                 />
