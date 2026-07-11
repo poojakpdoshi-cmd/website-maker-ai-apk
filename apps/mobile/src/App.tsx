@@ -7,11 +7,22 @@ type RuntimeConfig = { apiBase: string; supabaseUrl: string; supabaseAnonKey: st
 type WebsitePlan = { businessName: string; websiteType: string; tagline: string; pages: string[]; features: string[]; theme: { style: string; primary: string; secondary: string; background: string; text: string } };
 type GenerateResponse = { projectId: string; jobId?: string; versionNumber?: number; plan: WebsitePlan; previewHtml: string; framework: 'vite-react'; fileCount: number; mode: 'ai' | 'built-in' };
 type AccessResponse = { approved: true; role: 'admin' | 'subscriber'; maxDevices: number; activeDevices: number };
+type UsernameSession = {
+  token: string;
+  expiresAt: string;
+  username: string;
+  internalEmail: string;
+  approved: true;
+  role: 'admin' | 'subscriber';
+  maxDevices: number;
+  activeDevices: number;
+};
 type ProjectSummary = { id: string; name: string; website_type: string; status: string; framework: string; github_repository?: string | null; production_url?: string | null; deployment_state?: string | null; created_at: string };
 type IntegrationStatus = { github: { external_account_name?: string | null } | null; vercel: { external_account_name?: string | null } | null };
 
 const ownerEmail = 'poojakpdoshi@gmail.com';
 const configKey = 'wmai-runtime-config';
+const userSessionKey = 'webforge-user-session';
 
 function defaultConfig(): RuntimeConfig {
   return {
@@ -53,8 +64,20 @@ export default function App() {
   const [mode, setMode] = useState<'user' | 'admin-login' | 'admin-dashboard'>('user');
   const supabase = useMemo<SupabaseClient | null>(() => validConfig(config) ? createClient(config.supabaseUrl, config.supabaseAnonKey) : null, [config]);
 
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(ownerEmail);
   const [session, setSession] = useState<Session | null>(null);
+  const [userSession, setUserSession] =
+    useState<UsernameSession | null>(() => {
+      try {
+        const stored = localStorage.getItem(userSessionKey);
+        return stored ? JSON.parse(stored) : null;
+      } catch {
+        return null;
+      }
+    });
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+
   const [approved, setApproved] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState('');
@@ -71,7 +94,7 @@ export default function App() {
   const [error, setError] = useState('');
   const [tab, setTab] = useState<'create' | 'preview' | 'projects' | 'connect' | 'account'>('create');
 
-  const token = session?.access_token || '';
+  const token = userSession?.token || session?.access_token || '';
   const status = useMemo(() => result ? `${result.plan.businessName} • ${result.framework} • ${result.fileCount} files • ${result.mode === 'ai' ? 'Gemini-assisted brain' : 'Built-in brain'}` : 'No website generated yet', [result]);
 
   async function readResponse(response: Response) {
@@ -124,6 +147,71 @@ export default function App() {
     return () => data.subscription.unsubscribe();
   }, [supabase]);
 
+
+  // RESTORE_USERNAME_SESSION
+  useEffect(() => {
+    const stored = localStorage.getItem(userSessionKey);
+    if (!stored || !validConfig(config)) return;
+
+    let saved: UsernameSession;
+
+    try {
+      saved = JSON.parse(stored) as UsernameSession;
+    } catch {
+      localStorage.removeItem(userSessionKey);
+      return;
+    }
+
+    void fetch(`${config.apiBase}/auth/me`, {
+      headers: {
+        Authorization: `Bearer ${saved.token}`,
+        'X-Device-Id': installationId
+      }
+    })
+      .then(readResponse)
+      .then(async (data) => {
+        const refreshed: UsernameSession = {
+          ...saved,
+          ...data,
+          token: saved.token
+        };
+
+        localStorage.setItem(
+          userSessionKey,
+          JSON.stringify(refreshed)
+        );
+
+        setUserSession(refreshed);
+        setSession(null);
+        setEmail(refreshed.internalEmail);
+
+        setAccess({
+          approved: true,
+          role: refreshed.role,
+          maxDevices: refreshed.maxDevices,
+          activeDevices: refreshed.activeDevices
+        });
+
+        setApproved(true);
+
+        await Promise.all([
+          loadProjects(
+            refreshed.internalEmail,
+            refreshed.token
+          ),
+          loadConnections(
+            refreshed.internalEmail,
+            refreshed.token
+          )
+        ]);
+      })
+      .catch(() => {
+        localStorage.removeItem(userSessionKey);
+        setUserSession(null);
+        setApproved(false);
+      });
+  }, [config.apiBase]);
+
   function saveRuntimeConfig(next: RuntimeConfig) {
     const clean = { apiBase: next.apiBase.trim().replace(/\/$/, ''), supabaseUrl: next.supabaseUrl.trim().replace(/\/$/, ''), supabaseAnonKey: next.supabaseAnonKey.trim() };
     if (!validConfig(clean)) { setError('Enter a valid API URL, Supabase project URL, and Supabase anon key.'); return; }
@@ -134,7 +222,7 @@ export default function App() {
   async function handleLogin(event: FormEvent) {
     event.preventDefault(); setError(''); setMessage('');
     if (!supabase) { setShowSetup(true); setError('Configure Supabase and the backend first.'); return; }
-    if (!email.includes('@')) { setError('Enter your approved email address.'); return; }
+    if (email.trim().toLowerCase() !== ownerEmail) { setError('Email OTP is reserved for the owner. Normal users must use username and password.'); return; }
     setLoginLoading(true);
     try {
       if (!otpSent) {
@@ -148,6 +236,74 @@ export default function App() {
       await bootstrap(data.session);
     } catch (loginError) { setError(loginError instanceof Error ? loginError.message : 'Login failed.'); }
     finally { setLoginLoading(false); }
+  }
+
+
+  async function handleUsernameLogin(event: FormEvent) {
+    event.preventDefault();
+    setLoginLoading(true);
+    setError('');
+    setMessage('');
+
+    try {
+      const response = await fetch(
+        `${config.apiBase}/auth/login`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json'
+          },
+          body: JSON.stringify({
+            username,
+            password,
+            installationId,
+            deviceName:
+              navigator.platform || 'Android device',
+            androidVersion:
+              navigator.userAgent.slice(0, 150)
+          })
+        }
+      );
+
+      const data =
+        await readResponse(response) as UsernameSession;
+
+      if (supabase) {
+        await supabase.auth.signOut().catch(() => undefined);
+      }
+
+      localStorage.setItem(
+        userSessionKey,
+        JSON.stringify(data)
+      );
+
+      setUserSession(data);
+      setSession(null);
+      setEmail(data.internalEmail);
+
+      setAccess({
+        approved: true,
+        role: data.role,
+        maxDevices: data.maxDevices,
+        activeDevices: data.activeDevices
+      });
+
+      setApproved(true);
+      setPassword('');
+
+      await Promise.all([
+        loadProjects(data.internalEmail, data.token),
+        loadConnections(data.internalEmail, data.token)
+      ]);
+    } catch (loginError) {
+      setError(
+        loginError instanceof Error
+          ? loginError.message
+          : 'Username login failed.'
+      );
+    } finally {
+      setLoginLoading(false);
+    }
   }
 
   async function generateWebsite() {
@@ -210,20 +366,186 @@ export default function App() {
   }
 
   async function logout() {
-    await supabase?.auth.signOut(); setApproved(false); setAccess(null); setSession(null); setOtp(''); setOtpSent(false); setResult(null); setProjects([]); setConnections({ github: null, vercel: null }); setTab('create'); setError(''); setMessage('');
+    if (userSession?.token) {
+      await fetch(`${config.apiBase}/auth/logout`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${userSession.token}`
+        }
+      }).catch(() => undefined);
+    }
+
+    if (session && supabase) {
+      await supabase.auth.signOut().catch(() => undefined);
+    }
+
+    localStorage.removeItem(userSessionKey);
+
+    setUserSession(null);
+    setApproved(false);
+    setAccess(null);
+    setSession(null);
+    setEmail(ownerEmail);
+    setUsername('');
+    setPassword('');
+    setOtp('');
+    setOtpSent(false);
+    setResult(null);
+    setProjects([]);
+    setConnections({
+      github: null,
+      vercel: null
+    });
+    setTab('create');
+    setError('');
+    setMessage('');
   }
 
   if (showSetup) return <SetupScreen config={config} onSave={saveRuntimeConfig} onCancel={validConfig(config) ? () => setShowSetup(false) : undefined} error={error} />;
   if (mode === 'admin-login' || mode === 'admin-dashboard') return <AdminPanelV5 apiBase={config.apiBase} initialMode={mode} onMode={setMode} onSetup={() => setShowSetup(true)} />;
 
   if (!approved) {
-    return <main className="login-shell"><section className="login-card">
-      <div className="top-actions"><button className="small-button" onClick={() => setShowSetup(true)}>Setup</button></div>
-      <div className="brand-mark">WF</div><p className="eyebrow">MADE BY POOJAK DOSHI</p><h1>WebForge.Ai</h1><p className="muted">Approved users sign in with an email OTP.</p>
-      <form onSubmit={handleLogin}><label>Approved email</label><input value={email} onChange={(event) => { setEmail(event.target.value); setOtpSent(false); setOtp(''); }} type="email" placeholder="you@example.com" autoComplete="email" disabled={loginLoading} />{otpSent && <input value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, '').slice(0, 8))} inputMode="numeric" placeholder="Email OTP" autoComplete="one-time-code" />}<button type="submit" disabled={loginLoading}>{loginLoading ? 'Please wait…' : otpSent ? 'Verify OTP and continue' : 'Send email OTP'}</button></form>
-      {email.trim().toLowerCase() === ownerEmail && <section className="admin-entry"><p><strong>Owner email recognised</strong><span>Admin controls are inside this APK.</span></p><button type="button" onClick={() => setMode('admin-login')}>Open Admin Login</button></section>}
-      <p className="tiny">Only emails approved by the administrator can sign in.</p>{message && <p className="success">{message}</p>}{error && <p className="error" role="alert">{error}</p>}
-    </section></main>;
+    return (
+      <main className="login-shell">
+        <section className="login-card dual-login-card">
+          <div className="brand-mark logo-shell">
+            <img
+              src="/webforge-logo.svg"
+              alt="WebForge.Ai"
+            />
+          </div>
+
+          <p className="eyebrow">
+            MADE BY POOJAK DOSHI
+          </p>
+
+          <h1>WebForge.Ai</h1>
+
+          <section className="login-section">
+            <p className="eyebrow">OWNER LOGIN</p>
+            <p className="muted">
+              Email OTP is reserved for the owner.
+            </p>
+
+            <form onSubmit={handleLogin}>
+              <label>
+                Owner email
+                <input
+                  value={email}
+                  onChange={(event) => {
+                    setEmail(event.target.value);
+                    setOtpSent(false);
+                    setOtp('');
+                  }}
+                  type="email"
+                  autoComplete="email"
+                  disabled={loginLoading}
+                />
+              </label>
+
+              {otpSent && (
+                <label>
+                  Email OTP
+                  <input
+                    value={otp}
+                    onChange={(event) =>
+                      setOtp(
+                        event.target.value
+                          .replace(/\D/g, '')
+                          .slice(0, 8)
+                      )
+                    }
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                  />
+                </label>
+              )}
+
+              <button
+                type="submit"
+                disabled={loginLoading}
+              >
+                {loginLoading
+                  ? 'Please wait…'
+                  : otpSent
+                    ? 'Verify owner OTP'
+                    : 'Send owner OTP'}
+              </button>
+            </form>
+
+            <button
+              type="button"
+              className="small-button owner-admin-button"
+              onClick={() => setMode('admin-login')}
+            >
+              Open Admin Login
+            </button>
+          </section>
+
+          <div className="login-divider">
+            <span>OR</span>
+          </div>
+
+          <section className="login-section">
+            <p className="eyebrow">USER LOGIN</p>
+
+            <p className="muted">
+              Enter the username and password issued by the admin.
+            </p>
+
+            <form onSubmit={handleUsernameLogin}>
+              <label>
+                Username
+                <input
+                  value={username}
+                  onChange={(event) =>
+                    setUsername(event.target.value)
+                  }
+                  placeholder="krish.doshi"
+                  autoComplete="username"
+                  disabled={loginLoading}
+                  required
+                />
+              </label>
+
+              <label>
+                Password
+                <input
+                  value={password}
+                  onChange={(event) =>
+                    setPassword(event.target.value)
+                  }
+                  type="password"
+                  placeholder="Your password"
+                  autoComplete="current-password"
+                  disabled={loginLoading}
+                  required
+                />
+              </label>
+
+              <button
+                type="submit"
+                disabled={loginLoading}
+              >
+                {loginLoading
+                  ? 'Signing in…'
+                  : 'Log In'}
+              </button>
+            </form>
+          </section>
+
+          {message && (
+            <p className="success">{message}</p>
+          )}
+
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
+        </section>
+      </main>
+    );
   }
 
   return <main className="app-shell">
@@ -361,7 +683,7 @@ export default function App() {
       </section>
     )}
     {tab === 'connect' && <section className="panel"><p className="eyebrow">PUBLISHING ACCOUNTS</p><h2>Connect the user’s accounts</h2><div className="connection-grid"><article className={connections.github ? 'connected' : ''}><h3>GitHub</h3><p>{connections.github ? `Connected as ${connections.github.external_account_name || 'GitHub user'}` : 'Required for source repository.'}</p><button onClick={() => void connect('github')}>{connections.github ? 'Reconnect' : 'Connect GitHub'}</button></article><article className={connections.vercel ? 'connected' : ''}><h3>Vercel</h3><p>{connections.vercel ? `Connected to ${connections.vercel.external_account_name || 'Vercel'}` : 'Required for the live deployment.'}</p><button onClick={() => void connect('vercel')}>{connections.vercel ? 'Reconnect' : 'Connect Vercel'}</button></article></div><button className="refresh" onClick={refreshConnections}>Refresh connections</button></section>}
-    {tab === 'account' && <section className="panel"><p className="eyebrow">ACCOUNT</p><h2>{email}</h2><div className="account-grid"><article><span>Role</span><strong>{access?.role}</strong></article><article><span>Devices</span><strong>{access?.activeDevices}/{access?.maxDevices}</strong></article><article><span>GitHub</span><strong>{connections.github ? 'Connected' : 'Not connected'}</strong></article><article><span>Vercel</span><strong>{connections.vercel ? 'Connected' : 'Not connected'}</strong></article></div>{email === ownerEmail && <button onClick={() => setMode('admin-login')}>Open Admin</button>}<button className="logout" onClick={() => void logout()}>Log out</button><button className="small-button" onClick={() => setShowSetup(true)}>Connection settings</button></section>}
+    {tab === 'account' && <section className="panel"><p className="eyebrow">ACCOUNT</p><h2>{userSession?.username || email}</h2><div className="account-grid"><article><span>Role</span><strong>{access?.role}</strong></article><article><span>Devices</span><strong>{access?.activeDevices}/{access?.maxDevices}</strong></article><article><span>GitHub</span><strong>{connections.github ? 'Connected' : 'Not connected'}</strong></article><article><span>Vercel</span><strong>{connections.vercel ? 'Connected' : 'Not connected'}</strong></article></div>{!userSession && email === ownerEmail && <button onClick={() => setMode('admin-login')}>Open Admin</button>}<button className="logout" onClick={() => void logout()}>Log out</button></section>}
     <footer>WebForge.Ai · Made by Poojak Doshi</footer>
   </main>;
 }

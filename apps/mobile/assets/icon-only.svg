@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="blue"
+      x1="100" y1="80" x2="900" y2="930"
+      gradientUnits="userSpaceOnUse">
+      <stop stop-color="#38BDF8"/>
+      <stop offset="0.52" stop-color="#2563EB"/>
+      <stop offset="1" stop-color="#1E40AF"/>
+    </linearGradient>
+
+    <filter id="shadow"
+      x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="28"
+        stdDeviation="34"
+        flood-color="#1D4ED8"
+        flood-opacity="0.30"/>
+    </filter>
+  </defs>
+
+  <rect x="82" y="82"
+        width="860" height="860"
+        rx="230"
+        fill="url(#blue)"
+        filter="url(#shadow)"/>
+
+  <path
+    d="M205 305
+       L292 720
+       L414 505
+       L536 720
+       L624 305
+       L532 305
+       L484 558
+       L414 430
+       L344 558
+       L297 305 Z"
+    fill="white"/>
+
+  <path
+    d="M650 305
+       H842
+       V390
+       H744
+       V470
+       H824
+       V552
+       H744
+       V720
+       H650 Z"
+    fill="white"/>
+
+  <path
+    d="M820 172
+       L843 221
+       L892 244
+       L843 267
+       L820 316
+       L797 267
+       L748 244
+       L797 221 Z"
+    fill="#BAE6FD"/>
+</svg>

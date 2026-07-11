@@ -51,6 +51,72 @@ const ADMIN_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 const ADMIN_LOCK_WINDOW_MS = 15 * 60 * 1000;
 const ADMIN_MAX_LOGIN_ATTEMPTS = 5;
 
+const USER_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+type UserSessionIdentity = {
+  id: string;
+  userId: string;
+  username: string;
+  internalEmail: string;
+  expiresAt: string;
+};
+
+async function usernameSessionIdentity(
+  env: Bindings,
+  authorization: string | undefined
+): Promise<UserSessionIdentity | null> {
+  const token = authorization
+    ?.match(/^Bearer\s+(.+)$/i)?.[1];
+
+  if (!token) return null;
+
+  const supabase = getSupabase(env);
+  if (!supabase) return null;
+
+  const tokenHash = await sha256Hex(token);
+
+  const { data: session, error } = await supabase
+    .from('user_sessions')
+    .select(
+      'id,user_id,username,internal_email,expires_at,revoked_at'
+    )
+    .eq('token_hash', tokenHash)
+    .maybeSingle();
+
+  if (
+    error ||
+    !session ||
+    session.revoked_at ||
+    new Date(session.expires_at).getTime() <= Date.now()
+  ) {
+    return null;
+  }
+
+  const { data: account } = await supabase
+    .from('user_accounts')
+    .select('status')
+    .eq('id', session.user_id)
+    .maybeSingle();
+
+  if (!account || account.status !== 'active') {
+    return null;
+  }
+
+  await supabase
+    .from('user_sessions')
+    .update({ last_seen_at: new Date().toISOString() })
+    .eq('id', session.id);
+
+  return {
+    id: String(session.id),
+    userId: String(session.user_id),
+    username: String(session.username),
+    internalEmail: String(session.internal_email).toLowerCase(),
+    expiresAt: String(session.expires_at)
+  };
+}
+
+
 function adminUsername(env: Bindings): string {
   return env.ADMIN_USERNAME || DEFAULT_ADMIN_USERNAME;
 }
@@ -150,13 +216,31 @@ function requireSupabase(env: Bindings): SupabaseClient {
   return client;
 }
 
-async function identityEmail(env: Bindings, authorization: string | undefined): Promise<string | null> {
+async function identityEmail(
+  env: Bindings,
+  authorization: string | undefined
+): Promise<string | null> {
+  const usernameIdentity = await usernameSessionIdentity(
+    env,
+    authorization
+  );
+
+  if (usernameIdentity) {
+    return usernameIdentity.internalEmail;
+  }
+
   const supabase = getSupabase(env);
   if (!supabase) return null;
-  const token = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+
+  const token = authorization
+    ?.match(/^Bearer\s+(.+)$/i)?.[1];
+
   if (!token) return null;
+
   const { data, error } = await supabase.auth.getUser(token);
+
   if (error || !data.user?.email) return null;
+
   return data.user.email.toLowerCase();
 }
 
@@ -397,6 +481,175 @@ app.get('/health', (c) => c.json({
   vercelConfigured: Boolean(c.env.VERCEL_CLIENT_ID && c.env.VERCEL_CLIENT_SECRET && c.env.VERCEL_REDIRECT_URI && c.env.VERCEL_INTEGRATION_SLUG),
   timestamp: new Date().toISOString()
 }));
+
+
+app.post('/auth/login', async (c) => {
+  const parsed = z.object({
+    username: z.string().trim().min(3).max(40),
+    password: z.string().min(8).max(200),
+    installationId: z.string().uuid(),
+    deviceName: z.string().max(120).optional(),
+    androidVersion: z.string().max(160).optional()
+  }).safeParse(await c.req.json().catch(() => null));
+
+  if (!parsed.success) {
+    return c.json({
+      error: 'Enter a valid username and password.'
+    }, 400);
+  }
+
+  const supabase = requireSupabase(c.env);
+
+  const username = parsed.data.username
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '.')
+    .replace(/\.{2,}/g, '.');
+
+  const { data: account, error: accountError } = await supabase
+    .from('user_accounts')
+    .select(
+      'id,username,internal_email,password_salt,password_hash,password_iterations,status'
+    )
+    .eq('username', username)
+    .maybeSingle();
+
+  if (
+    accountError ||
+    !account ||
+    account.status !== 'active'
+  ) {
+    return c.json({
+      error: 'Incorrect username or password.'
+    }, 401);
+  }
+
+  const calculatedHash = await passwordHash(
+    parsed.data.password,
+    account.password_salt,
+    Number(account.password_iterations)
+  );
+
+  if (!constantTimeEqual(
+    calculatedHash,
+    account.password_hash
+  )) {
+    return c.json({
+      error: 'Incorrect username or password.'
+    }, 401);
+  }
+
+  const access = await checkAccess(
+    c.env,
+    account.internal_email,
+    {
+      installationId: parsed.data.installationId,
+      deviceName:
+        parsed.data.deviceName || 'Android device',
+      androidVersion:
+        parsed.data.androidVersion || 'Unknown'
+    }
+  );
+
+  if (!access.ok) {
+    return c.json({ error: access.error }, access.status);
+  }
+
+  const now = new Date().toISOString();
+
+  await supabase
+    .from('user_sessions')
+    .update({ revoked_at: now })
+    .eq('user_id', account.id)
+    .eq('installation_id', parsed.data.installationId)
+    .is('revoked_at', null);
+
+  const token = randomToken();
+
+  const expiresAt = new Date(
+    Date.now() + USER_SESSION_TTL_MS
+  ).toISOString();
+
+  const { error: sessionError } = await supabase
+    .from('user_sessions')
+    .insert({
+      user_id: account.id,
+      username: account.username,
+      internal_email: account.internal_email,
+      token_hash: await sha256Hex(token),
+      installation_id: parsed.data.installationId,
+      expires_at: expiresAt,
+      last_seen_at: now
+    });
+
+  if (sessionError) {
+    return c.json({
+      error: 'Could not create the login session.'
+    }, 500);
+  }
+
+  return c.json({
+    token,
+    expiresAt,
+    username: account.username,
+    internalEmail: account.internal_email,
+    approved: true,
+    role: access.role,
+    maxDevices: access.maxDevices,
+    activeDevices: access.activeDevices
+  });
+});
+
+app.get('/auth/me', async (c) => {
+  const identity = await usernameSessionIdentity(
+    c.env,
+    c.req.header('Authorization')
+  );
+
+  if (!identity) {
+    return c.json({
+      error: 'Username session is missing or expired.'
+    }, 401);
+  }
+
+  const access = await checkAccess(
+    c.env,
+    identity.internalEmail
+  );
+
+  if (!access.ok) {
+    return c.json({ error: access.error }, access.status);
+  }
+
+  return c.json({
+    username: identity.username,
+    internalEmail: identity.internalEmail,
+    expiresAt: identity.expiresAt,
+    approved: true,
+    role: access.role,
+    maxDevices: access.maxDevices,
+    activeDevices: access.activeDevices
+  });
+});
+
+app.post('/auth/logout', async (c) => {
+  const token = c.req
+    .header('Authorization')
+    ?.match(/^Bearer\s+(.+)$/i)?.[1];
+
+  if (!token) {
+    return c.json({ loggedOut: true });
+  }
+
+  const supabase = requireSupabase(c.env);
+
+  await supabase
+    .from('user_sessions')
+    .update({ revoked_at: new Date().toISOString() })
+    .eq('token_hash', await sha256Hex(token));
+
+  return c.json({ loggedOut: true });
+});
 
 app.post('/auth/check-access', async (c) => {
   const body = accessSchema.safeParse(await c.req.json().catch(() => null));

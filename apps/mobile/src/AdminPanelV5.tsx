@@ -223,7 +223,9 @@ export default function AdminPanelV5({
     return (
       <main className="admin-login-v5">
         <section className="admin-login-card-v5">
-          <div className="admin-logo-v5">WF</div>
+          <div className="admin-logo-v5">
+          <img src="/webforge-logo.svg" alt="WebForge.Ai" />
+        </div>
 
           <p className="admin-kicker-v5">
             OWNER CONTROL ROOM
@@ -302,7 +304,9 @@ export default function AdminPanelV5({
     <main className="admin-shell-v5">
       <aside className="admin-sidebar-v5">
         <div className="admin-brand-v5">
-          <div className="admin-logo-small-v5">WF</div>
+          <div className="admin-logo-small-v5">
+            <img src="/webforge-logo.svg" alt="WebForge.Ai" />
+          </div>
 
           <div>
             <strong>WebForge.Ai</strong>

@@ -1,0 +1,190 @@
+/* WebForge.Ai final clean blue-white UI */
+
+:root {
+  --wf-bg: #f7faff;
+  --wf-card: #ffffff;
+  --wf-text: #0b1533;
+  --wf-muted: #64748b;
+  --wf-blue: #2563eb;
+  --wf-blue-dark: #1d4ed8;
+  --wf-blue-soft: #dbeafe;
+  --wf-border: #dbe3ee;
+  --wf-shadow: 0 18px 45px rgba(15, 23, 42, .08);
+}
+
+body {
+  color: var(--wf-text) !important;
+  background:
+    radial-gradient(circle at 50% -10%, rgba(37,99,235,.08), transparent 35%),
+    linear-gradient(180deg, #fbfdff 0%, var(--wf-bg) 100%) !important;
+}
+
+.login-card,
+.panel,
+.admin-login-card-v5,
+.admin-stats-v5 article,
+.admin-focus-card-v5,
+.admin-create-user-v5,
+.admin-account-list-v5,
+.admin-settings-v5 article {
+  background: var(--wf-card) !important;
+  border: 1px solid var(--wf-border) !important;
+  border-radius: 24px !important;
+  box-shadow: var(--wf-shadow) !important;
+}
+
+.brand-mark,
+.logo-shell,
+.admin-logo-v5,
+.admin-logo-small-v5 {
+  background: transparent !important;
+  box-shadow: none !important;
+  overflow: hidden !important;
+  padding: 0 !important;
+}
+
+.brand-mark img,
+.logo-shell img,
+.admin-logo-v5 img,
+.admin-logo-small-v5 img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+}
+
+h1, h2, h3, strong {
+  color: var(--wf-text) !important;
+}
+
+.eyebrow,
+.admin-topbar-v5 p,
+.admin-section-label-v5,
+.admin-kicker-v5 {
+  color: var(--wf-blue) !important;
+  letter-spacing: .18em !important;
+}
+
+.muted,
+.tiny,
+.project-list article span,
+.account-grid span,
+.connection-grid p {
+  color: var(--wf-muted) !important;
+}
+
+input,
+textarea {
+  background: #fff !important;
+  color: var(--wf-text) !important;
+  border: 1px solid #cbd5e1 !important;
+  border-radius: 14px !important;
+  box-shadow: inset 0 1px 2px rgba(15,23,42,.03) !important;
+}
+
+input:focus,
+textarea:focus {
+  border-color: var(--wf-blue) !important;
+  box-shadow: 0 0 0 4px rgba(37,99,235,.10) !important;
+}
+
+button,
+.small-button,
+.project-actions a,
+.project-actions button {
+  border-radius: 13px !important;
+  border: 1px solid #cbd5e1 !important;
+  background: #fff !important;
+  color: #334155 !important;
+  box-shadow: 0 2px 6px rgba(15,23,42,.04) !important;
+}
+
+button:hover,
+.small-button:hover {
+  background: #f1f5f9 !important;
+  color: var(--wf-blue) !important;
+}
+
+.primary,
+form button,
+.admin-primary-v5,
+.my-webs-list .project-actions a:first-of-type {
+  background: var(--wf-blue) !important;
+  color: white !important;
+  border-color: var(--wf-blue) !important;
+  box-shadow: 0 10px 24px rgba(37,99,235,.20) !important;
+}
+
+.primary:hover,
+form button:hover,
+.admin-primary-v5:hover {
+  background: var(--wf-blue-dark) !important;
+  color: white !important;
+}
+
+.webforge-app-nav,
+.app-shell > nav {
+  background: rgba(255,255,255,.96) !important;
+  border: 1px solid var(--wf-border) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 10px 28px rgba(15,23,42,.06) !important;
+}
+
+.webforge-app-nav button,
+.app-shell > nav button {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: var(--wf-muted) !important;
+  box-shadow: none !important;
+}
+
+.webforge-app-nav button.active,
+.app-shell > nav button.active {
+  background: var(--wf-blue-soft) !important;
+  border-color: #bfdbfe !important;
+  color: var(--wf-blue) !important;
+}
+
+.dual-login-card {
+  width: min(100%, 520px);
+}
+
+.login-section {
+  margin-top: 22px;
+  padding: 20px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+}
+
+.login-section form {
+  margin-top: 14px;
+}
+
+.login-divider {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 22px 0;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.login-divider::before,
+.login-divider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: #e2e8f0;
+}
+
+.owner-admin-button {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.logout {
+  color: #dc2626 !important;
+  border-color: #fecaca !important;
+}
