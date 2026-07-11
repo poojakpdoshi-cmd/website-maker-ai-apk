@@ -90,6 +90,10 @@ export default function App() {
   const [result, setResult] = useState<GenerateResponse | null>(null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [connections, setConnections] = useState<IntegrationStatus>({ github: null, vercel: null });
+  const [githubToken, setGithubToken] = useState('');
+  const [vercelToken, setVercelToken] = useState('');
+  const [connectingProvider, setConnectingProvider] =
+    useState<'github' | 'vercel' | null>(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [tab, setTab] = useState<'create' | 'preview' | 'projects' | 'connect' | 'account'>('create');
@@ -338,14 +342,65 @@ export default function App() {
     finally { setLoading(false); }
   }
 
-  async function connect(provider: 'github' | 'vercel') {
-    setError(''); setMessage(`Opening ${provider}…`);
+
+  async function connectWithToken(
+    provider: 'github' | 'vercel',
+    rawToken: string
+  ) {
+    const cleanToken = rawToken.trim();
+
+    if (cleanToken.length < 10) {
+      setError(`Paste a valid ${provider === 'github' ? 'GitHub' : 'Vercel'} access token.`);
+      return;
+    }
+
+    setConnectingProvider(provider);
+    setError('');
+    setMessage(`Checking ${provider} token…`);
+
     try {
-      const response = await fetch(`${config.apiBase}/integrations/${provider}/start?email=${encodeURIComponent(email)}`, { headers: authHeaders() });
-      const data = await readResponse(response) as { authorizationUrl: string };
-      await Browser.open({ url: data.authorizationUrl, presentationStyle: 'popover' });
-      setMessage(`Complete ${provider} authorization, return to the APK, then refresh connections.`);
-    } catch (connectionError) { setError(connectionError instanceof Error ? connectionError.message : 'Could not start connection.'); }
+      const response = await fetch(
+        `${config.apiBase}/integrations/${provider}/token`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            ...authHeaders()
+          },
+          body: JSON.stringify({
+            email,
+            installationId,
+            token: cleanToken
+          })
+        }
+      );
+
+      const data = await readResponse(response) as {
+        accountName?: string;
+      };
+
+      if (provider === 'github') {
+        setGithubToken('');
+      } else {
+        setVercelToken('');
+      }
+
+      await loadConnections();
+
+      setMessage(
+        `${provider === 'github' ? 'GitHub' : 'Vercel'} connected${
+          data.accountName ? ` as ${data.accountName}` : ''
+        }.`
+      );
+    } catch (connectionError) {
+      setError(
+        connectionError instanceof Error
+          ? connectionError.message
+          : `Could not connect ${provider}.`
+      );
+    } finally {
+      setConnectingProvider(null);
+    }
   }
 
   async function refreshConnections() {
@@ -678,7 +733,90 @@ export default function App() {
         </div>
       </section>
     )}
-    {tab === 'connect' && <section className="panel"><p className="eyebrow">PUBLISHING ACCOUNTS</p><h2>Connect the user’s accounts</h2><div className="connection-grid"><article className={connections.github ? 'connected' : ''}><h3>GitHub</h3><p>{connections.github ? `Connected as ${connections.github.external_account_name || 'GitHub user'}` : 'Required for source repository.'}</p><button onClick={() => void connect('github')}>{connections.github ? 'Reconnect' : 'Connect GitHub'}</button></article><article className={connections.vercel ? 'connected' : ''}><h3>Vercel</h3><p>{connections.vercel ? `Connected to ${connections.vercel.external_account_name || 'Vercel'}` : 'Required for the live deployment.'}</p><button onClick={() => void connect('vercel')}>{connections.vercel ? 'Reconnect' : 'Connect Vercel'}</button></article></div><button className="refresh" onClick={refreshConnections}>Refresh connections</button></section>}
+
+    {tab === 'connect' && (
+      <section className="panel">
+        <p className="eyebrow">PUBLISHING ACCOUNTS</p>
+        <h2>Paste access tokens</h2>
+        <p className="muted">
+          Tokens are sent to the backend, verified, encrypted and stored for this WebForge account.
+        </p>
+
+        <div className="connection-grid">
+          <article className={connections.github ? 'connected' : ''}>
+            <h3>GitHub</h3>
+            <p>
+              {connections.github
+                ? `Connected as ${connections.github.external_account_name || 'GitHub user'}`
+                : 'Paste a GitHub personal access token with repository access.'}
+            </p>
+
+            <input
+              type="password"
+              value={githubToken}
+              onChange={(event) => setGithubToken(event.target.value)}
+              placeholder="Paste GitHub access token"
+              autoComplete="off"
+              spellCheck={false}
+            />
+
+            <button
+              onClick={() => void connectWithToken('github', githubToken)}
+              disabled={
+                connectingProvider !== null ||
+                githubToken.trim().length < 10
+              }
+            >
+              {connectingProvider === 'github'
+                ? 'Checking GitHub…'
+                : connections.github
+                  ? 'Replace GitHub Token'
+                  : 'Connect GitHub Token'}
+            </button>
+          </article>
+
+          <article className={connections.vercel ? 'connected' : ''}>
+            <h3>Vercel</h3>
+            <p>
+              {connections.vercel
+                ? `Connected to ${connections.vercel.external_account_name || 'Vercel'}`
+                : 'Paste a Vercel access token for live deployment.'}
+            </p>
+
+            <input
+              type="password"
+              value={vercelToken}
+              onChange={(event) => setVercelToken(event.target.value)}
+              placeholder="Paste Vercel access token"
+              autoComplete="off"
+              spellCheck={false}
+            />
+
+            <button
+              onClick={() => void connectWithToken('vercel', vercelToken)}
+              disabled={
+                connectingProvider !== null ||
+                vercelToken.trim().length < 10
+              }
+            >
+              {connectingProvider === 'vercel'
+                ? 'Checking Vercel…'
+                : connections.vercel
+                  ? 'Replace Vercel Token'
+                  : 'Connect Vercel Token'}
+            </button>
+          </article>
+        </div>
+
+        <button
+          className="refresh"
+          onClick={refreshConnections}
+          disabled={connectingProvider !== null}
+        >
+          Refresh connections
+        </button>
+      </section>
+    )}
     {tab === 'account' && <section className="panel"><p className="eyebrow">ACCOUNT</p><h2>{userSession?.username || email}</h2><div className="account-grid"><article><span>Role</span><strong>{access?.role}</strong></article><article><span>Devices</span><strong>{access?.activeDevices}/{access?.maxDevices}</strong></article><article><span>GitHub</span><strong>{connections.github ? 'Connected' : 'Not connected'}</strong></article><article><span>Vercel</span><strong>{connections.vercel ? 'Connected' : 'Not connected'}</strong></article></div>{!userSession && email === ownerEmail && <button onClick={() => setMode('admin-login')}>Open Admin</button>}<button className="logout" onClick={() => void logout()}>Log out</button></section>}
     <footer>WebForge.Ai V4.1 · Made by Poojak Doshi</footer>
   </main>;

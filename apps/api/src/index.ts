@@ -957,6 +957,129 @@ function escapeHtmlForCallback(value: string): string {
   return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!);
 }
 
+
+app.post('/integrations/:provider/token', async (c) => {
+  const provider = c.req.param('provider');
+
+  if (provider !== 'github' && provider !== 'vercel') {
+    return c.json({ error: 'Unknown provider.' }, 400);
+  }
+
+  const parsed = z.object({
+    email: z.string().email(),
+    installationId: z.string().uuid(),
+    token: z.string().trim().min(10).max(1000)
+  }).safeParse(await c.req.json().catch(() => null));
+
+  if (!parsed.success) {
+    return c.json({
+      error: `Enter a valid ${provider === 'github' ? 'GitHub' : 'Vercel'} access token.`
+    }, 400);
+  }
+
+  const access = await requireUser(
+    c,
+    parsed.data.email,
+    parsed.data.installationId
+  );
+
+  if (!access) {
+    return c.json({
+      error: 'Your login session is missing or expired.'
+    }, 401);
+  }
+
+  if (!access.ok) {
+    return c.json({ error: access.error }, access.status);
+  }
+
+  const token = parsed.data.token.trim();
+  const supabase = requireSupabase(c.env);
+
+  try {
+    if (provider === 'github') {
+      const profile = await githubRequest(token, '/user');
+
+      await saveConnection(supabase, c.env, {
+        email: parsed.data.email,
+        provider: 'github',
+        accessToken: token,
+        externalAccountId: String(profile.id || ''),
+        externalAccountName: String(profile.login || 'GitHub user'),
+        metadata: {
+          avatarUrl: profile.avatar_url || null,
+          connectionMethod: 'access_token'
+        }
+      });
+
+      return c.json({
+        connected: true,
+        provider: 'github',
+        accountName: String(profile.login || 'GitHub user')
+      });
+    }
+
+    const response = await fetch('https://api.vercel.com/v2/user', {
+      headers: {
+        Authorization: `Bearer ${token}`
+      }
+    });
+
+    const payload = await response
+      .json()
+      .catch(() => ({})) as Record<string, unknown>;
+
+    if (!response.ok) {
+      const error = payload.error as Record<string, unknown> | undefined;
+
+      throw new Error(
+        typeof error?.message === 'string'
+          ? `Vercel: ${error.message}`
+          : `Vercel rejected this token (${response.status}).`
+      );
+    }
+
+    const user = (
+      payload.user &&
+      typeof payload.user === 'object'
+        ? payload.user
+        : payload
+    ) as Record<string, unknown>;
+
+    const accountName = String(
+      user.username ||
+      user.name ||
+      user.email ||
+      'Vercel user'
+    );
+
+    await saveConnection(supabase, c.env, {
+      email: parsed.data.email,
+      provider: 'vercel',
+      accessToken: token,
+      externalAccountId: String(user.id || user.uid || ''),
+      externalAccountName: accountName,
+      metadata: {
+        teamId: null,
+        connectionMethod: 'access_token'
+      }
+    });
+
+    return c.json({
+      connected: true,
+      provider: 'vercel',
+      accountName
+    });
+  } catch (error) {
+    return c.json({
+      error:
+        error instanceof Error
+          ? error.message
+          : `Could not connect ${provider}.`
+    }, 400);
+  }
+});
+
 app.delete('/integrations/:provider', async (c) => {
   const provider = c.req.param('provider');
   if (provider !== 'github' && provider !== 'vercel') return c.json({ error: 'Unknown provider.' }, 400);
