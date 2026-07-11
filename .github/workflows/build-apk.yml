@@ -60,7 +60,7 @@ jobs:
 
           grep -n "OWNER LOGIN" apps/mobile/src/App.tsx
           grep -n "USER LOGIN" apps/mobile/src/App.tsx
-          grep -n "V4.2.*NEW BUILD" apps/mobile/src/App.tsx
+          grep -n "V4.2.*CHAT BUILD" apps/mobile/src/App.tsx
 
           grep -n ">Setup<\|Connection settings" \
             apps/mobile/src/App.tsx && exit 1 || true
