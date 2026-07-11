@@ -40,6 +40,7 @@ jobs:
         run: |
           rm -rf android
           npx cap add android
+          npx capacitor-assets generate --android
           npx cap sync android
       - name: Build APK
         working-directory: apps/mobile/android
@@ -49,5 +50,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Website-Maker-AI-V3-APK
+          name: WebForge-Ai-V4-APK
           path: apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk

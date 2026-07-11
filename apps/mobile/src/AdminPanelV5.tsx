@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
 import './admin-v6.css';
+import './webforge-minimal-light.css';
 
 type AdminMode = 'user' | 'admin-login' | 'admin-dashboard';
 
