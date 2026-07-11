@@ -790,6 +790,133 @@ app.post('/admin/users/approve', async (c) => {
   return c.json({ approved: true });
 });
 
+
+app.get('/admin/accounts', async (c) => {
+  if (!(await requireAdmin(c))) {
+    return c.json({ error: 'Admin access required.' }, 401);
+  }
+
+  const supabase = requireSupabase(c.env);
+
+  const { data, error } = await supabase
+    .from('user_accounts')
+    .select('id,username,internal_email,status,created_at,updated_at')
+    .order('created_at', { ascending: false })
+    .limit(200);
+
+  if (error) {
+    return c.json({
+      error: 'Could not load username accounts. Run migration 004 in Supabase.'
+    }, 500);
+  }
+
+  return c.json({ accounts: data || [] });
+});
+
+app.post('/admin/accounts/create', async (c) => {
+  if (!(await requireAdmin(c))) {
+    return c.json({ error: 'Admin access required.' }, 401);
+  }
+
+  const parsed = z.object({
+    username: z.string()
+      .trim()
+      .min(3)
+      .max(40)
+      .regex(/^[A-Za-z0-9._-]+$/),
+
+    password: z.string()
+      .min(8)
+      .max(200)
+  }).safeParse(await c.req.json().catch(() => null));
+
+  if (!parsed.success) {
+    return c.json({
+      error: 'Use 3–40 letters, numbers, dots, dashes or underscores. Password must be at least 8 characters.'
+    }, 400);
+  }
+
+  const supabase = requireSupabase(c.env);
+
+  const username = parsed.data.username.trim().toLowerCase();
+  const internalEmail = `${username}@users.webforge.local`;
+
+  const passwordSalt = bytesToHex(
+    crypto.getRandomValues(new Uint8Array(16))
+  );
+
+  const passwordIterations = 120000;
+
+  const passwordDigest = await passwordHash(
+    parsed.data.password,
+    passwordSalt,
+    passwordIterations
+  );
+
+  const { data: account, error: accountError } = await supabase
+    .from('user_accounts')
+    .insert({
+      username,
+      internal_email: internalEmail,
+      password_salt: passwordSalt,
+      password_hash: passwordDigest,
+      password_iterations: passwordIterations,
+      status: 'active'
+    })
+    .select('id,username,internal_email,status,created_at,updated_at')
+    .single();
+
+  if (accountError) {
+    if (
+      accountError.code === '23505' ||
+      /duplicate|unique|already/i.test(accountError.message)
+    ) {
+      return c.json({ error: 'This username already exists.' }, 409);
+    }
+
+    return c.json({
+      error: 'Could not create account. Confirm migration 004 was run in Supabase.'
+    }, 500);
+  }
+
+  const { error: accessError } = await supabase
+    .from('approved_users')
+    .upsert({
+      email: internalEmail,
+      status: 'active',
+      expires_at: null,
+      max_devices: 2,
+      daily_website_limit: 5,
+      approved_at: new Date().toISOString()
+    }, {
+      onConflict: 'email'
+    });
+
+  if (accessError) {
+    await supabase
+      .from('user_accounts')
+      .delete()
+      .eq('id', account.id);
+
+    return c.json({
+      error: 'Could not activate account access.'
+    }, 500);
+  }
+
+  await supabase.from('audit_logs').insert({
+    actor_email: adminUsername(c.env),
+    action: 'create_username_account',
+    target_type: 'user_account',
+    target_id: account.id,
+    metadata: { username }
+  });
+
+  return c.json({
+    created: true,
+    account
+  });
+});
+
 app.notFound((c) => c.json({ error: 'Route not found.' }, 404));
 app.onError((error, c) => { console.error(error); return c.json({ error: error instanceof Error ? error.message : 'Unexpected server error.' }, 500); });
 
