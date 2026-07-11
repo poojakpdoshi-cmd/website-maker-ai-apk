@@ -17,7 +17,7 @@ create table if not exists user_accounts (
   password_salt text not null,
   password_hash text not null,
 
-  password_iterations integer not null default 120000
+  password_iterations integer not null default 100000
     check (password_iterations between 60000 and 500000),
 
   status text not null default 'active'

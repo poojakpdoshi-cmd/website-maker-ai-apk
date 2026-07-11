@@ -823,7 +823,7 @@ app.post('/admin/accounts/create', async (c) => {
       .trim()
       .min(3)
       .max(40)
-      .regex(/^[A-Za-z0-9._-]+$/),
+      .regex(/^[A-Za-z0-9._ -]+$/),
 
     password: z.string()
       .min(8)
@@ -832,20 +832,24 @@ app.post('/admin/accounts/create', async (c) => {
 
   if (!parsed.success) {
     return c.json({
-      error: 'Use 3–40 letters, numbers, dots, dashes or underscores. Password must be at least 8 characters.'
+      error: 'Use 3–40 letters, numbers, spaces, dots, dashes or underscores. Password must be at least 8 characters.'
     }, 400);
   }
 
   const supabase = requireSupabase(c.env);
 
-  const username = parsed.data.username.trim().toLowerCase();
+  const username = parsed.data.username
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '.')
+    .replace(/\.{2,}/g, '.');
   const internalEmail = `${username}@users.webforge.local`;
 
   const passwordSalt = bytesToHex(
     crypto.getRandomValues(new Uint8Array(16))
   );
 
-  const passwordIterations = 120000;
+  const passwordIterations = 100000;
 
   const passwordDigest = await passwordHash(
     parsed.data.password,
