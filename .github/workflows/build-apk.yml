@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build WebForge V4.1 APK
+    name: Build WebForge V4.2 APK
     runs-on: ubuntu-latest
     timeout-minutes: 40
 
@@ -60,7 +60,7 @@ jobs:
 
           grep -n "OWNER LOGIN" apps/mobile/src/App.tsx
           grep -n "USER LOGIN" apps/mobile/src/App.tsx
-          grep -n "V4.1.*NEW BUILD" apps/mobile/src/App.tsx
+          grep -n "V4.2.*NEW BUILD" apps/mobile/src/App.tsx
 
           grep -n ">Setup<\|Connection settings" \
             apps/mobile/src/App.tsx && exit 1 || true
@@ -85,10 +85,10 @@ jobs:
           npx capacitor-assets generate --android
           npx cap sync android
 
-          sed -i 's/versionCode 1/versionCode 41/' \
+          sed -i 's/versionCode 1/versionCode 42/' \
             android/app/build.gradle
 
-          sed -i 's/versionName "1.0"/versionName "4.1.0"/' \
+          sed -i 's/versionName "1.0"/versionName "4.2.0"/' \
             android/app/build.gradle
 
           echo "===== ANDROID VERSION ====="
@@ -121,11 +121,11 @@ jobs:
 
           cp \
             app/build/outputs/apk/debug/app-debug.apk \
-            "$GITHUB_WORKSPACE/WebForge-Ai-V4.1-${SHORT_SHA}.apk"
+            "$GITHUB_WORKSPACE/WebForge-Ai-V4.2-${SHORT_SHA}.apk"
 
       - name: Upload uniquely named APK
         uses: actions/upload-artifact@v4
         with:
-          name: WebForge-Ai-V4.1-${{ github.run_number }}
-          path: WebForge-Ai-V4.1-*.apk
+          name: WebForge-Ai-V4.2-${{ github.run_number }}
+          path: WebForge-Ai-V4.2-*.apk
           if-no-files-found: error
