@@ -94,6 +94,7 @@ export default function App() {
   const [vercelToken, setVercelToken] = useState('');
   const [connectingProvider, setConnectingProvider] =
     useState<'github' | 'vercel' | null>(null);
+  const [showSetupGuide, setShowSetupGuide] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [tab, setTab] = useState<'create' | 'preview' | 'projects' | 'connect' | 'account'>('create');
@@ -198,6 +199,14 @@ export default function App() {
 
         setApproved(true);
 
+        const guideKey =
+          `webforge-token-guide-seen:${refreshed.username.toLowerCase()}`;
+
+        if (!localStorage.getItem(guideKey)) {
+          setShowSetupGuide(true);
+          setTab('connect');
+        }
+
         await Promise.all([
           loadProjects(
             refreshed.internalEmail,
@@ -293,6 +302,15 @@ export default function App() {
       });
 
       setApproved(true);
+
+      const guideKey =
+        `webforge-token-guide-seen:${data.username.toLowerCase()}`;
+
+      if (!localStorage.getItem(guideKey)) {
+        setShowSetupGuide(true);
+        setTab('connect');
+      }
+
       setPassword('');
 
       await Promise.all([
@@ -741,6 +759,103 @@ export default function App() {
         <p className="muted">
           Tokens are sent to the backend, verified, encrypted and stored for this WebForge account.
         </p>
+
+        <button
+          type="button"
+          className="refresh"
+          onClick={() => setShowSetupGuide((current) => !current)}
+        >
+          {showSetupGuide ? 'Hide setup guide' : 'Open setup guide'}
+        </button>
+
+        {showSetupGuide && (
+          <section className="panel token-setup-guide">
+            <p className="eyebrow">NEW USER SETUP</p>
+            <h2>GitHub and Vercel token setup</h2>
+
+            <p className="muted">
+              Use personal access tokens. Do not paste account passwords,
+              OAuth Client IDs or OAuth Client Secrets.
+            </p>
+
+            <article>
+              <h3>1. Create your GitHub token</h3>
+
+              <ol>
+                <li>Tap the direct GitHub button below and sign in.</li>
+                <li>Keep the description as WebForge.Ai.</li>
+                <li>Select an expiration date.</li>
+                <li>Enable the public_repo permission.</li>
+                <li>Generate and copy the token immediately.</li>
+                <li>Return to WebForge.Ai and paste it in the GitHub field.</li>
+              </ol>
+
+              <button
+                type="button"
+                onClick={() =>
+                  void Browser.open({
+                    url: 'https://github.com/settings/tokens/new?scopes=public_repo&description=WebForge.Ai'
+                  })
+                }
+              >
+                Open GitHub Token Page
+              </button>
+            </article>
+
+            <article>
+              <h3>2. Create your Vercel token</h3>
+
+              <ol>
+                <li>Tap the direct Vercel button below and sign in.</li>
+                <li>Tap Create Token.</li>
+                <li>Name the token WebForge.Ai.</li>
+                <li>Select the account where websites should deploy.</li>
+                <li>Select an expiration date and create the token.</li>
+                <li>Copy it, return here and paste it in the Vercel field.</li>
+              </ol>
+
+              <button
+                type="button"
+                onClick={() =>
+                  void Browser.open({
+                    url: 'https://vercel.com/account/settings/tokens'
+                  })
+                }
+              >
+                Open Vercel Token Page
+              </button>
+            </article>
+
+            <article>
+              <h3>3. Connect both accounts</h3>
+
+              <ol>
+                <li>Paste and connect the GitHub token.</li>
+                <li>Paste and connect the Vercel token.</li>
+                <li>Both cards must show Connected before publishing.</li>
+                <li>Never share either token with another person.</li>
+              </ol>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const accountName = (
+                    userSession?.username || email
+                  ).toLowerCase();
+
+                  localStorage.setItem(
+                    `webforge-token-guide-seen:${accountName}`,
+                    '1'
+                  );
+
+                  setShowSetupGuide(false);
+                }}
+              >
+                Got it - Continue
+              </button>
+            </article>
+          </section>
+        )}
 
         <div className="connection-grid">
           <article className={connections.github ? 'connected' : ''}>
