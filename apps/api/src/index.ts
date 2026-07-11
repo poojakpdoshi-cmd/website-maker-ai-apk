@@ -17,6 +17,16 @@ type Bindings = {
   SUPABASE_SERVICE_ROLE_KEY?: string;
   GEMINI_API_KEY?: string;
   GEMINI_MODEL?: string;
+  GROQ_API_KEY?: string;
+  GROQ_CODER_MODEL?: string;
+  GROQ_REVIEWER_MODEL?: string;
+  CLOUDFLARE_REPAIR_MODEL?: string;
+  AI?: {
+    run: (
+      model: string,
+      input: Record<string, unknown>
+    ) => Promise<unknown>;
+  };
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
   GITHUB_REDIRECT_URI?: string;
