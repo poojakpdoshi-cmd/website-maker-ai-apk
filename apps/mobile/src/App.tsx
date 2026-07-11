@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
 import { Browser } from '@capacitor/browser';
+import AdminPanelV5 from './AdminPanelV5';
 
 type RuntimeConfig = { apiBase: string; supabaseUrl: string; supabaseAnonKey: string };
 type WebsitePlan = { businessName: string; websiteType: string; tagline: string; pages: string[]; features: string[]; theme: { style: string; primary: string; secondary: string; background: string; text: string } };
@@ -8,13 +9,9 @@ type GenerateResponse = { projectId: string; jobId?: string; versionNumber?: num
 type AccessResponse = { approved: true; role: 'admin' | 'subscriber'; maxDevices: number; activeDevices: number };
 type ProjectSummary = { id: string; name: string; website_type: string; status: string; framework: string; github_repository?: string | null; production_url?: string | null; deployment_state?: string | null; created_at: string };
 type IntegrationStatus = { github: { external_account_name?: string | null } | null; vercel: { external_account_name?: string | null } | null };
-type Summary = { activeSubscribers: number; pendingPayments: number; websitesGenerated: number; failedJobs: number; activeDevices: number; deployments: number };
-type ApprovedUser = { email: string; status: string; expires_at: string | null; max_devices: number; daily_website_limit: number; created_at: string };
 
 const ownerEmail = 'poojakpdoshi@gmail.com';
 const configKey = 'wmai-runtime-config';
-const adminTokenKey = 'wmai-admin-session';
-const emptySummary: Summary = { activeSubscribers: 0, pendingPayments: 0, websitesGenerated: 0, failedJobs: 0, activeDevices: 0, deployments: 0 };
 
 function defaultConfig(): RuntimeConfig {
   return {
@@ -217,7 +214,7 @@ export default function App() {
   }
 
   if (showSetup) return <SetupScreen config={config} onSave={saveRuntimeConfig} onCancel={validConfig(config) ? () => setShowSetup(false) : undefined} error={error} />;
-  if (mode === 'admin-login' || mode === 'admin-dashboard') return <AdminArea apiBase={config.apiBase} initialMode={mode} onMode={setMode} onSetup={() => setShowSetup(true)} />;
+  if (mode === 'admin-login' || mode === 'admin-dashboard') return <AdminPanelV5 apiBase={config.apiBase} initialMode={mode} onMode={setMode} onSetup={() => setShowSetup(true)} />;
 
   if (!approved) {
     return <main className="login-shell"><section className="login-card">
@@ -231,11 +228,138 @@ export default function App() {
 
   return <main className="app-shell">
     <header><div><p className="eyebrow">WEBFORGE.AI</p><h1>Build and publish without coding</h1></div><span className="pill">APK V4</span></header>
-    <nav>{(['create', 'preview', 'projects', 'connect', 'account'] as const).map((item) => <button key={item} className={tab === item ? 'active' : ''} onClick={() => setTab(item)}>{item}</button>)}</nav>
+    <nav className="webforge-app-nav">
+      <button
+        className={tab === 'create' ? 'active' : ''}
+        onClick={() => setTab('create')}
+      >
+        Create
+      </button>
+
+      <button
+        className={tab === 'preview' ? 'active' : ''}
+        onClick={() => setTab('preview')}
+      >
+        Preview
+      </button>
+
+      <button
+        className={tab === 'projects' ? 'active my-webs-tab' : 'my-webs-tab'}
+        onClick={() => {
+          setTab('projects');
+          void loadProjects();
+        }}
+      >
+        <span>My Webs</span>
+        {projects.length > 0 && (
+          <small className="my-webs-count">
+            {projects.length}
+          </small>
+        )}
+      </button>
+
+      <button
+        className={tab === 'connect' ? 'active' : ''}
+        onClick={() => setTab('connect')}
+      >
+        Connect
+      </button>
+
+      <button
+        className={tab === 'account' ? 'active' : ''}
+        onClick={() => setTab('account')}
+      >
+        Account
+      </button>
+    </nav>
     {message && <p className="success notice-wide">{message}</p>}{error && <p className="error notice-wide" role="alert">{error}</p>}
     {tab === 'create' && <section className="panel"><p className="eyebrow">ORCHESTRATED AI BRAIN</p><h2>Describe the complete website</h2><p className="muted">Gemini assists with planning and content. The orchestrator, templates, validators, and build system remain in control.</p><div className="chips"><span>React source</span><span>Auto logo</span><span>SEO</span><span>Database form</span><span>Double validation</span><span>Vercel publish</span></div><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={10} maxLength={6000} /><p className="prompt-count">{prompt.length}/6000</p><button className="primary" onClick={generateWebsite} disabled={loading || prompt.trim().length < 20}>{loading ? 'Building project…' : 'Generate website'}</button></section>}
     {tab === 'preview' && <section className="panel preview-panel">{result ? <><div className="preview-top"><div><p className="eyebrow">LIVE PREVIEW</p><h2>{status}</h2></div><button onClick={publishWebsite} disabled={publishing || !connections.github || !connections.vercel}>{publishing ? 'Publishing…' : 'Push + deploy'}</button></div>{(!connections.github || !connections.vercel) && <p className="notice">Connect GitHub and Vercel before publishing.</p>}<iframe title="Generated website preview" sandbox="allow-forms allow-scripts allow-popups" srcDoc={result.previewHtml} /><div className="editor-box"><h3>AI website editor</h3><textarea value={editInstruction} onChange={(event) => setEditInstruction(event.target.value)} rows={4} placeholder="Change the theme, add pricing, remove a section…" /><button onClick={editWebsite} disabled={loading || !editInstruction.trim()}>{loading ? 'Applying changes…' : 'Apply edit'}</button></div></> : <div className="empty">Generate or open a project first.</div>}</section>}
-    {tab === 'projects' && <section className="panel"><p className="eyebrow">MY WEBSITES</p><h2>Saved projects</h2><div className="project-list">{projects.length ? projects.map((project) => <article key={project.id}><div><strong>{project.name}</strong><span>{project.website_type} • {project.framework} • {project.status}</span></div><div className="project-actions"><button onClick={() => void openProject(project.id)}>Open</button>{project.production_url && <a href={project.production_url} target="_blank" rel="noreferrer">Live</a>}{project.github_repository && <a href={project.github_repository} target="_blank" rel="noreferrer">GitHub</a>}</div></article>) : <div className="empty compact">No projects yet.</div>}</div></section>}
+    {tab === 'projects' && (
+      <section className="panel my-webs-panel">
+        <div className="my-webs-heading">
+          <div>
+            <p className="eyebrow">MY WEBS</p>
+            <h2>All your websites</h2>
+            <p className="muted">
+              Open, edit or visit every website created from this account.
+            </p>
+          </div>
+
+          <button
+            className="my-webs-refresh"
+            onClick={() => void loadProjects()}
+            disabled={loading}
+          >
+            {loading ? 'Loading…' : 'Refresh'}
+          </button>
+        </div>
+
+        <div className="my-webs-summary">
+          <span>Total websites</span>
+          <strong>{projects.length}</strong>
+        </div>
+
+        <div className="project-list my-webs-list">
+          {projects.length ? (
+            projects.map((project) => (
+              <article key={project.id}>
+                <div className="my-web-details">
+                  <strong>{project.name}</strong>
+
+                  <span>
+                    {project.website_type}
+                    {' • '}
+                    {project.framework}
+                    {' • '}
+                    {project.status}
+                  </span>
+
+                  {project.production_url && (
+                    <small>Live website available</small>
+                  )}
+                </div>
+
+                <div className="project-actions">
+                  <button
+                    onClick={() => void openProject(project.id)}
+                  >
+                    Open
+                  </button>
+
+                  {project.production_url && (
+                    <a
+                      href={project.production_url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      View Live
+                    </a>
+                  )}
+
+                  {project.github_repository && (
+                    <a
+                      href={project.github_repository}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      GitHub
+                    </a>
+                  )}
+                </div>
+              </article>
+            ))
+          ) : (
+            <div className="empty compact my-webs-empty">
+              <strong>No websites yet</strong>
+              <span>
+                Create your first website and it will appear here.
+              </span>
+            </div>
+          )}
+        </div>
+      </section>
+    )}
     {tab === 'connect' && <section className="panel"><p className="eyebrow">PUBLISHING ACCOUNTS</p><h2>Connect the user’s accounts</h2><div className="connection-grid"><article className={connections.github ? 'connected' : ''}><h3>GitHub</h3><p>{connections.github ? `Connected as ${connections.github.external_account_name || 'GitHub user'}` : 'Required for source repository.'}</p><button onClick={() => void connect('github')}>{connections.github ? 'Reconnect' : 'Connect GitHub'}</button></article><article className={connections.vercel ? 'connected' : ''}><h3>Vercel</h3><p>{connections.vercel ? `Connected to ${connections.vercel.external_account_name || 'Vercel'}` : 'Required for the live deployment.'}</p><button onClick={() => void connect('vercel')}>{connections.vercel ? 'Reconnect' : 'Connect Vercel'}</button></article></div><button className="refresh" onClick={refreshConnections}>Refresh connections</button></section>}
     {tab === 'account' && <section className="panel"><p className="eyebrow">ACCOUNT</p><h2>{email}</h2><div className="account-grid"><article><span>Role</span><strong>{access?.role}</strong></article><article><span>Devices</span><strong>{access?.activeDevices}/{access?.maxDevices}</strong></article><article><span>GitHub</span><strong>{connections.github ? 'Connected' : 'Not connected'}</strong></article><article><span>Vercel</span><strong>{connections.vercel ? 'Connected' : 'Not connected'}</strong></article></div>{email === ownerEmail && <button onClick={() => setMode('admin-login')}>Open Admin</button>}<button className="logout" onClick={() => void logout()}>Log out</button><button className="small-button" onClick={() => setShowSetup(true)}>Connection settings</button></section>}
     <footer>WebForge.Ai · Made by Poojak Doshi</footer>
@@ -247,47 +371,3 @@ function SetupScreen({ config, onSave, onCancel, error }: { config: RuntimeConfi
   return <main className="login-shell"><section className="login-card"><div className="brand-mark">⚙</div><p className="eyebrow">ONE-TIME APP SETUP</p><h1>Connect the APK</h1><p className="muted">Paste the public backend URL and the two public Supabase values. These can be changed later without rebuilding the APK.</p><form onSubmit={(event) => { event.preventDefault(); onSave(draft); }}><label>Backend API URL<input value={draft.apiBase} onChange={(event) => setDraft({ ...draft, apiBase: event.target.value })} placeholder="https://your-api.workers.dev" /></label><label>Supabase Project URL<input value={draft.supabaseUrl} onChange={(event) => setDraft({ ...draft, supabaseUrl: event.target.value })} placeholder="https://xxxxx.supabase.co" /></label><label>Supabase anon/public key<input value={draft.supabaseAnonKey} onChange={(event) => setDraft({ ...draft, supabaseAnonKey: event.target.value })} placeholder="eyJ..." /></label><button>Save and continue</button></form>{onCancel && <button className="small-button" onClick={onCancel}>Cancel</button>}{error && <p className="error">{error}</p>}<p className="tiny">Never paste the Supabase service-role key or Gemini key here.</p></section></main>;
 }
 
-function AdminArea({ apiBase, initialMode, onMode, onSetup }: { apiBase: string; initialMode: 'admin-login' | 'admin-dashboard'; onMode: (mode: 'user' | 'admin-login' | 'admin-dashboard') => void; onSetup: () => void }) {
-  const [username, setUsername] = useState('Poojak@King');
-  const [password, setPassword] = useState('');
-  const [adminToken, setAdminToken] = useState(() => localStorage.getItem(adminTokenKey) || '');
-  const [summary, setSummary] = useState<Summary>(emptySummary);
-  const [users, setUsers] = useState<ApprovedUser[]>([]);
-  const [newUserEmail, setNewUserEmail] = useState('');
-  const [expiresAt, setExpiresAt] = useState('');
-  const [maxDevices, setMaxDevices] = useState(2);
-  const [dailyWebsiteLimit, setDailyWebsiteLimit] = useState(1);
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('');
-
-  async function parse(response: Response) { const data = await response.json().catch(() => ({ error: 'Invalid server response.' })); if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`); return data; }
-  async function loadDashboard(activeToken = adminToken) {
-    const headers = { Authorization: `Bearer ${activeToken}` };
-    const [summaryResponse, usersResponse] = await Promise.all([fetch(`${apiBase}/admin/summary`, { headers }), fetch(`${apiBase}/admin/users`, { headers })]);
-    const [summaryData, usersData] = await Promise.all([parse(summaryResponse), parse(usersResponse)]);
-    setSummary(summaryData as Summary); setUsers((usersData as { users: ApprovedUser[] }).users || []);
-  }
-
-  useEffect(() => { if (adminToken) void loadDashboard(adminToken).then(() => onMode('admin-dashboard')).catch(() => { localStorage.removeItem(adminTokenKey); setAdminToken(''); onMode('admin-login'); }); }, []);
-
-  async function login(event: FormEvent) {
-    event.preventDefault(); setBusy(true); setMessage('');
-    try { const response = await fetch(`${apiBase}/admin/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username, password }) }); const data = await parse(response) as { token: string }; localStorage.setItem(adminTokenKey, data.token); setAdminToken(data.token); setPassword(''); await loadDashboard(data.token); onMode('admin-dashboard'); }
-    catch (loginError) { setMessage(loginError instanceof Error ? loginError.message : 'Admin login failed.'); }
-    finally { setBusy(false); }
-  }
-
-  async function approveUser(event: FormEvent) {
-    event.preventDefault(); setBusy(true); setMessage('');
-    try { const response = await fetch(`${apiBase}/admin/users/approve`, { method: 'POST', headers: { 'content-type': 'application/json', Authorization: `Bearer ${adminToken}` }, body: JSON.stringify({ userEmail: newUserEmail, expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null, maxDevices, dailyWebsiteLimit }) }); await parse(response); setNewUserEmail(''); setExpiresAt(''); setMessage('Subscriber approved.'); await loadDashboard(); }
-    catch (approveError) { setMessage(approveError instanceof Error ? approveError.message : 'Approval failed.'); }
-    finally { setBusy(false); }
-  }
-
-  async function logoutAdmin() { if (adminToken) await fetch(`${apiBase}/admin/auth/logout`, { method: 'POST', headers: { Authorization: `Bearer ${adminToken}` } }).catch(() => undefined); localStorage.removeItem(adminTokenKey); setAdminToken(''); onMode('user'); }
-
-  if (initialMode === 'admin-login' && !adminToken) return <main className="login-shell"><section className="login-card"><button className="small-button" onClick={() => onMode('user')}>Back</button><div className="brand-mark">A</div><p className="eyebrow">OWNER ACCESS</p><h1>Admin Login</h1><form onSubmit={login}><label>Username<input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" /></label><label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" /></label><button disabled={busy}>{busy ? 'Signing in…' : 'Open admin dashboard'}</button></form>{message && <p className="error">{message}</p>}<button className="small-button" onClick={onSetup}>Connection settings</button></section></main>;
-
-  const cards: Array<[string, number]> = [['Active subscribers', summary.activeSubscribers], ['Pending payments', summary.pendingPayments], ['Websites generated', summary.websitesGenerated], ['Failed jobs', summary.failedJobs], ['Active devices', summary.activeDevices], ['Deployments', summary.deployments]];
-  return <main className="app-shell"><header><div><p className="eyebrow">OWNER CONTROL CENTRE</p><h1>Admin Dashboard</h1></div><button onClick={() => void logoutAdmin()}>Exit admin</button></header>{message && <p className="success notice-wide">{message}</p>}<section className="admin-cards">{cards.map(([label, value]) => <article key={label}><span>{label}</span><strong>{value}</strong></article>)}</section><section className="panel"><h2>Approve subscriber</h2><form onSubmit={approveUser}><input type="email" value={newUserEmail} onChange={(event) => setNewUserEmail(event.target.value)} placeholder="Subscriber email" required /><input type="datetime-local" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} /><div className="two-cols"><label>Devices<input type="number" min="1" max="5" value={maxDevices} onChange={(event) => setMaxDevices(Number(event.target.value))} /></label><label>Websites/day<input type="number" min="0" max="100" value={dailyWebsiteLimit} onChange={(event) => setDailyWebsiteLimit(Number(event.target.value))} /></label></div><button disabled={busy}>Approve email</button></form></section><section className="panel"><h2>Approved users</h2><div className="project-list">{users.length ? users.map((user) => <article key={user.email}><div><strong>{user.email}</strong><span>{user.status} • {user.max_devices} devices • {user.daily_website_limit}/day</span></div><span>{user.expires_at ? new Date(user.expires_at).toLocaleString() : 'No expiry'}</span></article>) : <div className="empty compact">No approved users yet.</div>}</div></section><footer>Admin inside the APK · Made by Poojak Doshi</footer></main>;
-}

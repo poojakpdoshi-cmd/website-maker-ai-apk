@@ -373,3 +373,192 @@ footer {
     grid-template-columns: 1fr;
   }
 }
+
+/* =========================================================
+   WEBFORGE — MY WEBS
+   ========================================================= */
+
+.webforge-app-nav button {
+  position: relative;
+}
+
+.my-webs-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+
+.my-webs-count {
+  min-width: 19px;
+  height: 19px;
+
+  display: inline-grid;
+  place-items: center;
+
+  padding: 0 5px;
+
+  color: #07100d;
+  background: #7cf7c4;
+
+  border-radius: 7px;
+
+  font-size: 10px;
+  font-weight: 900;
+
+  box-shadow:
+    0 0 14px rgba(124, 247, 196, 0.22);
+}
+
+.my-webs-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.my-webs-heading h2 {
+  margin-bottom: 7px;
+}
+
+.my-webs-refresh {
+  min-width: 82px;
+  height: 40px;
+
+  padding: 0 14px;
+
+  color: #d8dee8;
+  background: #11141b;
+
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+}
+
+.my-webs-refresh:hover {
+  color: white;
+  background: #181c24;
+  border-color: rgba(124, 247, 196, 0.2);
+}
+
+.my-webs-summary {
+  min-height: 76px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  padding: 15px 17px;
+  margin-bottom: 14px;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(18, 22, 31, 0.96),
+      rgba(8, 11, 19, 0.96)
+    );
+
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 16px;
+}
+
+.my-webs-summary span {
+  color: #8993a4;
+  font-size: 12px;
+}
+
+.my-webs-summary strong {
+  color: #7cf7c4;
+  font-size: 30px;
+  letter-spacing: -0.05em;
+}
+
+.my-webs-list article {
+  min-height: 82px;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(17, 20, 28, 0.98),
+      rgba(7, 10, 17, 0.98)
+    );
+
+  border-color: rgba(255, 255, 255, 0.065);
+}
+
+.my-webs-list article:hover {
+  border-color: rgba(124, 247, 196, 0.16);
+
+  box-shadow:
+    0 12px 34px rgba(0, 0, 0, 0.18);
+}
+
+.my-web-details small {
+  color: #7cf7c4;
+  font-size: 10px;
+}
+
+.my-webs-list .project-actions button,
+.my-webs-list .project-actions a {
+  min-height: 36px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 0 12px;
+
+  color: #d9dfe8;
+  background: #131720;
+
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 11px;
+
+  font-size: 11px;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.my-webs-list .project-actions a:first-of-type {
+  color: #07100d;
+  background: #eef3f1;
+  border-color: white;
+}
+
+.my-webs-empty {
+  gap: 8px;
+  text-align: center;
+}
+
+.my-webs-empty strong {
+  color: #f4f6fa;
+}
+
+.my-webs-empty span {
+  color: #7e8798;
+  font-size: 12px;
+}
+
+@media (max-width: 600px) {
+  .my-webs-heading {
+    flex-direction: column;
+  }
+
+  .my-webs-refresh {
+    width: 100%;
+  }
+
+  .my-webs-list article {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .my-webs-list .project-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
