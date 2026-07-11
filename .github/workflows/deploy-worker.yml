@@ -2,103 +2,78 @@ name: Deploy Cloudflare Worker
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - webforge-v4-upgrade
+    paths:
+      - 'apps/api/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/deploy-worker.yml'
 
 permissions:
   contents: read
 
+concurrency:
+  group: webforge-worker-production
+  cancel-in-progress: true
+
 jobs:
   deploy:
+    name: Deploy WebForge API
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
-      - name: Checkout project
+      - name: Checkout WebForge branch
         uses: actions/checkout@v4
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
+          cache: npm
 
-      - name: Install API dependencies
-        working-directory: apps/api
-        run: npm install --no-audit --no-fund
+      - name: Install project dependencies
+        run: npm ci --no-audit --no-fund
 
       - name: Type-check backend
-        working-directory: apps/api
-        run: npm run typecheck
+        run: npm --prefix apps/api run typecheck
 
-      - name: Check required secrets
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
-          ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
-          ADMIN_PASSWORD_SALT: ${{ secrets.ADMIN_PASSWORD_SALT }}
-          ADMIN_PASSWORD_HASH: ${{ secrets.ADMIN_PASSWORD_HASH }}
-          ADMIN_PASSWORD_ITERATIONS: ${{ secrets.ADMIN_PASSWORD_ITERATIONS }}
-          TOKEN_ENCRYPTION_KEY: ${{ secrets.TOKEN_ENCRYPTION_KEY }}
-        run: |
-          for NAME in \
-          SUPABASE_URL \
-          SUPABASE_SERVICE_ROLE_KEY \
-          GEMINI_API_KEY \
-          GEMINI_MODEL \
-          ADMIN_USERNAME \
-          ADMIN_PASSWORD_SALT \
-          ADMIN_PASSWORD_HASH \
-          ADMIN_PASSWORD_ITERATIONS \
-          TOKEN_ENCRYPTION_KEY
-          do
-            if [ -z "${!NAME:-}" ]; then
-              echo "Missing GitHub secret: $NAME"
-              exit 1
-            fi
-          done
-
-      - name: Create Worker
+      - name: Deploy production Worker
         working-directory: apps/api
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx wrangler deploy
 
-      - name: Upload backend secrets
-        working-directory: apps/api
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
-          ADMIN_USERNAME: ${{ secrets.ADMIN_USERNAME }}
-          ADMIN_PASSWORD_SALT: ${{ secrets.ADMIN_PASSWORD_SALT }}
-          ADMIN_PASSWORD_HASH: ${{ secrets.ADMIN_PASSWORD_HASH }}
-          ADMIN_PASSWORD_ITERATIONS: ${{ secrets.ADMIN_PASSWORD_ITERATIONS }}
-          TOKEN_ENCRYPTION_KEY: ${{ secrets.TOKEN_ENCRYPTION_KEY }}
+      - name: Verify live Worker routes
         run: |
-          printf '%s' "$SUPABASE_URL" | npx wrangler secret put SUPABASE_URL
-          printf '%s' "$SUPABASE_SERVICE_ROLE_KEY" | npx wrangler secret put SUPABASE_SERVICE_ROLE_KEY
-          printf '%s' "$GEMINI_API_KEY" | npx wrangler secret put GEMINI_API_KEY
-          printf '%s' "$GEMINI_MODEL" | npx wrangler secret put GEMINI_MODEL
-          printf '%s' "$ADMIN_USERNAME" | npx wrangler secret put ADMIN_USERNAME
-          printf '%s' "$ADMIN_PASSWORD_SALT" | npx wrangler secret put ADMIN_PASSWORD_SALT
-          printf '%s' "$ADMIN_PASSWORD_HASH" | npx wrangler secret put ADMIN_PASSWORD_HASH
-          printf '%s' "$ADMIN_PASSWORD_ITERATIONS" | npx wrangler secret put ADMIN_PASSWORD_ITERATIONS
-          printf '%s' "$TOKEN_ENCRYPTION_KEY" | npx wrangler secret put TOKEN_ENCRYPTION_KEY
+          sleep 8
 
-      - name: Final production deployment
-        working-directory: apps/api
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          npx wrangler deploy | tee /tmp/worker-deploy.txt
+          HEALTH_CODE="$(curl -sS -o /tmp/health.json -w '%{http_code}' \
+            'https://website-maker-ai-api.poojakpdoshi.workers.dev/health')"
 
-          WORKER_URL="$(grep -Eo 'https://[^[:space:]]+\.workers\.dev' /tmp/worker-deploy.txt | tail -n 1 || true)"
+          echo "Health response:"
+          cat /tmp/health.json
+          echo
 
-          echo "## Website Maker AI Backend" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Worker URL: $WORKER_URL" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$HEALTH_CODE" != "200" ]; then
+            echo "Expected health status 200, received $HEALTH_CODE"
+            exit 1
+          fi
+
+          AUTH_CODE="$(curl -sS -o /tmp/auth.json -w '%{http_code}' \
+            'https://website-maker-ai-api.poojakpdoshi.workers.dev/auth/me')"
+
+          echo "Auth response:"
+          cat /tmp/auth.json
+          echo
+
+          if [ "$AUTH_CODE" != "401" ]; then
+            echo "Expected /auth/me status 401, received $AUTH_CODE"
+            exit 1
+          fi
+
+          echo "WebForge username authentication routes are live."
