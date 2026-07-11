@@ -5,3 +5,6 @@ workers_dev = true
 
 [vars]
 APP_NAME = "Website Maker AI"
+
+[ai]
+binding = "AI"
