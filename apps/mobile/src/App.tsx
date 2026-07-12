@@ -4,6 +4,7 @@ import { Browser } from '@capacitor/browser';
 import AdminPanelV5 from './AdminPanelV5';
 import ChatStudio, { type LiveBuildActivity } from './ChatStudio';
 
+import CmsStudio from './CmsStudio';
 type AppTheme = 'dark' | 'light' | 'system';
 type RuntimeConfig = { apiBase: string; supabaseUrl: string; supabaseAnonKey: string };
 type WebsitePlan = { businessName: string; websiteType: string; tagline: string; pages: string[]; features: string[]; theme: { style: string; primary: string; secondary: string; background: string; text: string } };
@@ -768,8 +769,7 @@ const [connections, setConnections] = useState<IntegrationStatus>({ github: null
     | 'projects'
     | 'analytics'
     | 'connect'
-    | 'account'
-  >('chat');
+    | 'account' | 'cms'>('chat');
 
 
   const [subscriptionClock, setSubscriptionClock] =
@@ -1973,6 +1973,14 @@ async function openProject(projectId: string) {
       </button>
 
       <button
+              type="button"
+              className={tab === 'cms' ? 'active' : ''}
+              onClick={() => setTab('cms')}
+            >
+              CMS
+            </button>
+
+            <button
         className={tab === 'account' ? 'active' : ''}
         onClick={() => {
           setTab('account');
@@ -2216,7 +2224,17 @@ async function openProject(projectId: string) {
 
     {tab === 'create' && <section className="panel"><p className="eyebrow">ORCHESTRATED AI BRAIN</p><h2>Describe the complete website</h2><p className="muted">Gemini assists with planning and content. The orchestrator, templates, validators, and build system remain in control.</p><div className="chips"><span>React source</span><span>Auto logo</span><span>SEO</span><span>Database form</span><span>Double validation</span><span>Vercel publish</span></div><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={10} maxLength={6000} /><p className="prompt-count">{prompt.length}/6000</p><button className="primary" onClick={() => void generateWebsite()} disabled={loading || prompt.trim().length < 20}>{loading ? 'Building project…' : 'Generate website'}</button></section>}
     {tab === 'preview' && <section className="panel preview-panel">{result ? <><div className="preview-top"><div><p className="eyebrow">LIVE PREVIEW</p><h2>{status}</h2></div><div className="preview-actions"><button onClick={() => void downloadProjectSource(result.projectId)} disabled={downloadingProjectId === result.projectId}>{downloadingProjectId === result.projectId ? 'Preparing ZIP…' : 'Download Source ZIP'}</button><button onClick={publishWebsite} disabled={publishing || !connections.github || !connections.vercel}>{publishing ? 'Publishing…' : 'Push + deploy'}</button></div></div>{(!connections.github || !connections.vercel) && <p className="notice">Connect GitHub and Vercel before publishing.</p>}<iframe title="Generated website preview" sandbox="allow-forms allow-scripts allow-popups" srcDoc={result.previewHtml} /><div className="editor-box"><h3>AI website editor</h3><textarea value={editInstruction} onChange={(event) => setEditInstruction(event.target.value)} rows={4} placeholder="Change the theme, add pricing, remove a section…" /><button onClick={editWebsite} disabled={loading || !editInstruction.trim()}>{loading ? 'Applying changes…' : 'Apply edit'}</button></div></> : <div className="empty">Generate or open a project first.</div>}</section>}
-    {tab === 'analytics' && (
+    {tab === 'cms' && (
+          <CmsStudio
+            apiBase={config.apiBase}
+            email={email}
+            token={token}
+            installationId={installationId}
+            projects={projects}
+          />
+        )}
+
+        {tab === 'analytics' && (
       <section className="panel analytics-panel">
         <div className="analytics-heading">
           <div>

@@ -1,3 +1,4 @@
+import { registerCmsRoutes } from './cms-routes';
 import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import { z } from 'zod';
@@ -2756,5 +2757,10 @@ app.delete('/admin/accounts/:id', async (c) => {
 
 app.notFound((c) => c.json({ error: 'Route not found.' }, 404));
 app.onError((error, c) => { console.error(error); return c.json({ error: error instanceof Error ? error.message : 'Unexpected server error.' }, 500); });
+
+registerCmsRoutes(app, {
+  requireUser,
+  requireSupabase
+});
 
 export default app;
