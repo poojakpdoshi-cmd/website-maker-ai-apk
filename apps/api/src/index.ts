@@ -4,6 +4,9 @@ import { z } from 'zod';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { buildWebsitePlan, reviseWebsitePlan } from '@wmai/ai-brain';
 import { buildProjectFiles, projectSlug } from '@wmai/template-engine';
+import { runCodingAgent, runReviewerAgent, runRepairAgent } from './ai-council';
+import { validateGeneratedProject } from './project-validator';
+import { parseCouncilProjectPatch, applyCouncilProjectPatch } from './council-project';
 import type { GeneratedProjectFile, WebsitePlan } from '@wmai/shared';
 
 type Bindings = {
@@ -39,7 +42,13 @@ type Bindings = {
 
 type DeviceInput = { installationId: string; deviceName?: string; androidVersion?: string };
 type AccessResult =
-  | { ok: true; role: 'admin' | 'subscriber'; maxDevices: number; activeDevices: number }
+  | {
+      ok: true;
+      role: 'admin' | 'subscriber';
+      maxDevices: number;
+      activeDevices: number;
+      subscriptionExpiresAt: string | null;
+    }
   | { ok: false; status: 403 | 409 | 503; error: string };
 
 type ConnectionRecord = {
@@ -61,7 +70,7 @@ const ADMIN_SESSION_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 const ADMIN_LOCK_WINDOW_MS = 15 * 60 * 1000;
 const ADMIN_MAX_LOGIN_ATTEMPTS = 5;
 
-const USER_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const USER_SESSION_EXPIRES_AT = '9999-12-31T23:59:59.999Z';
 
 type UserSessionIdentity = {
   id: string;
@@ -96,8 +105,7 @@ async function usernameSessionIdentity(
   if (
     error ||
     !session ||
-    session.revoked_at ||
-    new Date(session.expires_at).getTime() <= Date.now()
+    session.revoked_at
   ) {
     return null;
   }
@@ -272,7 +280,13 @@ async function checkAccess(env: Bindings, rawEmail: string, device?: DeviceInput
   const maxDevices = Number(user.max_devices || 2);
   const { count } = await supabase.from('devices').select('id', { count: 'exact', head: true }).eq('email', email).is('revoked_at', null);
   let activeDevices = count || 0;
-  if (!device) return { ok: true, role: 'subscriber', maxDevices, activeDevices };
+  if (!device) return {
+    ok: true,
+    role: 'subscriber',
+    maxDevices,
+    activeDevices,
+    subscriptionExpiresAt: user.expires_at || null
+  };
 
   const { data: existing, error: lookupError } = await supabase.from('devices').select('id,email,revoked_at').eq('installation_id', device.installationId).maybeSingle();
   if (lookupError) return { ok: false, status: 503, error: 'Could not verify this device.' };
@@ -293,7 +307,13 @@ async function checkAccess(env: Bindings, rawEmail: string, device?: DeviceInput
     if (insertError) return { ok: false, status: 503, error: 'Could not register this device.' };
     activeDevices += 1;
   }
-  return { ok: true, role: 'subscriber', maxDevices, activeDevices };
+  return {
+    ok: true,
+    role: 'subscriber',
+    maxDevices,
+    activeDevices,
+    subscriptionExpiresAt: user.expires_at || null
+  };
 }
 
 async function requireUser(c: Context<{ Bindings: Bindings }>, email: string, installationId?: string): Promise<AccessResult | null> {
@@ -576,9 +596,7 @@ app.post('/auth/login', async (c) => {
 
   const token = randomToken();
 
-  const expiresAt = new Date(
-    Date.now() + USER_SESSION_TTL_MS
-  ).toISOString();
+  const expiresAt = USER_SESSION_EXPIRES_AT;
 
   const { error: sessionError } = await supabase
     .from('user_sessions')
@@ -671,8 +689,328 @@ app.post('/auth/check-access', async (c) => {
   return c.json({ approved: true, role: access.role, maxDevices: access.maxDevices, activeDevices: access.activeDevices });
 });
 
+
+
+type CouncilReview = {
+  approved: boolean;
+  issues: string[];
+  fixes: string[];
+};
+
+function parseCouncilReview(raw: string): CouncilReview {
+  try {
+    const start = raw.indexOf('{');
+    const end = raw.lastIndexOf('}');
+
+    if (start < 0 || end <= start) {
+      throw new Error('Reviewer JSON missing.');
+    }
+
+    const parsed = JSON.parse(
+      raw.slice(start, end + 1)
+    ) as Record<string, unknown>;
+
+    return {
+      approved: parsed.approved === true,
+      issues: Array.isArray(parsed.issues)
+        ? parsed.issues
+            .filter(
+              (item): item is string =>
+                typeof item === 'string'
+            )
+            .slice(0, 20)
+        : [],
+      fixes: Array.isArray(parsed.fixes)
+        ? parsed.fixes
+            .filter(
+              (item): item is string =>
+                typeof item === 'string'
+            )
+            .slice(0, 20)
+        : []
+    };
+  } catch {
+    return {
+      approved: false,
+      issues: ['Reviewer returned invalid structured output.'],
+      fixes: [raw.slice(0, 800)]
+    };
+  }
+}
+
+function compactProjectFiles(
+  files: GeneratedProjectFile[]
+): Array<{ path: string; content: string }> {
+  let remaining = 18000;
+  const compact: Array<{
+    path: string;
+    content: string;
+  }> = [];
+
+  for (const file of files) {
+    if (remaining <= 0) break;
+
+    const content = file.content.slice(
+      0,
+      Math.min(remaining, 4500)
+    );
+
+    compact.push({
+      path: file.path,
+      content
+    });
+
+    remaining -= content.length;
+  }
+
+  return compact;
+}
+
+type GenerationEventInput = {
+  jobId: string;
+  email: string;
+  eventType: string;
+  title: string;
+  detail?: string;
+  agentName?: string;
+  progress: number;
+  jobStatus?: string;
+  filePath?: string;
+  metadata?: Record<string, unknown>;
+};
+
+async function recordGenerationEvent(
+  supabase: SupabaseClient,
+  input: GenerationEventInput
+): Promise<void> {
+  const now = new Date().toISOString();
+
+  const { error: eventError } = await supabase
+    .from('generation_job_events')
+    .insert({
+      job_id: input.jobId,
+      email: input.email,
+      event_type: input.eventType,
+      agent_name: input.agentName || null,
+      status: input.jobStatus || 'info',
+      title: input.title,
+      detail: input.detail || null,
+      progress: input.progress,
+      file_path: input.filePath || null,
+      metadata: input.metadata || {},
+      created_at: now
+    });
+
+  if (eventError) {
+    console.error('Generation event insert failed:', eventError.message);
+  }
+
+  const update: Record<string, unknown> = {
+    current_step: input.eventType,
+    current_agent: input.agentName || null,
+    progress: input.progress,
+    updated_at: now
+  };
+
+  if (input.jobStatus) {
+    update.status = input.jobStatus;
+  }
+
+  const { error: updateError } = await supabase
+    .from('generation_jobs')
+    .update(update)
+    .eq('id', input.jobId);
+
+  if (updateError) {
+    console.error('Generation job update failed:', updateError.message);
+  }
+}
+
+
+app.post('/generation-jobs/start', async (c) => {
+  const parsed = z.object({
+    email: z.string().email(),
+    installationId: z.string().uuid(),
+    prompt: z.string().min(20).max(6000),
+    image: z.object({
+      mimeType: z.string().regex(/^image\//),
+      data: z.string().min(20).max(12000000),
+      name: z.string().max(180).optional()
+    }).optional()
+  }).safeParse(await c.req.json().catch(() => null));
+
+  if (!parsed.success) {
+    return c.json({ error: 'A valid website request is required.' }, 400);
+  }
+
+  const email = parsed.data.email.toLowerCase();
+  const access = await requireUser(
+    c,
+    email,
+    parsed.data.installationId
+  );
+
+  if (!access) {
+    return c.json({
+      error: 'Your login session is missing or expired.'
+    }, 401);
+  }
+
+  if (!access.ok) {
+    return c.json({ error: access.error }, access.status);
+  }
+
+  const supabase = requireSupabase(c.env);
+  const jobId = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  const { error } = await supabase
+    .from('generation_jobs')
+    .insert({
+      id: jobId,
+      email,
+      prompt: parsed.data.prompt,
+      status: 'queued',
+      current_step: 'request_received',
+      current_agent: 'Orchestrator',
+      progress: 2,
+      workflow_mode: 'auto',
+      started_at: now,
+      updated_at: now
+    });
+
+  if (error) {
+    console.error('Job creation failed:', error.message);
+
+    return c.json({
+      error: 'Could not start the generation job.'
+    }, 500);
+  }
+
+  await recordGenerationEvent(supabase, {
+    jobId,
+    email,
+    eventType: 'request_received',
+    agentName: 'Orchestrator',
+    title: 'Request received',
+    detail: 'WebForge received the website instructions.',
+    progress: 2,
+    jobStatus: 'queued'
+  });
+
+  const authorization =
+    c.req.header('Authorization') || '';
+
+  c.executionCtx.waitUntil(
+    fetch(`${publicApiBase(c)}/generate`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        Authorization: authorization,
+        'X-Device-Id': parsed.data.installationId
+      },
+      body: JSON.stringify({
+        email,
+        installationId: parsed.data.installationId,
+        prompt: parsed.data.prompt,
+        image: parsed.data.image,
+        jobId
+      })
+    }).then(async (response) => {
+      if (!response.ok) {
+        const failure = await response.text();
+        console.error('Background generation failed:', failure);
+      }
+    }).catch((error) => {
+      console.error('Background generation request failed:', error);
+    })
+  );
+
+  return c.json({
+    jobId,
+    status: 'queued',
+    progress: 2
+  }, 202);
+});
+
+app.get('/generation-jobs/:id', async (c) => {
+  const parsed = z.object({
+    email: z.string().email(),
+    installationId: z.string().uuid()
+  }).safeParse({
+    email: c.req.query('email'),
+    installationId: c.req.header('X-Device-Id')
+  });
+
+  if (!parsed.success) {
+    return c.json({
+      error: 'Email and device identifier are required.'
+    }, 400);
+  }
+
+  const email = parsed.data.email.toLowerCase();
+  const access = await requireUser(
+    c,
+    email,
+    parsed.data.installationId
+  );
+
+  if (!access) {
+    return c.json({
+      error: 'Your login session is missing or expired.'
+    }, 401);
+  }
+
+  if (!access.ok) {
+    return c.json({ error: access.error }, access.status);
+  }
+
+  const supabase = requireSupabase(c.env);
+
+  const { data: job, error: jobError } = await supabase
+    .from('generation_jobs')
+    .select(
+      'id,project_id,status,current_step,current_agent,progress,workflow_mode,agent_states,error_message,created_at,started_at,updated_at,completed_at'
+    )
+    .eq('id', c.req.param('id'))
+    .eq('email', email)
+    .maybeSingle();
+
+  if (jobError || !job) {
+    return c.json({ error: 'Generation job not found.' }, 404);
+  }
+
+  const { data: events, error: eventsError } = await supabase
+    .from('generation_job_events')
+    .select(
+      'id,event_type,agent_name,status,title,detail,progress,file_path,metadata,created_at'
+    )
+    .eq('job_id', job.id)
+    .eq('email', email)
+    .order('created_at', { ascending: true });
+
+  if (eventsError) {
+    console.error('Job event query failed:', eventsError.message);
+  }
+
+  return c.json({
+    job,
+    events: events || []
+  });
+});
+
 app.post('/generate', async (c) => {
-  const parsed = z.object({ email: z.string().email(), installationId: z.string().uuid(), prompt: z.string().min(20).max(6000) }).safeParse(await c.req.json().catch(() => null));
+  const parsed = z.object({
+    email: z.string().email(),
+    installationId: z.string().uuid(),
+    prompt: z.string().min(20).max(6000),
+    jobId: z.string().uuid().optional(),
+    image: z.object({
+      mimeType: z.string().regex(/^image\//),
+      data: z.string().min(20).max(12000000),
+      name: z.string().max(180).optional()
+    }).optional()
+  }).safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: 'Email, device identifier and a detailed website prompt are required.' }, 400);
   const email = parsed.data.email.toLowerCase();
   const access = await requireUser(c, email, parsed.data.installationId);
@@ -686,12 +1024,90 @@ app.post('/generate', async (c) => {
   }
 
   const projectId = crypto.randomUUID();
-  const jobId = crypto.randomUUID();
-  const { error: jobError } = await supabase.from('generation_jobs').insert({ id: jobId, email, prompt: parsed.data.prompt, status: 'running', current_step: 'planning' });
-  if (jobError) return c.json({ error: 'Could not start the generation job.' }, 500);
+  const jobId = parsed.data.jobId || crypto.randomUUID();
+
+  if (parsed.data.jobId) {
+    const { data: existingJob, error: existingJobError } =
+      await supabase
+        .from('generation_jobs')
+        .select('id')
+        .eq('id', jobId)
+        .eq('email', email)
+        .maybeSingle();
+
+    if (existingJobError || !existingJob) {
+      return c.json({ error: 'Generation job not found.' }, 404);
+    }
+
+    const { error: startError } = await supabase
+      .from('generation_jobs')
+      .update({
+        status: 'running',
+        current_step: 'planning',
+        current_agent: 'Planner',
+        progress: 8,
+        started_at: new Date().toISOString()
+      })
+      .eq('id', jobId)
+      .eq('email', email);
+
+    if (startError) {
+      return c.json({ error: 'Could not start generation.' }, 500);
+    }
+  } else {
+    const { error: jobError } = await supabase
+      .from('generation_jobs')
+      .insert({
+        id: jobId,
+        email,
+        prompt: parsed.data.prompt,
+        status: 'running',
+        current_step: 'planning',
+        current_agent: 'Planner',
+        progress: 8,
+        started_at: new Date().toISOString()
+      });
+
+    if (jobError) {
+      return c.json({
+        error: 'Could not start the generation job.'
+      }, 500);
+    }
+  }
 
   try {
-    const planResult = await buildWebsitePlan(parsed.data.prompt, { apiKey: c.env.GEMINI_API_KEY, model: c.env.GEMINI_MODEL });
+    await recordGenerationEvent(supabase, {
+      jobId,
+      email,
+      eventType: 'planning',
+      agentName: 'Planner',
+      title: 'Planning website',
+      detail: 'Analysing requirements, pages, features and design direction.',
+      progress: 12,
+      jobStatus: 'running'
+    });
+
+    const planResult = await buildWebsitePlan(parsed.data.prompt, {
+      apiKey: c.env.GEMINI_API_KEY,
+      model: c.env.GEMINI_MODEL,
+      image: parsed.data.image
+        ? {
+            mimeType: parsed.data.image.mimeType,
+            data: parsed.data.image.data
+          }
+        : undefined
+    });
+
+    await recordGenerationEvent(supabase, {
+      jobId,
+      email,
+      eventType: 'plan_completed',
+      agentName: 'Planner',
+      title: 'Project plan completed',
+      detail: `${planResult.plan.businessName} • ${planResult.plan.websiteType}`,
+      progress: 32,
+      jobStatus: 'running'
+    });
     const { error: projectError } = await supabase.from('projects').insert({ id: projectId, email, name: planResult.plan.businessName, description: parsed.data.prompt, website_type: planResult.plan.websiteType, status: 'preview_ready', plan: planResult.plan, framework: 'vite-react' });
     if (projectError) throw new Error('Could not save the generated project.');
 
@@ -702,7 +1118,413 @@ app.post('/generate', async (c) => {
       formPublicKey = String(form.public_key);
     }
 
-    const generated = buildProjectFiles(planResult.plan, { formApiBase: publicApiBase(c), formPublicKey });
+    let codingBrief = '';
+
+    if (
+      c.env.GROQ_API_KEY &&
+      c.env.GROQ_CODER_MODEL
+    ) {
+      await recordGenerationEvent(supabase, {
+        jobId,
+        email,
+        eventType: 'coder_started',
+        agentName: 'Groq Coder',
+        title: 'Coder analysing project plan',
+        detail:
+          'Preparing component architecture and implementation instructions.',
+        progress: 39,
+        jobStatus: 'running'
+      });
+
+      try {
+        codingBrief = await runCodingAgent(
+          c.env,
+          JSON.stringify({
+            task: [
+              'Create improved project files as strict JSON.',
+              'Return only files that need replacing.',
+              'Use only allowed paths.',
+              'Match the plan, screenshot reference, mobile layout,',
+              'accessibility and requested interactions.'
+            ].join(' '),
+            request: parsed.data.prompt,
+            plan: planResult.plan
+          })
+        );
+
+        await recordGenerationEvent(supabase, {
+          jobId,
+          email,
+          eventType: 'coder_completed',
+          agentName: 'Groq Coder',
+          title: 'Implementation specification ready',
+          detail:
+            'The coding agent completed the project architecture.',
+          progress: 45,
+          jobStatus: 'running',
+          metadata: {
+            provider: 'groq',
+            outputPreview: codingBrief.slice(0, 1000)
+          }
+        });
+      } catch (coderError) {
+        await recordGenerationEvent(supabase, {
+          jobId,
+          email,
+          eventType: 'coder_fallback',
+          agentName: 'WebForge Builder',
+          title: 'Coder fallback activated',
+          detail:
+            coderError instanceof Error
+              ? coderError.message
+              : 'Groq Coder was unavailable.',
+          progress: 45,
+          jobStatus: 'running'
+        });
+      }
+    }
+
+    await recordGenerationEvent(supabase, {
+      jobId,
+      email,
+      eventType: 'coding',
+      agentName: 'Builder',
+      title: 'Building React project',
+      detail: 'Creating components, styles, pages and project files.',
+      progress: 48,
+      jobStatus: 'running'
+    });
+
+    let generated = buildProjectFiles(planResult.plan, {
+      formApiBase: publicApiBase(c),
+      formPublicKey
+    });
+
+    if (codingBrief) {
+      try {
+        const codingPatch =
+          parseCouncilProjectPatch(codingBrief);
+
+        generated = applyCouncilProjectPatch(
+          generated,
+          codingPatch
+        );
+
+        await recordGenerationEvent(supabase, {
+          jobId,
+          email,
+          eventType: 'coder_changes_applied',
+          agentName: 'Groq Coder',
+          title: 'Coder changes applied',
+          detail:
+            `${codingPatch.files.length} generated file(s) were upgraded.`,
+          progress: 69,
+          jobStatus: 'running',
+          metadata: {
+            files: codingPatch.files.map(
+              (file) => file.path
+            ),
+            summary: codingPatch.summary || null
+          }
+        });
+      } catch (patchError) {
+        await recordGenerationEvent(supabase, {
+          jobId,
+          email,
+          eventType: 'coder_patch_rejected',
+          agentName: 'Code Validator',
+          title: 'Unsafe coder output rejected',
+          detail:
+            patchError instanceof Error
+              ? patchError.message
+              : 'Coder output could not be applied.',
+          progress: 69,
+          jobStatus: 'running'
+        });
+      }
+    }
+
+    await recordGenerationEvent(supabase, {
+      jobId,
+      email,
+      eventType: 'files_created',
+      agentName: 'Builder',
+      title: 'Project files created',
+      detail: `${generated.files.length} files generated.`,
+      progress: 72,
+      jobStatus: 'running',
+      metadata: { fileCount: generated.files.length }
+    });
+    await recordGenerationEvent(supabase, {
+      jobId,
+      email,
+      eventType: 'deterministic_validation_started',
+      agentName: 'Code Validator',
+      title: 'Running deterministic code checks',
+      detail:
+        'Checking files, React entry points, build configuration, responsive CSS and embedded secrets.',
+      progress: 75,
+      jobStatus: 'running'
+    });
+
+    const deterministicValidation =
+      validateGeneratedProject(generated.files);
+
+    await recordGenerationEvent(supabase, {
+      jobId,
+      email,
+      eventType: deterministicValidation.passed
+        ? 'deterministic_validation_passed'
+        : 'deterministic_validation_failed',
+      agentName: 'Code Validator',
+      title: deterministicValidation.passed
+        ? 'Deterministic validation passed'
+        : 'Deterministic validation failed',
+      detail: deterministicValidation.passed
+        ? 'All required project structure and safety checks passed.'
+        : deterministicValidation.errors.join(' | ').slice(0, 1200),
+      progress: 77,
+      jobStatus: 'running',
+      metadata: {
+        checks: deterministicValidation.checks,
+        errors: deterministicValidation.errors,
+        warnings: deterministicValidation.warnings
+      }
+    });
+
+    if (!deterministicValidation.passed) {
+      throw new Error(
+        `Code validation failed: ${
+          deterministicValidation.errors.join('; ')
+        }`
+      );
+    }
+
+    if (
+      c.env.GROQ_API_KEY &&
+      c.env.GROQ_REVIEWER_MODEL
+    ) {
+      await recordGenerationEvent(supabase, {
+        jobId,
+        email,
+        eventType: 'review_started',
+        agentName: 'Groq Reviewer',
+        title: 'Reviewer checking generated project',
+        detail:
+          'Inspecting React files, imports, accessibility and mobile layout.',
+        progress: 78,
+        jobStatus: 'running'
+      });
+
+      try {
+        const reviewerOutput = await runReviewerAgent(
+          c.env,
+          JSON.stringify({
+            task: [
+              'Review this generated React project.',
+              'Return strict JSON:',
+              '{"approved":boolean,"issues":string[],"fixes":string[]}.'
+            ].join(' '),
+            request: parsed.data.prompt,
+            plan: planResult.plan,
+            codingBrief,
+            files: compactProjectFiles(generated.files)
+          })
+        );
+
+        const review = parseCouncilReview(
+          reviewerOutput
+        );
+
+        await recordGenerationEvent(supabase, {
+          jobId,
+          email,
+          eventType: review.approved
+            ? 'review_approved'
+            : 'review_issues_found',
+          agentName: 'Groq Reviewer',
+          title: review.approved
+            ? 'Independent review passed'
+            : 'Reviewer found issues',
+          detail: review.approved
+            ? 'No blocking problems were reported.'
+            : `${review.issues.length} issue(s) require repair.`,
+          progress: 84,
+          jobStatus: 'running',
+          metadata: {
+            approved: review.approved,
+            issues: review.issues,
+            fixes: review.fixes
+          }
+        });
+
+        if (!review.approved) {
+          if (
+            !c.env.AI ||
+            !c.env.CLOUDFLARE_REPAIR_MODEL
+          ) {
+            throw new Error(
+              'Repair validation failed: reviewer found issues but the repair agent is unavailable.'
+            );
+          }
+
+          await recordGenerationEvent(supabase, {
+            jobId,
+            email,
+            eventType: 'repair_started',
+            agentName: 'Cloudflare Repair',
+            title: 'Repair agent working',
+            detail:
+              'Correcting the reviewer findings in the project files.',
+            progress: 87,
+            jobStatus: 'running'
+          });
+
+          let repairOutput: string;
+
+          try {
+            repairOutput = await runRepairAgent(
+              c.env,
+              JSON.stringify({
+                task: [
+                  'Return strict JSON containing corrected files.',
+                  'Use only the allowed file paths.',
+                  'Fix every reviewer issue without breaking',
+                  'working project behaviour.'
+                ].join(' '),
+                review,
+                files: compactProjectFiles(generated.files)
+              })
+            );
+          } catch (repairError) {
+            throw new Error(
+              `Repair validation failed: ${
+                repairError instanceof Error
+                  ? repairError.message
+                  : 'Repair agent failed.'
+              }`
+            );
+          }
+
+          const repairPatch =
+            parseCouncilProjectPatch(repairOutput);
+
+          generated = applyCouncilProjectPatch(
+            generated,
+            repairPatch
+          );
+
+          const repairedValidation =
+            validateGeneratedProject(generated.files);
+
+          if (!repairedValidation.passed) {
+            throw new Error(
+              `Repair validation failed: ${
+                repairedValidation.errors.join('; ')
+              }`
+            );
+          }
+
+          await recordGenerationEvent(supabase, {
+            jobId,
+            email,
+            eventType: 'final_review_started',
+            agentName: 'Groq Reviewer',
+            title: 'Running final independent review',
+            detail:
+              'Rechecking repaired files before the project is saved.',
+            progress: 92,
+            jobStatus: 'running'
+          });
+
+          const finalReviewOutput =
+            await runReviewerAgent(
+              c.env,
+              JSON.stringify({
+                task: [
+                  'Perform the final review of this repaired React project.',
+                  'Return strict JSON:',
+                  '{"approved":boolean,"issues":string[],"fixes":string[]}.',
+                  'Approve only when there are no blocking errors.'
+                ].join(' '),
+                request: parsed.data.prompt,
+                plan: planResult.plan,
+                files: compactProjectFiles(generated.files)
+              })
+            );
+
+          const finalReview =
+            parseCouncilReview(finalReviewOutput);
+
+          if (!finalReview.approved) {
+            throw new Error(
+              `Repair validation failed: final reviewer rejected the project: ${
+                finalReview.issues.join('; ') ||
+                'Unknown reviewer issue.'
+              }`
+            );
+          }
+
+          await recordGenerationEvent(supabase, {
+            jobId,
+            email,
+            eventType: 'final_review_passed',
+            agentName: 'Groq Reviewer',
+            title: 'Final independent review passed',
+            detail:
+              'The repaired project passed both code validation and AI review.',
+            progress: 94,
+            jobStatus: 'running',
+            metadata: {
+              issues: finalReview.issues,
+              fixes: finalReview.fixes
+            }
+          });
+
+          await recordGenerationEvent(supabase, {
+            jobId,
+            email,
+            eventType: 'repair_completed',
+            agentName: 'Cloudflare Repair',
+            title: 'Project repaired and validated',
+            detail:
+              `${repairPatch.files.length} corrected file(s) passed validation.`,
+            progress: 90,
+            jobStatus: 'running',
+            metadata: {
+              files: repairPatch.files.map(
+                (file) => file.path
+              ),
+              checks: repairedValidation.checks
+            }
+          });
+        }
+      } catch (reviewError) {
+        if (
+          reviewError instanceof Error &&
+          reviewError.message.startsWith(
+            'Repair validation failed:'
+          )
+        ) {
+          throw reviewError;
+        }
+
+        await recordGenerationEvent(supabase, {
+          jobId,
+          email,
+          eventType: 'review_fallback',
+          agentName: 'WebForge Validator',
+          title: 'Reviewer fallback activated',
+          detail:
+            reviewError instanceof Error
+              ? reviewError.message
+              : 'Independent reviewer was unavailable.',
+          progress: 86,
+          jobStatus: 'running'
+        });
+      }
+    }
+
     const { error: versionError } = await supabase.from('project_versions').insert({
       project_id: projectId,
       version_number: 1,
@@ -712,10 +1534,62 @@ app.post('/generate', async (c) => {
       preview_html: generated.previewHtml
     });
     if (versionError) throw new Error('Could not save the first project version.');
-    await supabase.from('generation_jobs').update({ project_id: projectId, status: 'completed', current_step: 'preview_ready', output_plan: planResult.plan, completed_at: new Date().toISOString() }).eq('id', jobId);
+
+    await recordGenerationEvent(supabase, {
+      jobId,
+      email,
+      eventType: 'validation',
+      agentName: 'Validator',
+      title: 'Validating generated project',
+      detail: 'Checking project structure, preview and saved version.',
+      progress: 88,
+      jobStatus: 'running'
+    });
+
+    await supabase.from('generation_jobs').update({
+      project_id: projectId,
+      status: 'completed',
+      current_step: 'preview_ready',
+      current_agent: null,
+      progress: 100,
+      output_plan: planResult.plan,
+      completed_at: new Date().toISOString()
+    }).eq('id', jobId);
+
+    await recordGenerationEvent(supabase, {
+      jobId,
+      email,
+      eventType: 'completed',
+      agentName: 'WebForge Council',
+      title: 'Website ready',
+      detail: 'The React project and preview are ready.',
+      progress: 100,
+      jobStatus: 'completed',
+      metadata: { projectId }
+    });
     return c.json({ projectId, jobId, plan: planResult.plan, previewHtml: generated.previewHtml, framework: generated.framework, fileCount: generated.files.length, mode: planResult.mode });
   } catch (error) {
-    await supabase.from('generation_jobs').update({ status: 'failed', current_step: 'failed', error_message: error instanceof Error ? error.message : 'Generation failed', completed_at: new Date().toISOString() }).eq('id', jobId);
+    const failureMessage =
+      error instanceof Error ? error.message : 'Generation failed';
+
+    await recordGenerationEvent(supabase, {
+      jobId,
+      email,
+      eventType: 'failed',
+      agentName: 'WebForge Council',
+      title: 'Generation failed',
+      detail: failureMessage,
+      progress: 100,
+      jobStatus: 'failed'
+    });
+
+    await supabase.from('generation_jobs').update({
+      status: 'failed',
+      current_step: 'failed',
+      current_agent: null,
+      error_message: failureMessage,
+      completed_at: new Date().toISOString()
+    }).eq('id', jobId);
     return c.json({ error: error instanceof Error ? error.message : 'Generation failed.' }, 500);
   }
 });
@@ -833,6 +1707,133 @@ app.post('/projects/:id/publish', async (c) => {
   }
 });
 
+
+app.get('/projects/:id/source', async (c) => {
+  const parsed = z.object({
+    projectId: z.string().uuid(),
+    email: z.string().email(),
+    installationId: z.string().uuid()
+  }).safeParse({
+    projectId: c.req.param('id'),
+    email: c.req.query('email'),
+    installationId: c.req.header('X-Device-Id')
+  });
+
+  if (!parsed.success) {
+    return c.json({
+      error: 'Valid project, email and device identifiers are required.'
+    }, 400);
+  }
+
+  const email = parsed.data.email.toLowerCase();
+
+  const access = await requireUser(
+    c,
+    email,
+    parsed.data.installationId
+  );
+
+  if (!access) {
+    return c.json({
+      error: 'Your login session is missing or expired.'
+    }, 401);
+  }
+
+  if (!access.ok) {
+    return c.json({
+      error: access.error
+    }, access.status);
+  }
+
+  const supabase = requireSupabase(c.env);
+
+  const { data: project, error: projectError } =
+    await supabase
+      .from('projects')
+      .select('id,name,email')
+      .eq('id', parsed.data.projectId)
+      .eq('email', email)
+      .maybeSingle();
+
+  if (projectError || !project) {
+    return c.json({
+      error: 'Project was not found.'
+    }, 404);
+  }
+
+  const { data: version, error: versionError } =
+    await supabase
+      .from('project_versions')
+      .select('generated_files,version_number')
+      .eq('project_id', project.id)
+      .order('version_number', {
+        ascending: false
+      })
+      .limit(1)
+      .maybeSingle();
+
+  if (versionError || !version) {
+    return c.json({
+      error: 'Project source files are unavailable.'
+    }, 404);
+  }
+
+  const rawFiles = Array.isArray(
+    version.generated_files
+  )
+    ? version.generated_files
+    : [];
+
+  const files = rawFiles
+    .filter((item): item is {
+      path: string;
+      content: string;
+    } => {
+      if (!item || typeof item !== 'object') {
+        return false;
+      }
+
+      const file = item as Record<string, unknown>;
+
+      return (
+        typeof file.path === 'string' &&
+        typeof file.content === 'string' &&
+        file.path.length > 0 &&
+        !file.path.startsWith('/') &&
+        !file.path.includes('..') &&
+        !file.path.includes('\\')
+      );
+    })
+    .slice(0, 200);
+
+  const totalCharacters = files.reduce(
+    (total, file) =>
+      total + file.path.length + file.content.length,
+    0
+  );
+
+  if (!files.length) {
+    return c.json({
+      error: 'No downloadable source files were found.'
+    }, 404);
+  }
+
+  if (totalCharacters > 5000000) {
+    return c.json({
+      error: 'Project source is too large to download.'
+    }, 413);
+  }
+
+  return c.json({
+    projectId: project.id,
+    projectName: project.name || 'webforge-project',
+    versionNumber: Number(
+      version.version_number || 1
+    ),
+    files
+  });
+});
+
 app.get('/projects/:id/deployment-status', async (c) => {
   const parsed = z.object({ email: z.string().email(), installationId: z.string().uuid() }).safeParse({ email: c.req.query('email'), installationId: c.req.header('X-Device-Id') });
   if (!parsed.success) return c.json({ error: 'Email and device identifier are required.' }, 400);
@@ -875,6 +1876,322 @@ app.post('/public/forms/:key/submit', async (c) => {
   const { error } = await supabase.from('form_submissions').insert({ form_id: form.id, payload, ip_hash: bytesToBase64(new Uint8Array(hash)) });
   if (error) return c.json({ error: 'Could not save the form submission.' }, 500);
   return c.json({ received: true });
+});
+
+
+
+app.get('/usage', async (c) => {
+  const parsed = z.object({
+    email: z.string().email(),
+    installationId: z.string().uuid()
+  }).safeParse({
+    email: c.req.query('email'),
+    installationId: c.req.header('X-Device-Id')
+  });
+
+  if (!parsed.success) {
+    return c.json({
+      error: 'Email and device identifier are required.'
+    }, 400);
+  }
+
+  const email = parsed.data.email.toLowerCase();
+
+  const access = await requireUser(
+    c,
+    email,
+    parsed.data.installationId
+  );
+
+  if (!access) {
+    return c.json({
+      error: 'Your login session is missing or expired.'
+    }, 401);
+  }
+
+  if (!access.ok) {
+    return c.json({
+      error: access.error
+    }, access.status);
+  }
+
+  const supabase = requireSupabase(c.env);
+
+  const start = new Date();
+  start.setUTCHours(0, 0, 0, 0);
+
+  const resetAt = new Date(start);
+  resetAt.setUTCDate(resetAt.getUTCDate() + 1);
+
+  const [{ data: user }, { count, error: usageError }] =
+    await Promise.all([
+      supabase
+        .from('approved_users')
+        .select('daily_website_limit')
+        .eq('email', email)
+        .maybeSingle(),
+
+      supabase
+        .from('generation_jobs')
+        .select('id', {
+          count: 'exact',
+          head: true
+        })
+        .eq('email', email)
+        .gte('created_at', start.toISOString())
+    ]);
+
+  if (usageError) {
+    return c.json({
+      error: 'Could not load daily usage.'
+    }, 500);
+  }
+
+  const used = count || 0;
+  const unlimited = access.role === 'admin';
+  const limit = Math.max(
+    1,
+    Number(user?.daily_website_limit || 1)
+  );
+
+  return c.json({
+    used,
+    limit,
+    unlimited,
+    remaining: unlimited
+      ? null
+      : Math.max(0, limit - used),
+    percentage: unlimited
+      ? 0
+      : Math.min(
+          100,
+          Math.round((used / limit) * 100)
+        ),
+    resetAt: resetAt.toISOString()
+  });
+});
+
+app.get('/analytics', async (c) => {
+  const parsed = z.object({
+    email: z.string().email(),
+    installationId: z.string().uuid()
+  }).safeParse({
+    email: c.req.query('email'),
+    installationId: c.req.header('X-Device-Id')
+  });
+
+  if (!parsed.success) {
+    return c.json({
+      error: 'Email and device identifier are required.'
+    }, 400);
+  }
+
+  const email = parsed.data.email.toLowerCase();
+
+  const access = await requireUser(
+    c,
+    email,
+    parsed.data.installationId
+  );
+
+  if (!access) {
+    return c.json({
+      error: 'Your login session is missing or expired.'
+    }, 401);
+  }
+
+  if (!access.ok) {
+    return c.json({
+      error: access.error
+    }, access.status);
+  }
+
+  const supabase = requireSupabase(c.env);
+
+  const [
+    projectsResult,
+    jobsResult,
+    formsResult
+  ] = await Promise.all([
+    supabase
+      .from('projects')
+      .select(
+        'id,name,website_type,status,production_url,created_at'
+      )
+      .eq('email', email)
+      .order('created_at', { ascending: false })
+      .limit(500),
+
+    supabase
+      .from('generation_jobs')
+      .select('id,status,created_at')
+      .eq('email', email)
+      .order('created_at', { ascending: false })
+      .limit(1000),
+
+    supabase
+      .from('website_forms')
+      .select('id,project_id')
+      .in(
+        'project_id',
+        (
+          await supabase
+            .from('projects')
+            .select('id')
+            .eq('email', email)
+            .limit(500)
+        ).data?.map((project) => project.id) || []
+      )
+  ]);
+
+  if (projectsResult.error || jobsResult.error) {
+    return c.json({
+      error: 'Could not load analytics.'
+    }, 500);
+  }
+
+  const projects = projectsResult.data || [];
+  const jobs = jobsResult.data || [];
+  const forms = formsResult.data || [];
+
+  let enquiries = 0;
+
+  if (forms.length > 0) {
+    const formIds = forms.map((form) => form.id);
+
+    const { count } = await supabase
+      .from('form_submissions')
+      .select('id', {
+        count: 'exact',
+        head: true
+      })
+      .in('form_id', formIds);
+
+    enquiries = count || 0;
+  }
+
+  const completedStatuses = new Set([
+    'completed',
+    'success',
+    'preview_ready'
+  ]);
+
+  const failedStatuses = new Set([
+    'failed',
+    'cancelled',
+    'error'
+  ]);
+
+  const completedBuilds = jobs.filter(
+    (job) =>
+      completedStatuses.has(
+        String(job.status || '').toLowerCase()
+      )
+  ).length;
+
+  const failedBuilds = jobs.filter(
+    (job) =>
+      failedStatuses.has(
+        String(job.status || '').toLowerCase()
+      )
+  ).length;
+
+  const finishedBuilds =
+    completedBuilds + failedBuilds;
+
+  const successRate =
+    finishedBuilds > 0
+      ? Math.round(
+          (completedBuilds / finishedBuilds) * 100
+        )
+      : 0;
+
+  const liveWebsites = projects.filter(
+    (project) =>
+      typeof project.production_url === 'string' &&
+      project.production_url.length > 0
+  ).length;
+
+  const startToday = new Date();
+  startToday.setUTCHours(0, 0, 0, 0);
+
+  const buildsToday = jobs.filter(
+    (job) =>
+      new Date(job.created_at).getTime() >=
+      startToday.getTime()
+  ).length;
+
+  const dailyBuilds: Array<{
+    date: string;
+    label: string;
+    count: number;
+  }> = [];
+
+  for (let offset = 6; offset >= 0; offset -= 1) {
+    const day = new Date();
+    day.setUTCHours(0, 0, 0, 0);
+    day.setUTCDate(day.getUTCDate() - offset);
+
+    const nextDay = new Date(day);
+    nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+
+    dailyBuilds.push({
+      date: day.toISOString().slice(0, 10),
+      label: day.toLocaleDateString('en', {
+        weekday: 'short',
+        timeZone: 'UTC'
+      }),
+      count: jobs.filter((job) => {
+        const created = new Date(
+          job.created_at
+        ).getTime();
+
+        return (
+          created >= day.getTime() &&
+          created < nextDay.getTime()
+        );
+      }).length
+    });
+  }
+
+  const websiteTypes = new Map<string, number>();
+
+  for (const project of projects) {
+    const type =
+      String(project.website_type || 'Other').trim() ||
+      'Other';
+
+    websiteTypes.set(
+      type,
+      (websiteTypes.get(type) || 0) + 1
+    );
+  }
+
+  const topWebsiteTypes = [...websiteTypes.entries()]
+    .map(([name, count]) => ({
+      name,
+      count
+    }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  return c.json({
+    totalWebsites: projects.length,
+    liveWebsites,
+    draftWebsites: Math.max(
+      0,
+      projects.length - liveWebsites
+    ),
+    totalBuilds: jobs.length,
+    completedBuilds,
+    failedBuilds,
+    successRate,
+    buildsToday,
+    enquiries,
+    dailyBuilds,
+    topWebsiteTypes,
+    recentProjects: projects.slice(0, 5)
+  });
 });
 
 app.get('/integrations/status', async (c) => {

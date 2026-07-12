@@ -17,63 +17,50 @@ type WorkspaceTab =
   | 'connect'
   | 'account';
 
-export type LiveBuildActivity = {
-  jobId: string;
-  status: string;
-  progress: number;
-  currentAgent?: string | null;
-  currentStep?: string | null;
-  events: Array<{
-    id: number;
-    agent_name?: string | null;
-    status: string;
-    title: string;
-    detail?: string | null;
-    progress?: number | null;
-    created_at: string;
-  }>;
-};
-
-type Props = {
+type ChatStudioProps = {
   busy: boolean;
-  activity?: LiveBuildActivity | null;
-  onGenerate: (
-    prompt: string,
-    image?: {
-      name: string;
-      dataUrl: string;
-    } | null
-  ) => Promise<ChatResult>;
+  onGenerate: (prompt: string) => Promise<ChatResult>;
   onOpenPreview: () => void;
   onNavigate: (tab: WorkspaceTab) => void;
 };
 
-type Message = {
+type ChatMessage = {
   id: string;
   role: 'assistant' | 'user';
   text: string;
 };
 
-const starters = [
-  'Build a premium modern business website',
-  'Create a complete ecommerce website with cart',
-  'Design a cinematic 3D animated website',
-  'Build a professional analytics dashboard'
+const starterPrompts = [
+  {
+    title: 'Premium business site',
+    text: 'Build a premium modern website for my business'
+  },
+  {
+    title: 'E-commerce store',
+    text: 'Create a complete ecommerce website with products and cart'
+  },
+  {
+    title: '3D experience',
+    text: 'Design a cinematic 3D animated website with mobile fallback'
+  },
+  {
+    title: 'Dashboard',
+    text: 'Build a professional SaaS dashboard with analytics'
+  }
 ];
 
-function makeId(): string {
+function messageId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 export default function ChatStudio({
   busy,
-  activity,
   onGenerate,
   onOpenPreview,
   onNavigate
-}: Props) {
-  const fileRef = useRef<HTMLInputElement | null>(null);
-  const endRef = useRef<HTMLDivElement | null>(null);
+}: ChatStudioProps) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const threadEndRef = useRef<HTMLDivElement | null>(null);
 
   const [draft, setDraft] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
@@ -85,16 +72,16 @@ export default function ChatStudio({
     dataUrl: string;
   } | null>(null);
 
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({
+    threadEndRef.current?.scrollIntoView({
       behavior: 'smooth',
       block: 'end'
     });
   }, [messages, busy]);
 
-  function newChat(): void {
+  function newChat() {
     if (busy) return;
 
     setMessages([]);
@@ -103,7 +90,11 @@ export default function ChatStudio({
     setMenuOpen(false);
   }
 
-  function selectImage(event: ChangeEvent<HTMLInputElement>): void {
+  function chooseStarter(value: string) {
+    setDraft(value);
+  }
+
+  function handleImage(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
 
     if (!file) return;
@@ -112,21 +103,21 @@ export default function ChatStudio({
       setMessages((current) => [
         ...current,
         {
-          id: makeId(),
+          id: messageId(),
           role: 'assistant',
-          text: 'Please select a valid image.'
+          text: 'Please select a valid image file.'
         }
       ]);
       return;
     }
 
-    if (file.size > 4 * 1024 * 1024) {
+    if (file.size > 8 * 1024 * 1024) {
       setMessages((current) => [
         ...current,
         {
-          id: makeId(),
+          id: messageId(),
           role: 'assistant',
-          text: 'The image must be smaller than 4 MB.'
+          text: 'The selected image must be smaller than 8 MB.'
         }
       ]);
       return;
@@ -145,7 +136,7 @@ export default function ChatStudio({
     event.target.value = '';
   }
 
-  async function submit(event: FormEvent): Promise<void> {
+  async function submitMessage(event: FormEvent) {
     event.preventDefault();
 
     const request = draft.trim();
@@ -157,10 +148,10 @@ export default function ChatStudio({
     setMessages((current) => [
       ...current,
       {
-        id: makeId(),
+        id: messageId(),
         role: 'user',
-        text: image
-          ? `${request}\n\nAttached: ${image.name}`
+        text: attachedImage
+          ? `${request}\n\nAttached: ${attachedImage.name}`
           : request
       }
     ]);
@@ -168,10 +159,7 @@ export default function ChatStudio({
     setDraft('');
     setImage(null);
 
-    const generated = await onGenerate(
-      request,
-      attachedImage
-    );
+    const generated = await onGenerate(request);
 
     if (generated) {
       setHasProject(true);
@@ -180,10 +168,10 @@ export default function ChatStudio({
     setMessages((current) => [
       ...current,
       {
-        id: makeId(),
+        id: messageId(),
         role: 'assistant',
         text: generated
-          ? `${generated.projectName} is ready. The project was generated and validated.`
+          ? `${generated.projectName} is ready. The project has been generated and validated.`
           : 'The build could not be completed. Check the error and try again.'
       }
     ]);
@@ -196,7 +184,7 @@ export default function ChatStudio({
           type="button"
           className="claude-menu-button"
           onClick={() => setMenuOpen(true)}
-          aria-label="Open menu"
+          aria-label="Open workspace menu"
         >
           <span />
           <span />
@@ -221,21 +209,175 @@ export default function ChatStudio({
       </header>
 
       <div
-        className={
-          menuOpen
-            ? 'claude-drawer-backdrop open'
-            : 'claude-drawer-backdrop'
-        }
+        className={`claude-drawer-backdrop ${
+          menuOpen ? 'open' : ''
+        }`}
         onClick={() => setMenuOpen(false)}
       />
 
-      <aside
-        className={
-          menuOpen
-            ? 'claude-drawer open'
-            : 'claude-drawer'
-        }
-      >
+      <aside className={`claude-drawer ${menuOpen ? 'open' : ''}`}>
+        <div className="claude-drawer-header">
+          <div className="claude-brand">
+            <div className="claude-brand-icon">W</div>
+
+            <div>
+              <strong>WebForge.Ai</strong>
+              <small>Workspace</small>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setMenuOpen(false)}
+            aria-label="Close menu"
+          >
+            ×
+          </button>
+        </div>
+
+        <button
+          type="button"
+          className="claude-new-chat"
+          onClick={newChat}
+          disabled={busy}
+        >
+          <span>＋</span>
+          New chat
+        </button>
+
+        <nav className="claude-drawer-nav">
+          <button type="button" onClick={newChat}>
+            <span>◌</span>
+            Chat
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate('projects')}
+          >
+            <span>◇</span>
+            My websites
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate('preview')}
+          >
+            <span>▣</span>
+            Latest preview
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate('create')}
+          >
+            <span>＋</span>
+            Advanced create
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate('connect')}
+          >
+            <span>↗</span>
+            Connections
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigate('account')}
+          >
+            <span>○</span>
+            Account
+          </button>
+        </nav>
+
+        <div className="claude-drawer-footer">
+          <strong>WebForge.Ai</strong>
+          <span>Made by Poojak Doshi</span>
+        </div>
+      </aside>
+
+  async function submitMessage(event: FormEvent) {
+    event.preventDefault();
+
+    const request = draft.trim();
+
+    if (busy || request.length < 20) return;
+
+    const attachedImage = image;
+
+    setMessages((current) => [
+      ...current,
+      {
+        id: messageId(),
+        role: 'user',
+        text: attachedImage
+          ? `${request}\n\nAttached: ${attachedImage.name}`
+          : request
+      }
+    ]);
+
+    setDraft('');
+    setImage(null);
+
+    const generated = await onGenerate(request);
+
+    if (generated) {
+      setHasProject(true);
+    }
+
+    setMessages((current) => [
+      ...current,
+      {
+        id: messageId(),
+        role: 'assistant',
+        text: generated
+          ? `${generated.projectName} is ready. The project has been generated and validated.`
+          : 'The build could not be completed. Check the error and try again.'
+      }
+    ]);
+  }
+
+  return (
+    <section className="chat-studio claude-workspace">
+      <header className="claude-topbar">
+        <button
+          type="button"
+          className="claude-menu-button"
+          onClick={() => setMenuOpen(true)}
+          aria-label="Open workspace menu"
+        >
+          <span />
+          <span />
+        </button>
+
+        <div className="claude-brand">
+          <div className="claude-brand-icon">W</div>
+
+          <div>
+            <strong>WebForge</strong>
+            <small>AI website builder</small>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          className="claude-mode-pill"
+        >
+          Council mode
+          <span>⌄</span>
+        </button>
+      </header>
+
+      <div
+        className={`claude-drawer-backdrop ${
+          menuOpen ? 'open' : ''
+        }`}
+        onClick={() => setMenuOpen(false)}
+      />
+
+      <aside className={`claude-drawer ${menuOpen ? 'open' : ''}`}>
         <div className="claude-drawer-header">
           <div className="claude-brand">
             <div className="claude-brand-icon">W</div>
@@ -320,11 +462,9 @@ export default function ChatStudio({
 
       <main className="claude-chat-main">
         <div
-          className={
-            messages.length === 0
-              ? 'claude-chat-scroll empty-chat'
-              : 'claude-chat-scroll'
-          }
+          className={`claude-chat-scroll ${
+            messages.length === 0 ? 'empty-chat' : ''
+          }`}
           aria-live="polite"
         >
           {messages.length === 0 ? (
@@ -340,18 +480,19 @@ export default function ChatStudio({
               </h1>
 
               <span className="claude-welcome-copy">
-                Describe your idea and WebForge will plan,
-                design, code, review and validate it.
+                Describe your idea and WebForge will plan, design,
+                code, review and validate it.
               </span>
 
               <div className="claude-starters">
-                {starters.map((starter) => (
+                {starterPrompts.map((starter) => (
                   <button
-                    key={starter}
+                    key={starter.title}
                     type="button"
-                    onClick={() => setDraft(starter)}
+                    onClick={() => chooseStarter(starter.text)}
                   >
-                    {starter}
+                    <strong>{starter.title}</strong>
+                    <span>{starter.text}</span>
                   </button>
                 ))}
               </div>
@@ -391,16 +532,15 @@ export default function ChatStudio({
 
                   <div>
                     <strong>
-                      {activity?.currentAgent || 'WebForge Council'} is working
+                      WebForge Council is working
                     </strong>
 
                     <p>
-                      {activity?.events.at(-1)?.detail ||
-                        'Planning, coding and validating your project'}
+                      Planning, generating and validating your project
                     </p>
 
                     <small>
-                      Tap to open Live Build Room
+                      Tap to view build activity
                     </small>
                   </div>
 
@@ -410,7 +550,7 @@ export default function ChatStudio({
                 </button>
               )}
 
-              <div ref={endRef} />
+              <div ref={threadEndRef} />
             </div>
           )}
         </div>
@@ -429,11 +569,12 @@ export default function ChatStudio({
 
           <form
             className="claude-composer"
-            onSubmit={submit}
+            onSubmit={submitMessage}
           >
             {image && (
               <div className="claude-image-preview">
                 <img src={image.dataUrl} alt="" />
+
                 <span>{image.name}</span>
 
                 <button
@@ -448,9 +589,7 @@ export default function ChatStudio({
 
             <textarea
               value={draft}
-              onChange={(event) =>
-                setDraft(event.target.value)
-              }
+              onChange={(event) => setDraft(event.target.value)}
               rows={1}
               maxLength={6000}
               placeholder="Message WebForge..."
@@ -473,7 +612,7 @@ export default function ChatStudio({
                 <button
                   type="button"
                   className="claude-add-button"
-                  onClick={() => fileRef.current?.click()}
+                  onClick={() => fileInputRef.current?.click()}
                   disabled={busy}
                   aria-label="Attach image"
                 >
@@ -481,17 +620,17 @@ export default function ChatStudio({
                 </button>
 
                 <input
-                  ref={fileRef}
+                  ref={fileInputRef}
                   className="chat-file-input"
                   type="file"
                   accept="image/*"
-                  onChange={selectImage}
+                  onChange={handleImage}
                 />
 
                 <button
                   type="button"
                   className="claude-tool-label"
-                  onClick={() => fileRef.current?.click()}
+                  onClick={() => fileInputRef.current?.click()}
                   disabled={busy}
                 >
                   Add image
@@ -501,9 +640,7 @@ export default function ChatStudio({
               <button
                 type="submit"
                 className="claude-send-button"
-                disabled={
-                  busy || draft.trim().length < 20
-                }
+                disabled={busy || draft.trim().length < 20}
                 aria-label="Send message"
               >
                 {busy ? (
@@ -548,84 +685,52 @@ export default function ChatStudio({
 
               <div>
                 <strong>
-                  {activity?.currentAgent || 'WebForge Council'} is working
+                  WebForge Council is working
                 </strong>
+
                 <span>
-                  {activity?.events.at(-1)?.detail ||
-                    'Your project is being processed by the agents.'}
+                  Your request is being processed by the backend.
                 </span>
               </div>
             </div>
 
             <div className="claude-progress-track">
-              <span
-                style={{
-                  width: `${Math.max(2, activity?.progress || 2)}%`,
-                  animation: activity ? 'none' : undefined
-                }}
-              />
+              <span />
             </div>
 
-            <p className="claude-live-progress-label">
-              {activity?.progress || 2}% complete
-            </p>
-
             <div className="claude-build-timeline">
-              {activity?.events.length ? (
-                activity.events.map((event, index) => {
-                  const isLast =
-                    index === activity.events.length - 1;
+              <article className="complete">
+                <span>✓</span>
 
-                  const complete =
-                    event.status === 'completed' ||
-                    !isLast;
+                <div>
+                  <strong>Request received</strong>
+                  <small>
+                    Your instructions were sent securely.
+                  </small>
+                </div>
+              </article>
 
-                  return (
-                    <article
-                      key={event.id}
-                      className={
-                        complete
-                          ? 'complete'
-                          : isLast
-                            ? 'active'
-                            : ''
-                      }
-                    >
-                      <span>
-                        {complete ? '✓' : isLast ? '●' : '○'}
-                      </span>
+              <article className="active">
+                <span>●</span>
 
-                      <div>
-                        <strong>{event.title}</strong>
-                        <small>
-                          {event.agent_name
-                            ? `${event.agent_name} • `
-                            : ''}
-                          {event.detail || 'Working on the project.'}
-                        </small>
-                      </div>
-                    </article>
-                  );
-                })
-              ) : (
-                <>
-                  <article className="complete">
-                    <span>✓</span>
-                    <div>
-                      <strong>Request received</strong>
-                      <small>Your instructions were sent securely.</small>
-                    </div>
-                  </article>
+                <div>
+                  <strong>Orchestrator working</strong>
+                  <small>
+                    Planning, generating and validating the project.
+                  </small>
+                </div>
+              </article>
 
-                  <article className="active">
-                    <span>●</span>
-                    <div>
-                      <strong>Starting agents</strong>
-                      <small>Waiting for live backend activity.</small>
-                    </div>
-                  </article>
-                </>
-              )}
+              <article>
+                <span>○</span>
+
+                <div>
+                  <strong>Project response</strong>
+                  <small>
+                    Waiting for the completed build.
+                  </small>
+                </div>
+              </article>
             </div>
 
             <button

@@ -6,5 +6,8 @@ workers_dev = true
 [vars]
 APP_NAME = "Website Maker AI"
 
+GROQ_CODER_MODEL = "openai/gpt-oss-120b"
+GROQ_REVIEWER_MODEL = "qwen/qwen3-32b"
+CLOUDFLARE_REPAIR_MODEL = "@cf/qwen/qwen3-30b-a3b-fp8"
 [ai]
 binding = "AI"

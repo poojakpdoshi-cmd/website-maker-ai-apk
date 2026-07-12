@@ -1,6 +1,22 @@
 import type { WebsitePlan } from '../../shared/src/index';
 
-type Options = { apiKey?: string; model?: string };
+type Options = {
+  apiKey?: string;
+  model?: string;
+  image?: {
+    mimeType: string;
+    data: string;
+  };
+};
+
+type GeminiPart =
+  | { text: string }
+  | {
+      inlineData: {
+        mimeType: string;
+        data: string;
+      };
+    };
 export type BrainMode = 'ai' | 'built-in';
 
 const colours: Record<string, [string, string, string, string]> = {
@@ -122,21 +138,80 @@ function normalisePlan(raw: unknown, fallback: WebsitePlan): WebsitePlan {
   };
 }
 
-async function callGemini(instruction: string, options: Options): Promise<unknown> {
-  if (!options.apiKey || !options.model) throw new Error('AI API is not configured.');
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(options.model)}:generateContent?key=${encodeURIComponent(options.apiKey)}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: instruction }] }],
-      generationConfig: { responseMimeType: 'application/json', temperature: 0.35 }
-    })
-  });
-  if (!response.ok) throw new Error(`AI request failed: ${response.status}`);
-  const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error('Empty AI response.');
-  return extractJson(text);
+async function callGemini(
+  instruction: string,
+  options: Options
+): Promise<unknown> {
+  if (!options.apiKey || !options.model) {
+    throw new Error('AI API is not configured.');
+  }
+
+  const parts: GeminiPart[] = [];
+
+  if (options.image) {
+    parts.push({
+      inlineData: {
+        mimeType: options.image.mimeType,
+        data: options.image.data
+      }
+    });
+  }
+
+  parts.push({ text: instruction });
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/` +
+      `${encodeURIComponent(options.model)}:generateContent` +
+      `?key=${encodeURIComponent(options.apiKey)}`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts
+          }
+        ],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0.35
+        }
+      })
+    }
+  );
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+
+    throw new Error(
+      `AI request failed: ${response.status}` +
+        (detail ? ` ${detail.slice(0, 300)}` : '')
+    );
+  }
+
+  const data = await response.json() as {
+    candidates?: Array<{
+      content?: {
+        parts?: Array<{
+          text?: string;
+        }>;
+      };
+    }>;
+  };
+
+  const responseText =
+    data.candidates?.[0]?.content?.parts
+      ?.map((part) => part.text || '')
+      .join('')
+      .trim();
+
+  if (!responseText) {
+    throw new Error('Empty AI response.');
+  }
+
+  return extractJson(responseText);
 }
 
 export async function buildWebsitePlan(prompt: string, options: Options): Promise<{ plan: WebsitePlan; mode: BrainMode }> {
