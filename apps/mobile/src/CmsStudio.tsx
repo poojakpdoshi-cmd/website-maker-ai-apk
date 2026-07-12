@@ -779,6 +779,99 @@ export default function CmsStudio({
     }
   }, [title, selectedDocument]);
 
+  async function moveSelectedDocument(
+    direction: -1 | 1
+  ) {
+    if (!selectedDocument) {
+      return;
+    }
+
+    const orderedDocuments = documents
+      .filter(
+        (document) =>
+          document.collection === activeCollection
+      )
+      .sort((first, second) => {
+        const orderDifference =
+          first.sort_order - second.sort_order;
+
+        if (orderDifference !== 0) {
+          return orderDifference;
+        }
+
+        return first.title.localeCompare(
+          second.title
+        );
+      });
+
+    const currentIndex =
+      orderedDocuments.findIndex(
+        (document) =>
+          document.id === selectedDocument.id
+      );
+
+    const targetIndex =
+      currentIndex + direction;
+
+    if (
+      currentIndex < 0 ||
+      targetIndex < 0 ||
+      targetIndex >= orderedDocuments.length
+    ) {
+      return;
+    }
+
+    [
+      orderedDocuments[currentIndex],
+      orderedDocuments[targetIndex]
+    ] = [
+      orderedDocuments[targetIndex],
+      orderedDocuments[currentIndex]
+    ];
+
+    setSaving(true);
+    setError('');
+    setMessage('');
+
+    try {
+      await Promise.all(
+        orderedDocuments.map(
+          async (document, index) => {
+            const response = await fetch(
+              `${apiBase}/cms/documents/${document.id}` +
+                `?email=${encodeURIComponent(email)}`,
+              {
+                method: 'PATCH',
+                headers: headers(),
+                body: JSON.stringify({
+                  sortOrder: index * 10
+                })
+              }
+            );
+
+            await readResponse(response);
+          }
+        )
+      );
+
+      setMessage(
+        direction < 0
+          ? 'Content moved up successfully.'
+          : 'Content moved down successfully.'
+      );
+
+      await loadCms(projectId);
+    } catch (moveError) {
+      setError(
+        moveError instanceof Error
+          ? moveError.message
+          : 'Could not change content order.'
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function saveDocument(
     event: FormEvent
   ) {
@@ -1637,6 +1730,32 @@ export default function CmsStudio({
                     Save and Publish
                   </option>
                 </select>
+
+                {selectedDocument ? (
+                  <>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() =>
+                        void moveSelectedDocument(-1)
+                      }
+                      disabled={saving}
+                    >
+                      ↑ Move Up
+                    </button>
+
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() =>
+                        void moveSelectedDocument(1)
+                      }
+                      disabled={saving}
+                    >
+                      ↓ Move Down
+                    </button>
+                  </>
+                ) : null}
 
                 {selectedDocument ? (
                   <button
