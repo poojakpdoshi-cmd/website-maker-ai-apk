@@ -11,6 +11,7 @@ import { parseCouncilProjectPatch, applyCouncilProjectPatch } from './council-pr
 import type { GeneratedProjectFile, WebsitePlan } from '@wmai/shared';
 
 import { injectCmsRuntime } from './cms-live';
+import { registerCmsMediaRoutes } from './cms-media-routes';
 type Bindings = {
   APP_NAME: string;
   PUBLIC_API_BASE_URL?: string;
@@ -2774,6 +2775,11 @@ app.notFound((c) => c.json({ error: 'Route not found.' }, 404));
 app.onError((error, c) => { console.error(error); return c.json({ error: error instanceof Error ? error.message : 'Unexpected server error.' }, 500); });
 
 registerCmsRoutes(app, {
+  requireUser,
+  requireSupabase
+});
+
+registerCmsMediaRoutes(app, {
   requireUser,
   requireSupabase
 });

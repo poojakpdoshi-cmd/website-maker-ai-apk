@@ -59,6 +59,18 @@ type CmsRevision = {
 };
 
 
+type CmsMedia = {
+  id: string;
+  file_name: string;
+  storage_path: string;
+  public_url?: string | null;
+  mime_type: string;
+  size_bytes: number;
+  alt_text: string;
+  created_at: string;
+};
+
+
 type CmsStudioProps = {
   apiBase: string;
   email: string;
@@ -113,6 +125,19 @@ export default function CmsStudio({
     useState<CmsRevision[]>([]);
 
   const [revisionLoading, setRevisionLoading] =
+    useState(false);
+
+
+  const [media, setMedia] =
+    useState<CmsMedia[]>([]);
+
+  const [mediaLoading, setMediaLoading] =
+    useState(false);
+
+  const [mediaUploading, setMediaUploading] =
+    useState(false);
+
+  const [showMediaLibrary, setShowMediaLibrary] =
     useState(false);
 
   const [loading, setLoading] =
@@ -242,6 +267,256 @@ export default function CmsStudio({
       setProjectId(projects[0].id);
     }
   }, [projectId, projects]);
+
+  async function loadMedia(
+    activeProjectId = projectId
+  ) {
+    if (!activeProjectId) {
+      return;
+    }
+
+    setMediaLoading(true);
+
+    try {
+      const response = await fetch(
+        `${apiBase}/cms/projects/${activeProjectId}/media` +
+          `?email=${encodeURIComponent(email)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'X-Device-Id': installationId
+          }
+        }
+      );
+
+      const data = await readResponse(response) as {
+        media: CmsMedia[];
+      };
+
+      setMedia(data.media || []);
+    } catch (mediaError) {
+      setError(
+        mediaError instanceof Error
+          ? mediaError.message
+          : 'Could not load Media Library.'
+      );
+    } finally {
+      setMediaLoading(false);
+    }
+  }
+
+  async function uploadMedia(
+    file: File
+  ) {
+    if (!projectId) {
+      setError('Select a website first.');
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setError('Choose a valid image file.');
+      return;
+    }
+
+    setMediaUploading(true);
+    setError('');
+    setMessage('');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('altText', file.name);
+
+      const response = await fetch(
+        `${apiBase}/cms/projects/${projectId}/media` +
+          `?email=${encodeURIComponent(email)}`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'X-Device-Id': installationId
+          },
+          body: formData
+        }
+      );
+
+      const data = await readResponse(response) as {
+        media: CmsMedia;
+      };
+
+      setMedia((current) => [
+        data.media,
+        ...current.filter(
+          (item) => item.id !== data.media.id
+        )
+      ]);
+
+      if (data.media.public_url) {
+        updateContentField(
+          'imageUrl',
+          data.media.public_url
+        );
+      }
+
+      setMessage(
+        'Image uploaded and selected successfully.'
+      );
+    } catch (uploadError) {
+      setError(
+        uploadError instanceof Error
+          ? uploadError.message
+          : 'Could not upload image.'
+      );
+    } finally {
+      setMediaUploading(false);
+    }
+  }
+
+  function selectMedia(
+    item: CmsMedia
+  ) {
+    if (!item.public_url) {
+      setError('This image has no public URL.');
+      return;
+    }
+
+    updateContentField(
+      'imageUrl',
+      item.public_url
+    );
+
+    if (item.alt_text) {
+      updateContentField(
+        'imageAlt',
+        item.alt_text
+      );
+    }
+
+    setShowMediaLibrary(false);
+    setMessage('Image selected from Media Library.');
+  }
+
+  async function updateMediaAltText(
+    item: CmsMedia
+  ) {
+    const nextAltText = window.prompt(
+      'Enter image alt text:',
+      item.alt_text || item.file_name
+    );
+
+    if (nextAltText === null || !projectId) {
+      return;
+    }
+
+    setMediaLoading(true);
+    setError('');
+    setMessage('');
+
+    try {
+      const response = await fetch(
+        `${apiBase}/cms/media/${item.id}` +
+          `?projectId=${encodeURIComponent(projectId)}` +
+          `&email=${encodeURIComponent(email)}`,
+        {
+          method: 'PATCH',
+          headers: headers(),
+          body: JSON.stringify({
+            altText: nextAltText.trim()
+          })
+        }
+      );
+
+      const data = await readResponse(response) as {
+        media: CmsMedia;
+      };
+
+      setMedia((current) =>
+        current.map((mediaItem) =>
+          mediaItem.id === item.id
+            ? data.media
+            : mediaItem
+        )
+      );
+
+      if (
+        item.public_url &&
+        contentValue('imageUrl') === item.public_url
+      ) {
+        updateContentField(
+          'imageAlt',
+          data.media.alt_text
+        );
+      }
+
+      setMessage('Image alt text updated.');
+    } catch (updateError) {
+      setError(
+        updateError instanceof Error
+          ? updateError.message
+          : 'Could not update image alt text.'
+      );
+    } finally {
+      setMediaLoading(false);
+    }
+  }
+
+  async function deleteMedia(
+    item: CmsMedia
+  ) {
+    if (!projectId) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete "${item.file_name}" permanently?`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setMediaLoading(true);
+    setError('');
+    setMessage('');
+
+    try {
+      const response = await fetch(
+        `${apiBase}/cms/media/${item.id}` +
+          `?projectId=${encodeURIComponent(projectId)}` +
+          `&email=${encodeURIComponent(email)}`,
+        {
+          method: 'DELETE',
+          headers: headers()
+        }
+      );
+
+      await readResponse(response);
+
+      setMedia((current) =>
+        current.filter(
+          (mediaItem) => mediaItem.id !== item.id
+        )
+      );
+
+      if (
+        item.public_url &&
+        contentValue('imageUrl') === item.public_url
+      ) {
+        updateContentField('imageUrl', '');
+        updateContentField('imageAlt', '');
+      }
+
+      setMessage('Image deleted from Media Library.');
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : 'Could not delete image.'
+      );
+    } finally {
+      setMediaLoading(false);
+    }
+  }
 
   async function loadRevisions(
     documentId: string
@@ -977,20 +1252,69 @@ export default function CmsStudio({
                     />
                   </label>
 
-                  <label>
-                    Image URL
+                  <div className="cms-image-field">
+                    <label>
+                      Image URL
 
-                    <input
-                      value={contentValue('imageUrl')}
-                      onChange={(event) =>
-                        updateContentField(
-                          'imageUrl',
-                          event.target.value
-                        )
-                      }
-                      placeholder="https://example.com/image.jpg"
-                    />
-                  </label>
+                      <input
+                        value={contentValue('imageUrl')}
+                        onChange={(event) =>
+                          updateContentField(
+                            'imageUrl',
+                            event.target.value
+                          )
+                        }
+                        placeholder="https://example.com/image.jpg"
+                      />
+                    </label>
+
+                    <div className="cms-media-picker-actions">
+                      <label className="secondary-button cms-upload-button">
+                        {mediaUploading
+                          ? 'Uploading…'
+                          : 'Upload Image'}
+
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,image/gif"
+                          disabled={mediaUploading}
+                          onChange={(event) => {
+                            const file =
+                              event.target.files?.[0];
+
+                            if (file) {
+                              void uploadMedia(file);
+                            }
+
+                            event.target.value = '';
+                          }}
+                        />
+                      </label>
+
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => {
+                          setShowMediaLibrary(true);
+                          void loadMedia(projectId);
+                        }}
+                        disabled={!projectId}
+                      >
+                        Browse Library
+                      </button>
+                    </div>
+
+                    {contentValue('imageUrl') ? (
+                      <img
+                        className="cms-selected-image"
+                        src={contentValue('imageUrl')}
+                        alt={
+                          contentValue('imageAlt') ||
+                          'Selected CMS image'
+                        }
+                      />
+                    ) : null}
+                  </div>
                 </div>
 
                 <label>
@@ -1103,6 +1427,106 @@ export default function CmsStudio({
                   </label>
                 ) : null}
               </section>
+
+              {showMediaLibrary ? (
+                <section className="cms-media-library-modal">
+                  <div className="cms-media-library-heading">
+                    <div>
+                      <p className="eyebrow">
+                        MEDIA LIBRARY
+                      </p>
+                      <h3>Select an Image</h3>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() =>
+                        setShowMediaLibrary(false)
+                      }
+                    >
+                      Close
+                    </button>
+                  </div>
+
+                  {mediaLoading ? (
+                    <p className="cms-media-message">
+                      Loading images…
+                    </p>
+                  ) : media.length === 0 ? (
+                    <p className="cms-media-message">
+                      No uploaded images yet.
+                    </p>
+                  ) : (
+                    <div className="cms-media-grid">
+                      {media.map((item) => (
+                        <article
+                          className="cms-media-item"
+                          key={item.id}
+                        >
+                          <button
+                            type="button"
+                            className="cms-media-select"
+                            onClick={() =>
+                              selectMedia(item)
+                            }
+                          >
+                            {item.public_url ? (
+                              <img
+                                src={item.public_url}
+                                alt={
+                                  item.alt_text ||
+                                  item.file_name
+                                }
+                                loading="lazy"
+                              />
+                            ) : null}
+
+                            <span>
+                              <strong>
+                                {item.file_name}
+                              </strong>
+
+                              <small>
+                                {Math.max(
+                                  1,
+                                  Math.round(
+                                    item.size_bytes / 1024
+                                  )
+                                )} KB
+                              </small>
+                            </span>
+                          </button>
+
+                          <div className="cms-media-item-actions">
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() =>
+                                void updateMediaAltText(item)
+                              }
+                              disabled={mediaLoading}
+                            >
+                              Edit Alt
+                            </button>
+
+                            <button
+                              type="button"
+                              className="danger-button"
+                              onClick={() =>
+                                void deleteMedia(item)
+                              }
+                              disabled={mediaLoading}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              ) : null}
 
               <div className="cms-seo-card">
                 <div>
