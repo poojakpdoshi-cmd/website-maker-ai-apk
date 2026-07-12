@@ -152,5 +152,62 @@ export function validateFullStackArtifacts(
     );
   }
 
+  const frontendFiles = files.filter((file) =>
+    /^(src|app|pages|components|public)\//i.test(
+      file.path
+    )
+  );
+
+  const frontendContent = frontendFiles
+    .map((file) => file.content)
+    .join('\n');
+
+  const exposedSecretPattern =
+    /(?:SUPABASE_SERVICE_ROLE_KEY|DATABASE_URL|PRIVATE_KEY|SECRET_KEY|API_SECRET)[ \t]*[:=][ \t]*(?:['"`][^'"`\r\n]{8,}['"`]|(?!process\.env\.|import\.meta\.env\.|env\.|Deno\.env\.)[A-Za-z0-9_./+:-]{8,})/i;
+
+  if (exposedSecretPattern.test(frontendContent)) {
+    issues.push(
+      'Private backend secrets are exposed inside frontend files.'
+    );
+  }
+
+  const envExample = files.find((file) =>
+    /(^|\/)\.env\.example$/i.test(file.path)
+  );
+
+  if (envExample) {
+    const unsafeEnvValuePattern =
+      /(?:SECRET|PRIVATE|SERVICE_ROLE|DATABASE_URL|TOKEN|PASSWORD|API_KEY)[ \t]*=[ \t]*[^ \t\r\n#][^\r\n]*/i;
+
+    if (unsafeEnvValuePattern.test(envExample.content)) {
+      issues.push(
+        '.env.example contains real-looking secret values; it must contain variable names only.'
+      );
+    }
+  }
+
+  const pathCounts = new Map<string, number>();
+
+  for (const file of files) {
+    const normalizedPath = file.path
+      .replace(/\\/g, '/')
+      .toLowerCase();
+
+    pathCounts.set(
+      normalizedPath,
+      (pathCounts.get(normalizedPath) || 0) + 1
+    );
+  }
+
+  if (
+    [...pathCounts.values()].some(
+      (count) => count > 1
+    )
+  ) {
+    issues.push(
+      'Generated project contains duplicate file paths.'
+    );
+  }
+
   return issues;
 }

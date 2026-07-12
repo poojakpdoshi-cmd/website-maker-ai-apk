@@ -123,6 +123,132 @@ assert.ok(
   ).includes('FULL-STACK')
 );
 
+
+const exposedSecretIssues =
+  validateFullStackArtifacts(
+    'Create an admin website with backend and database',
+    [
+      {
+        path: 'src/config.ts',
+        content:
+          "export const key = 'SUPABASE_SERVICE_ROLE_KEY=super-secret-value';"
+      },
+      {
+        path: 'api/admin.ts',
+        content:
+          "app.get('/api/admin', () => ({}));"
+      },
+      {
+        path: 'migrations/001.sql',
+        content:
+          'create table admins (id uuid primary key);'
+      },
+      {
+        path: '.env.example',
+        content:
+          'SUPABASE_SERVICE_ROLE_KEY=\n'
+      },
+      {
+        path: 'README.md',
+        content:
+          '# Setup'
+      }
+    ]
+  );
+
+assert.ok(
+  exposedSecretIssues.some(
+    (issue) =>
+      issue.includes('secrets are exposed')
+  ),
+  'Frontend secret exposure was not detected.'
+);
+
+const unsafeEnvIssues =
+  validateFullStackArtifacts(
+    'Create an ecommerce backend with database',
+    [
+      {
+        path: 'src/App.tsx',
+        content:
+          "fetch('/api/orders');"
+      },
+      {
+        path: 'api/orders.ts',
+        content:
+          "app.get('/api/orders', () => []);"
+      },
+      {
+        path: 'migrations/001.sql',
+        content:
+          'create table orders (id uuid primary key);'
+      },
+      {
+        path: '.env.example',
+        content:
+          'DATABASE_URL=postgres://real-secret-value\n'
+      },
+      {
+        path: 'README.md',
+        content:
+          '# Setup'
+      }
+    ]
+  );
+
+assert.ok(
+  unsafeEnvIssues.some(
+    (issue) =>
+      issue.includes('.env.example')
+  ),
+  'Unsafe .env.example value was not detected.'
+);
+
+const duplicateIssues =
+  validateFullStackArtifacts(
+    'Create a website with backend and database',
+    [
+      {
+        path: 'src/App.tsx',
+        content:
+          "fetch('/api/data');"
+      },
+      {
+        path: 'api/data.ts',
+        content:
+          "app.get('/api/data', () => []);"
+      },
+      {
+        path: 'API/data.ts',
+        content:
+          "app.get('/api/data', () => []);"
+      },
+      {
+        path: 'migrations/001.sql',
+        content:
+          'create table data (id uuid primary key);'
+      },
+      {
+        path: '.env.example',
+        content:
+          'DATABASE_URL=\n'
+      },
+      {
+        path: 'README.md',
+        content:
+          '# Setup'
+      }
+    ]
+  );
+
+assert.ok(
+  duplicateIssues.some(
+    (issue) =>
+      issue.includes('duplicate file paths')
+  ),
+  'Duplicate generated paths were not detected.'
+);
+
 console.log(
   'SUCCESS: Full-stack generation policy tests passed.'
 );
