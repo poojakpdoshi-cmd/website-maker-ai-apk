@@ -1152,8 +1152,12 @@ app.post('/generate', async (c) => {
               'Match the plan, screenshot reference, mobile layout,',
               'accessibility and requested interactions.'
             ].join(' '),
-            request: parsed.data.prompt,
-          fullStackPolicy: buildFullStackInstruction(parsed.data.prompt),
+            request:
+            parsed.data.prompt +
+            '\n\n' +
+            buildFullStackInstruction(
+              parsed.data.prompt
+            ),
             plan: planResult.plan
           })
         );
@@ -1334,8 +1338,12 @@ app.post('/generate', async (c) => {
               'Return strict JSON:',
               '{"approved":boolean,"issues":string[],"fixes":string[]}.'
             ].join(' '),
-            request: parsed.data.prompt,
-          fullStackPolicy: buildFullStackInstruction(parsed.data.prompt),
+            request:
+            parsed.data.prompt +
+            '\n\n' +
+            buildFullStackInstruction(
+              parsed.data.prompt
+            ),
             plan: planResult.plan,
             codingBrief,
             files: compactProjectFiles(generated.files)
@@ -1460,8 +1468,12 @@ app.post('/generate', async (c) => {
                   '{"approved":boolean,"issues":string[],"fixes":string[]}.',
                   'Approve only when there are no blocking errors.'
                 ].join(' '),
-                request: parsed.data.prompt,
-          fullStackPolicy: buildFullStackInstruction(parsed.data.prompt),
+                request:
+            parsed.data.prompt +
+            '\n\n' +
+            buildFullStackInstruction(
+              parsed.data.prompt
+            ),
                 plan: planResult.plan,
                 files: compactProjectFiles(generated.files)
               })
