@@ -143,6 +143,9 @@ export default function CmsStudio({
   const [showMediaLibrary, setShowMediaLibrary] =
     useState(false);
 
+  const [showContentPreview, setShowContentPreview] =
+    useState(false);
+
   const [loading, setLoading] =
     useState(false);
 
@@ -1710,6 +1713,53 @@ export default function CmsStudio({
                 </section>
               ) : null}
 
+              {showContentPreview ? (
+                <section className="cms-draft-preview">
+                  {contentValue('imageUrl') ? (
+                    <img
+                      src={contentValue('imageUrl')}
+                      alt={
+                        contentValue('imageAlt') ||
+                        title ||
+                        'CMS preview'
+                      }
+                    />
+                  ) : null}
+
+                  <div>
+                    <p className="eyebrow">
+                      DRAFT PREVIEW
+                    </p>
+
+                    <h3>
+                      {contentValue('heading') ||
+                        contentValue('name') ||
+                        contentValue('question') ||
+                        title ||
+                        'Untitled Content'}
+                    </h3>
+
+                    <p>
+                      {contentValue('description') ||
+                        contentValue('answer') ||
+                        'Content description will appear here.'}
+                    </p>
+
+                    {contentValue('price') ? (
+                      <strong>
+                        {contentValue('price')}
+                      </strong>
+                    ) : null}
+
+                    {contentValue('buttonText') ? (
+                      <span className="cms-preview-button">
+                        {contentValue('buttonText')}
+                      </span>
+                    ) : null}
+                  </div>
+                </section>
+              ) : null}
+
               <div className="cms-seo-card">
                 <div>
                   <p className="eyebrow">
@@ -1854,6 +1904,20 @@ export default function CmsStudio({
                     Delete
                   </button>
                 ) : null}
+
+                <button
+                  type="button"
+                  className="secondary-button cms-preview-toggle"
+                  onClick={() =>
+                    setShowContentPreview(
+                      !showContentPreview
+                    )
+                  }
+                >
+                  {showContentPreview
+                    ? 'Hide Preview'
+                    : 'Preview Draft'}
+                </button>
 
                 <button
                   type="submit"
