@@ -817,3 +817,57 @@
     font-size: 23px;
   }
 }
+
+
+/* WEBFORGE_CMS_SCHEDULING */
+
+.cms-schedule-card {
+  display: grid;
+  gap: 15px;
+  padding: 18px;
+  border: 1px solid rgba(128, 128, 128, .25);
+  border-radius: 16px;
+  background: rgba(99, 102, 241, .06);
+}
+
+.cms-schedule-card h3 {
+  margin: 4px 0 6px;
+}
+
+.cms-schedule-card p {
+  margin: 0;
+  opacity: .72;
+}
+
+.cms-schedule-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(128, 128, 128, .08);
+}
+
+.cms-schedule-summary span {
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, .12);
+  font-size: 12px;
+}
+
+.cms-schedule-summary button {
+  margin-left: auto;
+}
+
+@media (max-width: 600px) {
+  .cms-schedule-summary {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .cms-schedule-summary button {
+    width: 100%;
+    margin-left: 0;
+  }
+}

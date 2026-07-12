@@ -31,6 +31,8 @@ type CmsDocument = {
   seo: Record<string, unknown>;
   sort_order: number;
   published_at?: string | null;
+  scheduled_publish_at?: string | null;
+  scheduled_unpublish_at?: string | null;
   updated_at?: string;
 };
 
@@ -89,6 +91,29 @@ const collections = [
   'navigation',
   'settings'
 ] as const;
+
+function toLocalDateTime(
+  value?: string | null
+): string {
+  if (!value) {
+    return '';
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  const localDate = new Date(
+    date.getTime() -
+      date.getTimezoneOffset() * 60000
+  );
+
+  return localDate
+    .toISOString()
+    .slice(0, 16);
+}
 
 function createSlug(value: string): string {
   return value
@@ -166,6 +191,16 @@ export default function CmsStudio({
 
   const [status, setStatus] =
     useState<'draft' | 'published'>('draft');
+
+  const [
+    scheduledPublishAt,
+    setScheduledPublishAt
+  ] = useState('');
+
+  const [
+    scheduledUnpublishAt,
+    setScheduledUnpublishAt
+  ] = useState('');
 
   const [contentText, setContentText] =
     useState('{\n  "heading": "",\n  "description": ""\n}');
@@ -692,6 +727,8 @@ export default function CmsStudio({
     setTitle('');
     setSlug('');
     setStatus('draft');
+    setScheduledPublishAt('');
+    setScheduledUnpublishAt('');
     setContentText(
       '{\n  "heading": "",\n  "description": ""\n}'
     );
@@ -714,6 +751,19 @@ export default function CmsStudio({
         ? 'published'
         : 'draft'
     );
+
+    setScheduledPublishAt(
+      toLocalDateTime(
+        document.scheduled_publish_at
+      )
+    );
+
+    setScheduledUnpublishAt(
+      toLocalDateTime(
+        document.scheduled_unpublish_at
+      )
+    );
+
     setContentText(
       JSON.stringify(
         document.content || {},
@@ -973,6 +1023,43 @@ export default function CmsStudio({
       return;
     }
 
+    const publishDate =
+      scheduledPublishAt
+        ? new Date(scheduledPublishAt)
+        : null;
+
+    const unpublishDate =
+      scheduledUnpublishAt
+        ? new Date(scheduledUnpublishAt)
+        : null;
+
+    if (
+      publishDate &&
+      Number.isNaN(publishDate.getTime())
+    ) {
+      setError('Enter a valid publish date and time.');
+      return;
+    }
+
+    if (
+      unpublishDate &&
+      Number.isNaN(unpublishDate.getTime())
+    ) {
+      setError('Enter a valid unpublish date and time.');
+      return;
+    }
+
+    if (
+      publishDate &&
+      unpublishDate &&
+      unpublishDate <= publishDate
+    ) {
+      setError(
+        'Unpublish time must be after publish time.'
+      );
+      return;
+    }
+
     setSaving(true);
     setError('');
     setMessage('');
@@ -991,7 +1078,17 @@ export default function CmsStudio({
             seoDescription.trim()
         },
         sortOrder:
-          selectedDocument?.sort_order || 0
+          selectedDocument?.sort_order || 0,
+
+        scheduledPublishAt:
+          publishDate
+            ? publishDate.toISOString()
+            : null,
+
+        scheduledUnpublishAt:
+          unpublishDate
+            ? unpublishDate.toISOString()
+            : null
       };
 
       const endpoint = selectedDocument
@@ -1759,6 +1856,83 @@ export default function CmsStudio({
                   </div>
                 </section>
               ) : null}
+
+              <section className="cms-schedule-card">
+                <div>
+                  <p className="eyebrow">
+                    SCHEDULED PUBLISHING
+                  </p>
+                  <h3>Automatic Publish Control</h3>
+                  <p>
+                    Content ko selected date aur time par
+                    automatically live ya draft karo.
+                  </p>
+                </div>
+
+                <div className="cms-form-grid">
+                  <label>
+                    Publish Date & Time
+
+                    <input
+                      type="datetime-local"
+                      value={scheduledPublishAt}
+                      onChange={(event) =>
+                        setScheduledPublishAt(
+                          event.target.value
+                        )
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Unpublish Date & Time
+
+                    <input
+                      type="datetime-local"
+                      value={scheduledUnpublishAt}
+                      onChange={(event) =>
+                        setScheduledUnpublishAt(
+                          event.target.value
+                        )
+                      }
+                    />
+                  </label>
+                </div>
+
+                {(scheduledPublishAt ||
+                  scheduledUnpublishAt) ? (
+                  <div className="cms-schedule-summary">
+                    {scheduledPublishAt ? (
+                      <span>
+                        Publish:{' '}
+                        {new Date(
+                          scheduledPublishAt
+                        ).toLocaleString()}
+                      </span>
+                    ) : null}
+
+                    {scheduledUnpublishAt ? (
+                      <span>
+                        Unpublish:{' '}
+                        {new Date(
+                          scheduledUnpublishAt
+                        ).toLocaleString()}
+                      </span>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => {
+                        setScheduledPublishAt('');
+                        setScheduledUnpublishAt('');
+                      }}
+                    >
+                      Clear Schedule
+                    </button>
+                  </div>
+                ) : null}
+              </section>
 
               <div className="cms-seo-card">
                 <div>
