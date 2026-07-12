@@ -11,3 +11,6 @@ GROQ_REVIEWER_MODEL = "qwen/qwen3-32b"
 CLOUDFLARE_REPAIR_MODEL = "@cf/qwen/qwen3-30b-a3b-fp8"
 [ai]
 binding = "AI"
+
+[triggers]
+crons = ["*/5 * * * *"]

@@ -12,6 +12,7 @@ import type { GeneratedProjectFile, WebsitePlan } from '@wmai/shared';
 
 import { injectCmsRuntime } from './cms-live';
 import { registerCmsMediaRoutes } from './cms-media-routes';
+import { processCmsSchedules } from './cms-scheduler';
 type Bindings = {
   APP_NAME: string;
   PUBLIC_API_BASE_URL?: string;
@@ -2784,4 +2785,38 @@ registerCmsMediaRoutes(app, {
   requireSupabase
 });
 
-export default app;
+export default {
+  fetch(
+    request: Request,
+    env: any,
+    executionContext: any
+  ) {
+    return app.fetch(
+      request,
+      env,
+      executionContext
+    );
+  },
+
+  async scheduled(
+    _controller: any,
+    env: any,
+    executionContext: any
+  ) {
+    executionContext.waitUntil(
+      processCmsSchedules(
+        requireSupabase(env)
+      ).then((result) => {
+        console.log(
+          'CMS schedule processed',
+          result
+        );
+      }).catch((error) => {
+        console.error(
+          'CMS schedule failed',
+          error
+        );
+      })
+    );
+  }
+};

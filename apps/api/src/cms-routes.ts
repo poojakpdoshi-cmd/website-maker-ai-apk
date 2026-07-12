@@ -60,7 +60,13 @@ const documentSchema = z.object({
     .int()
     .min(-10000)
     .max(10000)
-    .default(0)
+    .default(0),
+
+  scheduledPublishAt:
+    z.string().datetime().nullable().optional(),
+
+  scheduledUnpublishAt:
+    z.string().datetime().nullable().optional()
 });
 
 const updateDocumentSchema =
@@ -556,6 +562,10 @@ export function registerCmsRoutes(
               body.data.seo,
             sort_order:
               body.data.sortOrder,
+            scheduled_publish_at:
+              body.data.scheduledPublishAt || null,
+            scheduled_unpublish_at:
+              body.data.scheduledUnpublishAt || null,
             published_at:
               body.data.status === 'published'
                 ? new Date().toISOString()
@@ -678,6 +688,20 @@ export function registerCmsRoutes(
       ) {
         changes.sort_order =
           body.data.sortOrder;
+      }
+
+      if (
+        body.data.scheduledPublishAt !== undefined
+      ) {
+        changes.scheduled_publish_at =
+          body.data.scheduledPublishAt;
+      }
+
+      if (
+        body.data.scheduledUnpublishAt !== undefined
+      ) {
+        changes.scheduled_unpublish_at =
+          body.data.scheduledUnpublishAt;
       }
 
       if (body.data.status !== undefined) {
