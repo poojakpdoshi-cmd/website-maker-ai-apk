@@ -10,6 +10,7 @@ import { validateGeneratedProject } from './project-validator';
 import { parseCouncilProjectPatch, applyCouncilProjectPatch } from './council-project';
 import type { GeneratedProjectFile, WebsitePlan } from '@wmai/shared';
 
+import { injectCmsRuntime } from './cms-live';
 type Bindings = {
   APP_NAME: string;
   PUBLIC_API_BASE_URL?: string;
@@ -1687,8 +1688,22 @@ app.post('/projects/:id/publish', async (c) => {
     const vercel = await getConnection(supabase, c.env, parsed.data.email, 'vercel');
     if (!github.external_account_name) throw new Error('Reconnect GitHub so the account username can be verified.');
     const files = version.generated_files as GeneratedProjectFile[];
-    const repository = await pushToGitHub(github.accessToken, github.external_account_name, project.name, files);
-    const deployment = await deployToVercel(vercel, `${projectSlug(project.plan as WebsitePlan)}-${projectId.slice(0, 6)}`, files, project.vercel_project_id);
+    const { data: cmsSettings } = await supabase
+      .from('cms_settings')
+      .select('public_slug')
+      .eq('project_id', projectId)
+      .eq('enabled', true)
+      .maybeSingle();
+
+    const deployFiles = cmsSettings?.public_slug
+      ? injectCmsRuntime(
+          files,
+          new URL(c.req.url).origin,
+          cmsSettings.public_slug
+        )
+      : files;
+    const repository = await pushToGitHub(github.accessToken, github.external_account_name, project.name, deployFiles);
+    const deployment = await deployToVercel(vercel, `${projectSlug(project.plan as WebsitePlan)}-${projectId.slice(0, 6)}`, deployFiles, project.vercel_project_id);
     await supabase.from('projects').update({
       status: deployment.readyState === 'READY' ? 'deployed' : 'deploying',
       github_repository: repository.url,
