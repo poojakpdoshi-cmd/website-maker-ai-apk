@@ -13,6 +13,7 @@ import type { GeneratedProjectFile, WebsitePlan } from '@wmai/shared';
 import { injectCmsRuntime } from './cms-live';
 import { registerCmsMediaRoutes } from './cms-media-routes';
 import { processCmsSchedules } from './cms-scheduler';
+import { buildFullStackInstruction } from './fullstack-policy';
 type Bindings = {
   APP_NAME: string;
   PUBLIC_API_BASE_URL?: string;
@@ -1091,7 +1092,7 @@ app.post('/generate', async (c) => {
       jobStatus: 'running'
     });
 
-    const planResult = await buildWebsitePlan(parsed.data.prompt, {
+    const planResult = await buildWebsitePlan((parsed.data.prompt + '\n\n' + buildFullStackInstruction(parsed.data.prompt)), {
       apiKey: c.env.GEMINI_API_KEY,
       model: c.env.GEMINI_MODEL,
       image: parsed.data.image
@@ -1152,6 +1153,7 @@ app.post('/generate', async (c) => {
               'accessibility and requested interactions.'
             ].join(' '),
             request: parsed.data.prompt,
+          fullStackPolicy: buildFullStackInstruction(parsed.data.prompt),
             plan: planResult.plan
           })
         );
@@ -1272,7 +1274,10 @@ app.post('/generate', async (c) => {
     });
 
     const deterministicValidation =
-      validateGeneratedProject(generated.files);
+      validateGeneratedProject(
+        generated.files,
+        parsed.data.prompt
+      );
 
     await recordGenerationEvent(supabase, {
       jobId,
@@ -1330,6 +1335,7 @@ app.post('/generate', async (c) => {
               '{"approved":boolean,"issues":string[],"fixes":string[]}.'
             ].join(' '),
             request: parsed.data.prompt,
+          fullStackPolicy: buildFullStackInstruction(parsed.data.prompt),
             plan: planResult.plan,
             codingBrief,
             files: compactProjectFiles(generated.files)
@@ -1419,7 +1425,10 @@ app.post('/generate', async (c) => {
           );
 
           const repairedValidation =
-            validateGeneratedProject(generated.files);
+            validateGeneratedProject(
+        generated.files,
+        parsed.data.prompt
+      );
 
           if (!repairedValidation.passed) {
             throw new Error(
@@ -1452,6 +1461,7 @@ app.post('/generate', async (c) => {
                   'Approve only when there are no blocking errors.'
                 ].join(' '),
                 request: parsed.data.prompt,
+          fullStackPolicy: buildFullStackInstruction(parsed.data.prompt),
                 plan: planResult.plan,
                 files: compactProjectFiles(generated.files)
               })

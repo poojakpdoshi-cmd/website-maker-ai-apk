@@ -1,5 +1,6 @@
 import type { GeneratedProjectFile } from '@wmai/shared';
 
+import { validateFullStackArtifacts } from './fullstack-policy';
 export type ProjectValidationResult = {
   passed: boolean;
   errors: string[];
@@ -27,7 +28,8 @@ function objectValue(
 }
 
 export function validateGeneratedProject(
-  files: GeneratedProjectFile[]
+  files: GeneratedProjectFile[],
+  request = ''
 ): ProjectValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -209,6 +211,18 @@ export function validateGeneratedProject(
       'Potentially unsafe dynamic JavaScript was detected.'
     );
   }
+
+
+  const fullStackErrors =
+    validateFullStackArtifacts(
+      request,
+      files
+    );
+
+  errors.push(...fullStackErrors);
+
+  checks.fullStackRequirements =
+    fullStackErrors.length === 0;
 
   return {
     passed: errors.length === 0,
