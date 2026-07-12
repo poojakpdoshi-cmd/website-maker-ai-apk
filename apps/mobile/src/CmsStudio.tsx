@@ -50,6 +50,15 @@ type CmsResponse = {
   documents: CmsDocument[];
 };
 
+type CmsRevision = {
+  id: string;
+  version_number: number;
+  change_note?: string | null;
+  created_at: string;
+  snapshot: Record<string, unknown>;
+};
+
+
 type CmsStudioProps = {
   apiBase: string;
   email: string;
@@ -99,6 +108,12 @@ export default function CmsStudio({
 
   const [selectedId, setSelectedId] =
     useState<string | null>(null);
+
+  const [revisions, setRevisions] =
+    useState<CmsRevision[]>([]);
+
+  const [revisionLoading, setRevisionLoading] =
+    useState(false);
 
   const [loading, setLoading] =
     useState(false);
@@ -183,6 +198,77 @@ export default function CmsStudio({
       setProjectId(projects[0].id);
     }
   }, [projectId, projects]);
+
+  async function loadRevisions(
+    documentId: string
+  ) {
+    setRevisionLoading(true);
+
+    try {
+      const response = await fetch(
+        `${apiBase}/cms/documents/${documentId}/revisions` +
+          `?email=${encodeURIComponent(email)}`,
+        {
+          headers: headers()
+        }
+      );
+
+      const data = await readResponse(response) as {
+        revisions: CmsRevision[];
+      };
+
+      setRevisions(data.revisions || []);
+    } catch (revisionError) {
+      setError(
+        revisionError instanceof Error
+          ? revisionError.message
+          : 'Could not load revision history.'
+      );
+    } finally {
+      setRevisionLoading(false);
+    }
+  }
+
+  async function restoreRevision(
+    version: number
+  ) {
+    if (!selectedDocument) {
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    setMessage('');
+
+    try {
+      const response = await fetch(
+        `${apiBase}/cms/documents/${selectedDocument.id}` +
+          `/restore/${version}` +
+          `?email=${encodeURIComponent(email)}`,
+        {
+          method: 'POST',
+          headers: headers()
+        }
+      );
+
+      await readResponse(response);
+
+      setMessage(
+        `Version ${version} restored successfully.`
+      );
+
+      await loadCms(projectId);
+      await loadRevisions(selectedDocument.id);
+    } catch (restoreError) {
+      setError(
+        restoreError instanceof Error
+          ? restoreError.message
+          : 'Could not restore this revision.'
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function loadCms(
     activeProjectId = projectId
@@ -273,6 +359,7 @@ export default function CmsStudio({
     );
     setSeoTitle('');
     setSeoDescription('');
+    setRevisions([]);
     setError('');
     setMessage('');
   }
@@ -317,6 +404,7 @@ export default function CmsStudio({
 
     setError('');
     setMessage('');
+    void loadRevisions(document.id);
   }
 
   function startNewDocument() {
@@ -931,6 +1019,90 @@ export default function CmsStudio({
                       : 'Create Item'}
                 </button>
               </div>
+
+              {selectedDocument ? (
+                <section className="cms-revisions">
+                  <div className="cms-revisions-heading">
+                    <div>
+                      <p className="eyebrow">
+                        REVISION HISTORY
+                      </p>
+                      <h3>Previous Versions</h3>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() =>
+                        void loadRevisions(
+                          selectedDocument.id
+                        )
+                      }
+                      disabled={revisionLoading}
+                    >
+                      {revisionLoading
+                        ? 'Loading…'
+                        : 'Refresh History'}
+                    </button>
+                  </div>
+
+                  {revisionLoading ? (
+                    <p className="cms-revision-message">
+                      Loading revision history…
+                    </p>
+                  ) : revisions.length === 0 ? (
+                    <p className="cms-revision-message">
+                      No previous versions available yet.
+                    </p>
+                  ) : (
+                    <div className="cms-revision-list">
+                      {revisions.map((revision) => (
+                        <article
+                          className="cms-revision-item"
+                          key={revision.id}
+                        >
+                          <div>
+                            <strong>
+                              Version {revision.version_number}
+                            </strong>
+
+                            <small>
+                              {revision.change_note ||
+                                'CMS content update'}
+                            </small>
+
+                            <time>
+                              {new Date(
+                                revision.created_at
+                              ).toLocaleString()}
+                            </time>
+                          </div>
+
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            disabled={saving}
+                            onClick={() => {
+                              const confirmed =
+                                window.confirm(
+                                  `Restore version ${revision.version_number}?`
+                                );
+
+                              if (confirmed) {
+                                void restoreRevision(
+                                  revision.version_number
+                                );
+                              }
+                            }}
+                          >
+                            Restore
+                          </button>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              ) : null}
             </>
           )}
         </form>

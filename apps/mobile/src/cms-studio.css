@@ -447,3 +447,84 @@
     font-size: 16px;
   }
 }
+
+/* WEBFORGE_CMS_REVISIONS */
+
+.cms-revisions {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(
+    --border-color,
+    rgba(128, 128, 128, .25)
+  );
+  border-radius: 16px;
+  background: rgba(128, 128, 128, .05);
+}
+
+.cms-revisions-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cms-revisions-heading h3 {
+  margin: 4px 0 0;
+}
+
+.cms-revision-list {
+  display: grid;
+  gap: 10px;
+}
+
+.cms-revision-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px;
+  border: 1px solid var(
+    --border-color,
+    rgba(128, 128, 128, .2)
+  );
+  border-radius: 13px;
+  background: var(
+    --input-bg,
+    rgba(255, 255, 255, .04)
+  );
+}
+
+.cms-revision-item > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.cms-revision-item small,
+.cms-revision-item time,
+.cms-revision-message {
+  opacity: .68;
+}
+
+.cms-revision-item time {
+  font-size: 11px;
+}
+
+.cms-revision-message {
+  margin: 0;
+  padding: 15px;
+  text-align: center;
+}
+
+@media (max-width: 600px) {
+  .cms-revisions-heading,
+  .cms-revision-item {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .cms-revision-item button {
+    width: 100%;
+  }
+}
