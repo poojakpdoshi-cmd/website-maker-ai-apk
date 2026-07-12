@@ -139,6 +139,50 @@ export default function CmsStudio({
   const [contentText, setContentText] =
     useState('{\n  "heading": "",\n  "description": ""\n}');
 
+  const [showAdvancedJson, setShowAdvancedJson] =
+    useState(false);
+
+  const visualContent = useMemo<
+    Record<string, unknown>
+  >(() => {
+    try {
+      const parsed = JSON.parse(contentText);
+
+      return parsed &&
+        typeof parsed === 'object' &&
+        !Array.isArray(parsed)
+        ? parsed as Record<string, unknown>
+        : {};
+    } catch {
+      return {};
+    }
+  }, [contentText]);
+
+  function contentValue(key: string): string {
+    const value = visualContent[key];
+
+    return typeof value === 'string' ||
+      typeof value === 'number'
+      ? String(value)
+      : '';
+  }
+
+  function updateContentField(
+    key: string,
+    value: string
+  ) {
+    setContentText(
+      JSON.stringify(
+        {
+          ...visualContent,
+          [key]: value
+        },
+        null,
+        2
+      )
+    );
+  }
+
   const [seoTitle, setSeoTitle] =
     useState('');
 
@@ -879,27 +923,186 @@ export default function CmsStudio({
                 </label>
               </div>
 
-              <label>
-                Content Data
+              <section className="cms-visual-fields">
+                <div className="cms-visual-heading">
+                  <div>
+                    <p className="eyebrow">
+                      CONTENT FIELDS
+                    </p>
+                    <h3>No-Code Editor</h3>
+                  </div>
 
-                <textarea
-                  className="cms-json-editor"
-                  value={contentText}
-                  onChange={(event) =>
-                    setContentText(
-                      event.target.value
-                    )
-                  }
-                  rows={13}
-                  spellCheck={false}
-                />
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() =>
+                      setShowAdvancedJson(
+                        !showAdvancedJson
+                      )
+                    }
+                  >
+                    {showAdvancedJson
+                      ? 'Hide Advanced JSON'
+                      : 'Advanced JSON'}
+                  </button>
+                </div>
 
-                <small>
-                  Heading, description, price,
-                  images aur sections JSON format
-                  me manage karo.
-                </small>
-              </label>
+                <div className="cms-form-grid">
+                  <label>
+                    {activeCollection === 'pages'
+                      ? 'Main Heading'
+                      : activeCollection === 'faqs'
+                        ? 'Question'
+                        : 'Name / Heading'}
+
+                    <input
+                      value={contentValue(
+                        activeCollection === 'pages'
+                          ? 'heading'
+                          : activeCollection === 'faqs'
+                            ? 'question'
+                            : 'name'
+                      )}
+                      onChange={(event) =>
+                        updateContentField(
+                          activeCollection === 'pages'
+                            ? 'heading'
+                            : activeCollection === 'faqs'
+                              ? 'question'
+                              : 'name',
+                          event.target.value
+                        )
+                      }
+                      placeholder="Enter heading"
+                    />
+                  </label>
+
+                  <label>
+                    Image URL
+
+                    <input
+                      value={contentValue('imageUrl')}
+                      onChange={(event) =>
+                        updateContentField(
+                          'imageUrl',
+                          event.target.value
+                        )
+                      }
+                      placeholder="https://example.com/image.jpg"
+                    />
+                  </label>
+                </div>
+
+                <label>
+                  {activeCollection === 'faqs'
+                    ? 'Answer'
+                    : 'Description'}
+
+                  <textarea
+                    value={contentValue('description')}
+                    onChange={(event) =>
+                      updateContentField(
+                        'description',
+                        event.target.value
+                      )
+                    }
+                    rows={5}
+                    placeholder="Enter content description"
+                  />
+                </label>
+
+                {activeCollection === 'products' ||
+                activeCollection === 'services' ? (
+                  <div className="cms-form-grid">
+                    <label>
+                      Price
+
+                      <input
+                        value={contentValue('price')}
+                        onChange={(event) =>
+                          updateContentField(
+                            'price',
+                            event.target.value
+                          )
+                        }
+                        placeholder="₹999"
+                      />
+                    </label>
+
+                    <label>
+                      Button Text
+
+                      <input
+                        value={contentValue('buttonText')}
+                        onChange={(event) =>
+                          updateContentField(
+                            'buttonText',
+                            event.target.value
+                          )
+                        }
+                        placeholder="Buy Now"
+                      />
+                    </label>
+                  </div>
+                ) : null}
+
+                {activeCollection === 'pages' ||
+                activeCollection === 'services' ? (
+                  <div className="cms-form-grid">
+                    <label>
+                      Button Text
+
+                      <input
+                        value={contentValue('buttonText')}
+                        onChange={(event) =>
+                          updateContentField(
+                            'buttonText',
+                            event.target.value
+                          )
+                        }
+                        placeholder="Contact Us"
+                      />
+                    </label>
+
+                    <label>
+                      Button Link
+
+                      <input
+                        value={contentValue('buttonUrl')}
+                        onChange={(event) =>
+                          updateContentField(
+                            'buttonUrl',
+                            event.target.value
+                          )
+                        }
+                        placeholder="/contact"
+                      />
+                    </label>
+                  </div>
+                ) : null}
+
+                {showAdvancedJson ? (
+                  <label>
+                    Advanced JSON
+
+                    <textarea
+                      className="cms-json-editor"
+                      value={contentText}
+                      onChange={(event) =>
+                        setContentText(
+                          event.target.value
+                        )
+                      }
+                      rows={13}
+                      spellCheck={false}
+                    />
+
+                    <small>
+                      Developers ke liye complete JSON control.
+                    </small>
+                  </label>
+                ) : null}
+              </section>
 
               <div className="cms-seo-card">
                 <div>

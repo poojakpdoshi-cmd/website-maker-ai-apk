@@ -528,3 +528,47 @@
     width: 100%;
   }
 }
+
+/* WEBFORGE_CMS_VISUAL_EDITOR */
+
+.cms-visual-fields {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid var(
+    --border-color,
+    rgba(128, 128, 128, .25)
+  );
+  border-radius: 16px;
+  background: rgba(128, 128, 128, .05);
+}
+
+.cms-visual-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.cms-visual-heading h3 {
+  margin: 4px 0 0;
+}
+
+.cms-visual-fields textarea {
+  resize: vertical;
+}
+
+.cms-visual-fields input[type="url"] {
+  direction: ltr;
+}
+
+@media (max-width: 600px) {
+  .cms-visual-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .cms-visual-heading button {
+    width: 100%;
+  }
+}
