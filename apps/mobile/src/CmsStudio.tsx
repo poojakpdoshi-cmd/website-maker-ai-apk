@@ -872,6 +872,59 @@ export default function CmsStudio({
     }
   }
 
+  async function duplicateSelectedDocument() {
+    if (!selectedDocument || !projectId) {
+      return;
+    }
+
+    setSaving(true);
+    setError('');
+    setMessage('');
+
+    try {
+      const response = await fetch(
+        `${apiBase}/cms/projects/${projectId}/documents` +
+          `?email=${encodeURIComponent(email)}`,
+        {
+          method: 'POST',
+          headers: headers(),
+          body: JSON.stringify({
+            collection: selectedDocument.collection,
+            title: `${selectedDocument.title} Copy`,
+            slug:
+              `${selectedDocument.slug}-copy-` +
+              `${Date.now().toString().slice(-6)}`,
+            status: 'draft',
+            content: selectedDocument.content || {},
+            seo: selectedDocument.seo || {},
+            sortOrder:
+              Number(selectedDocument.sort_order || 0) + 1
+          })
+        }
+      );
+
+      const data = await readResponse(response) as {
+        document: CmsDocument;
+      };
+
+      setActiveCollection(data.document.collection);
+      openDocument(data.document);
+      setMessage(
+        'Duplicate draft created successfully.'
+      );
+
+      await loadCms(projectId);
+    } catch (duplicateError) {
+      setError(
+        duplicateError instanceof Error
+          ? duplicateError.message
+          : 'Could not duplicate this CMS item.'
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function saveDocument(
     event: FormEvent
   ) {
@@ -1730,6 +1783,19 @@ export default function CmsStudio({
                     Save and Publish
                   </option>
                 </select>
+
+                {selectedDocument ? (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() =>
+                      void duplicateSelectedDocument()
+                    }
+                    disabled={saving}
+                  >
+                    Duplicate
+                  </button>
+                ) : null}
 
                 {selectedDocument ? (
                   <>
