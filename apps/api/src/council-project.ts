@@ -27,13 +27,50 @@ function extractJson(raw: string): unknown {
   return JSON.parse(raw.slice(start, end + 1));
 }
 
+function isAllowedGeneratedPath(
+  path: string
+): boolean {
+  if (allowedFiles.has(path)) {
+    return true;
+  }
+
+  const exactFiles = new Set([
+    '.env.example',
+    'README.md',
+    'vercel.json',
+    'wrangler.toml',
+    'wrangler.jsonc',
+    'prisma/schema.prisma'
+  ]);
+
+  if (exactFiles.has(path)) {
+    return true;
+  }
+
+  const fullStackPaths = [
+    /^(api|server|backend|functions|workers)\/[A-Za-z0-9._/-]+\.(ts|tsx|js|mjs|cjs|json|sql)$/,
+    /^src\/(api|server|backend|services|lib)\/[A-Za-z0-9._/-]+\.(ts|tsx|js|mjs|cjs|json|sql)$/,
+    /^supabase\/migrations\/[A-Za-z0-9._-]+\.sql$/,
+    /^supabase\/functions\/[A-Za-z0-9._/-]+\.(ts|js|json)$/,
+    /^migrations\/[A-Za-z0-9._-]+\.sql$/,
+    /^drizzle\/[A-Za-z0-9._/-]+\.(ts|js|json|sql)$/
+  ];
+
+  return fullStackPaths.some(
+    (rule) => rule.test(path)
+  );
+}
+
 function cleanPath(value: unknown): string | null {
   if (typeof value !== 'string') return null;
 
-  const path = value.trim().replace(/^\/+/, '');
+  const path = value
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '');
 
   if (
-    !allowedFiles.has(path) ||
+    !isAllowedGeneratedPath(path) ||
     path.includes('..') ||
     path.includes('\\')
   ) {

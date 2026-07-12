@@ -8,7 +8,8 @@
     "build": "wrangler deploy --dry-run",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
-    "test:fullstack-policy": "node scripts/test-fullstack-policy.cjs"
+    "test:fullstack-policy": "node scripts/test-fullstack-policy.cjs",
+    "test:fullstack-files": "node scripts/test-fullstack-file-paths.cjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.52.0",
