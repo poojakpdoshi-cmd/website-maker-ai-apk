@@ -737,3 +737,28 @@
     height: 120px;
   }
 }
+
+/* WEBFORGE_CMS_SEARCH */
+
+.cms-search-box {
+  display: flex;
+  gap: 7px;
+  padding: 10px;
+  border-bottom: 1px solid rgba(128,128,128,.18);
+}
+
+.cms-search-box input {
+  min-width: 0;
+  flex: 1;
+  padding: 10px 12px;
+  color: inherit;
+  background: rgba(128,128,128,.08);
+  border: 1px solid rgba(128,128,128,.24);
+  border-radius: 10px;
+  outline: none;
+}
+
+.cms-search-box button {
+  padding: 8px 10px;
+  border-radius: 10px;
+}

@@ -121,6 +121,9 @@ export default function CmsStudio({
   const [selectedId, setSelectedId] =
     useState<string | null>(null);
 
+  const [cmsSearch, setCmsSearch] =
+    useState('');
+
   const [revisions, setRevisions] =
     useState<CmsRevision[]>([]);
 
@@ -222,14 +225,27 @@ export default function CmsStudio({
     [documents, selectedId]
   );
 
-  const visibleDocuments = useMemo(
-    () =>
-      documents.filter(
-        (document) =>
-          document.collection === activeCollection
-      ),
-    [documents, activeCollection]
-  );
+  const visibleDocuments = useMemo(() => {
+    const query = cmsSearch
+      .trim()
+      .toLowerCase();
+
+    return documents.filter((document) => {
+      if (document.collection !== activeCollection) {
+        return false;
+      }
+
+      if (!query) {
+        return true;
+      }
+
+      return (
+        document.title.toLowerCase().includes(query) ||
+        document.slug.toLowerCase().includes(query) ||
+        document.status.toLowerCase().includes(query)
+      );
+    });
+  }, [documents, activeCollection, cmsSearch]);
 
   function headers() {
     return {
@@ -1083,6 +1099,26 @@ export default function CmsStudio({
             >
               + New
             </button>
+          </div>
+
+          <div className="cms-search-box">
+            <input
+              type="search"
+              value={cmsSearch}
+              onChange={(event) =>
+                setCmsSearch(event.target.value)
+              }
+              placeholder={`Search ${activeCollection}…`}
+            />
+
+            {cmsSearch ? (
+              <button
+                type="button"
+                onClick={() => setCmsSearch('')}
+              >
+                Clear
+              </button>
+            ) : null}
           </div>
 
           <div className="cms-document-list">
