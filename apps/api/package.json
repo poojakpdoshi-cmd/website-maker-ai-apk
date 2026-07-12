@@ -9,7 +9,8 @@
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
     "test:fullstack-policy": "node scripts/test-fullstack-policy.cjs",
-    "test:fullstack-files": "node scripts/test-fullstack-file-paths.cjs"
+    "test:fullstack-files": "node scripts/test-fullstack-file-paths.cjs",
+    "test:delivery-flow": "node scripts/test-project-delivery-flow.cjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.52.0",
