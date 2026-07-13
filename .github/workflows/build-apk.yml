@@ -59,7 +59,7 @@ jobs:
           test -f apps/mobile/public/webforge-logo.svg
 
           grep -n "readResponse" apps/mobile/src/App.tsx
-          grep -n "fullStackReport" apps/mobile/src/App.tsx
+          grep -n "full_stack_report" apps/mobile/src/App.tsx
           grep -n "V4.2.*CHAT BUILD" apps/mobile/src/App.tsx
 
           grep -n ">Setup<\|Connection settings" \
