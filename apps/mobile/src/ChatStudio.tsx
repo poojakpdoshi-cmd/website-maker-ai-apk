@@ -72,11 +72,14 @@ export default function ChatStudio({
   onOpenPreview,
   onNavigate
 }: Props) {
-  const fileRef = useRef<HTMLInputElement | null>(null);
+  const imageRef = useRef<HTMLInputElement | null>(null);
+  const documentRef = useRef<HTMLInputElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
 
   const [draft, setDraft] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
+  const [attachmentMenuOpen, setAttachmentMenuOpen] =
+    useState(false);
   const [liveRoomOpen, setLiveRoomOpen] = useState(false);
   const [hasProject, setHasProject] = useState(false);
 
@@ -101,24 +104,15 @@ export default function ChatStudio({
     setDraft('');
     setImage(null);
     setMenuOpen(false);
+    setAttachmentMenuOpen(false);
   }
 
-  function selectImage(event: ChangeEvent<HTMLInputElement>): void {
+  function selectAttachment(
+    event: ChangeEvent<HTMLInputElement>
+  ): void {
     const file = event.target.files?.[0];
 
     if (!file) return;
-
-    if (!file.type.startsWith('image/')) {
-      setMessages((current) => [
-        ...current,
-        {
-          id: makeId(),
-          role: 'assistant',
-          text: 'Please select a valid image.'
-        }
-      ]);
-      return;
-    }
 
     if (file.size > 4 * 1024 * 1024) {
       setMessages((current) => [
@@ -126,9 +120,12 @@ export default function ChatStudio({
         {
           id: makeId(),
           role: 'assistant',
-          text: 'The image must be smaller than 4 MB.'
+          text: 'Attachments must be smaller than 4 MB.'
         }
       ]);
+
+      event.target.value = '';
+      setAttachmentMenuOpen(false);
       return;
     }
 
@@ -139,6 +136,21 @@ export default function ChatStudio({
         name: file.name,
         dataUrl: String(reader.result || '')
       });
+
+      setAttachmentMenuOpen(false);
+    };
+
+    reader.onerror = () => {
+      setMessages((current) => [
+        ...current,
+        {
+          id: makeId(),
+          role: 'assistant',
+          text: 'The selected file could not be read.'
+        }
+      ]);
+
+      setAttachmentMenuOpen(false);
     };
 
     reader.readAsDataURL(file);
@@ -168,25 +180,47 @@ export default function ChatStudio({
     setDraft('');
     setImage(null);
 
-    const generated = await onGenerate(
-      request,
-      attachedImage
-    );
+    try {
+      const generated = await onGenerate(
+        request,
+        attachedImage
+      );
 
-    if (generated) {
-      setHasProject(true);
-    }
-
-    setMessages((current) => [
-      ...current,
-      {
-        id: makeId(),
-        role: 'assistant',
-        text: generated
-          ? `${generated.projectName} is ready. The project was generated and validated.`
-          : 'The build could not be completed. Check the error and try again.'
+      if (!generated) {
+        throw new Error(
+          'Website generation failed without an error message.'
+        );
       }
-    ]);
+
+      setHasProject(true);
+
+      setMessages((current) => [
+        ...current,
+        {
+          id: makeId(),
+          role: 'assistant',
+          text:
+            `${generated.projectName} is ready. ` +
+            'The project was generated and validated.'
+        }
+      ]);
+    } catch (buildError) {
+      const buildMessage =
+        buildError instanceof Error
+          ? buildError.message
+          : 'Website generation failed.';
+
+      setMessages((current) => [
+        ...current,
+        {
+          id: makeId(),
+          role: 'assistant',
+          text:
+            `Build failed: ${buildMessage}\n\n` +
+            'Check your connection and try again.'
+        }
+      ]);
+    }
   }
 
   return (
@@ -433,7 +467,13 @@ export default function ChatStudio({
           >
             {image && (
               <div className="claude-image-preview">
-                <img src={image.dataUrl} alt="" />
+                {image.dataUrl.startsWith('data:image/') ? (
+                  <img src={image.dataUrl} alt="" />
+                ) : (
+                  <div className="claude-file-icon">
+                    FILE
+                  </div>
+                )}
                 <span>{image.name}</span>
 
                 <button
@@ -470,32 +510,73 @@ export default function ChatStudio({
 
             <div className="claude-composer-footer">
               <div className="claude-composer-tools">
-                <button
-                  type="button"
-                  className="claude-add-button"
-                  onClick={() => fileRef.current?.click()}
-                  disabled={busy}
-                  aria-label="Attach image"
-                >
-                  ＋
-                </button>
+                <div className="claude-attachment-wrap">
+                  <button
+                    type="button"
+                    className="claude-add-button"
+                    onClick={() =>
+                      setAttachmentMenuOpen(
+                        (current) => !current
+                      )
+                    }
+                    disabled={busy}
+                    aria-label="Attach photo or file"
+                  >
+                    ＋
+                  </button>
+
+                  {attachmentMenuOpen && (
+                    <div className="claude-attachment-menu">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAttachmentMenuOpen(false);
+                          imageRef.current?.click();
+                        }}
+                      >
+                        <span>▧</span>
+                        <div>
+                          <strong>Photo</strong>
+                          <small>JPG, PNG, WebP</small>
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAttachmentMenuOpen(false);
+                          documentRef.current?.click();
+                        }}
+                      >
+                        <span>▤</span>
+                        <div>
+                          <strong>File</strong>
+                          <small>PDF, docs, text or code</small>
+                        </div>
+                      </button>
+                    </div>
+                  )}
+                </div>
 
                 <input
-                  ref={fileRef}
+                  ref={imageRef}
                   className="chat-file-input"
                   type="file"
                   accept="image/*"
-                  onChange={selectImage}
+                  onChange={selectAttachment}
                 />
 
-                <button
-                  type="button"
-                  className="claude-tool-label"
-                  onClick={() => fileRef.current?.click()}
-                  disabled={busy}
-                >
-                  Add image
-                </button>
+                <input
+                  ref={documentRef}
+                  className="chat-file-input"
+                  type="file"
+                  accept=".pdf,.txt,.md,.csv,.json,.html,.css,.js,.jsx,.ts,.tsx,.xml,.yaml,.yml,.doc,.docx,application/pdf,text/*"
+                  onChange={selectAttachment}
+                />
+
+                <span className="claude-tool-label">
+                  {image ? image.name : 'Attach'}
+                </span>
               </div>
 
               <button

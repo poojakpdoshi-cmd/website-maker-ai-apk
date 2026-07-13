@@ -1620,11 +1620,16 @@ async function loadProjects(activeEmail = email, activeToken = token) {
         'Generation is still running. Reopen the app to continue tracking it.'
       );
     } catch (generationError) {
-      setError(
+      const generationMessage =
         generationError instanceof Error
           ? generationError.message
-          : 'Website generation failed.'
-      );
+          : 'Website generation failed.';
+
+      setError(generationMessage);
+
+      if (returnResult) {
+        throw new Error(generationMessage);
+      }
 
       return null;
     } finally {
