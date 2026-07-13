@@ -2038,6 +2038,21 @@ async function openProject(projectId: string) {
             void loadProjects();
           }
         }}
+        onChat={async (chatPrompt, chatHistory) => {
+          if (!token) throw new Error('Please log in again.');
+          const response = await fetch(`${config.apiBase}/assistant/chat`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}`, 'X-Device-Id': installationId },
+            body: JSON.stringify({
+              message: chatPrompt,
+              username: userSession?.username || username || email.split('@')[0],
+              history: chatHistory.map((item) => ({ role: item.role, text: item.text }))
+            })
+          });
+          const data = await response.json() as { reply?: string; error?: string; providerErrors?: string[] };
+          if (!response.ok || !data.reply) throw new Error(data.error || data.providerErrors?.join(' | ') || 'Assistant request failed.');
+          return data.reply;
+        }}
         onGenerate={async (chatPrompt, chatImage) => {
           const generated = await generateWebsite(
             chatPrompt,

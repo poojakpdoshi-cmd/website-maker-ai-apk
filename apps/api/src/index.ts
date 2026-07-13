@@ -1,4 +1,5 @@
 import { registerCmsRoutes } from './cms-routes';
+import { registerAssistantChatRoutes } from './assistant-chat';
 import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import { z } from 'zod';
@@ -14,6 +15,8 @@ import { injectCmsRuntime } from './cms-live';
 import { registerCmsMediaRoutes } from './cms-media-routes';
 import { processCmsSchedules } from './cms-scheduler';
 import { buildFullStackInstruction } from './fullstack-policy';
+import { createFullStackReport } from './fullstack-report';
+import { auditGeneratedSecurity } from './security-audit-policy';
 type Bindings = {
   APP_NAME: string;
   PUBLIC_API_BASE_URL?: string;
@@ -1491,7 +1494,7 @@ app.post('/generate', async (c) => {
             );
           }
 
-          await recordGenerationEvent(supabase, {
+await recordGenerationEvent(supabase, {
             jobId,
             email,
             eventType: 'final_review_passed',
@@ -1552,6 +1555,10 @@ app.post('/generate', async (c) => {
     }
 
     const { error: versionError } = await supabase.from('project_versions').insert({
+      full_stack_report: createFullStackReport(
+        parsed.data.prompt,
+        generated.files
+      ),
       project_id: projectId,
       version_number: 1,
       prompt: parsed.data.prompt,
@@ -1593,7 +1600,13 @@ app.post('/generate', async (c) => {
       jobStatus: 'completed',
       metadata: { projectId }
     });
-    return c.json({ projectId, jobId, plan: planResult.plan, previewHtml: generated.previewHtml, framework: generated.framework, fileCount: generated.files.length, mode: planResult.mode });
+const fullStackReport = createFullStackReport(
+  parsed.data.prompt,
+  generated.files
+);
+
+return c.json({
+      fullStackReport, projectId, jobId, plan: planResult.plan, previewHtml: generated.previewHtml, framework: generated.framework, fileCount: generated.files.length, mode: planResult.mode });
   } catch (error) {
     const failureMessage =
       error instanceof Error ? error.message : 'Generation failed';
@@ -1642,7 +1655,11 @@ app.post('/projects/:id/edit', async (c) => {
     }
     const generated = buildProjectFiles(revised.plan, { formApiBase: publicApiBase(c), formPublicKey: form?.public_key ? String(form.public_key) : undefined });
     const versionNumber = Number(latest.version_number) + 1;
-    const { error } = await supabase.from('project_versions').insert({ project_id: projectId, version_number: versionNumber, prompt: parsed.data.instruction, plan: revised.plan, generated_files: generated.files, preview_html: generated.previewHtml });
+    const { error } = await supabase.from('project_versions').insert({
+      full_stack_report: createFullStackReport(
+        parsed.data.instruction,
+        generated.files
+      ), project_id: projectId, version_number: versionNumber, prompt: parsed.data.instruction, plan: revised.plan, generated_files: generated.files, preview_html: generated.previewHtml });
     if (error) throw new Error('Could not save the edited version.');
     await supabase.from('projects').update({ plan: revised.plan, name: revised.plan.businessName, website_type: revised.plan.websiteType, status: 'preview_ready', production_url: null }).eq('id', projectId);
     return c.json({ projectId, versionNumber, plan: revised.plan, previewHtml: generated.previewHtml, framework: generated.framework, fileCount: generated.files.length, mode: revised.mode });
@@ -1689,7 +1706,7 @@ app.get('/projects/:id', async (c) => {
   const supabase = requireSupabase(c.env);
   const { data: project } = await supabase.from('projects').select('id,name,website_type,status,framework,github_repository,production_url,deployment_state,created_at,updated_at').eq('id', c.req.param('id')).eq('email', parsed.data.email.toLowerCase()).maybeSingle();
   if (!project) return c.json({ error: 'Project not found.' }, 404);
-  const { data: version } = await supabase.from('project_versions').select('version_number,plan,preview_html,created_at').eq('project_id', project.id).order('version_number', { ascending: false }).limit(1).maybeSingle();
+  const { data: version } = await supabase.from('project_versions').select('version_number,plan,preview_html,created_at,full_stack_report').eq('project_id', project.id).order('version_number', { ascending: false }).limit(1).maybeSingle();
   return c.json({ project, version });
 });
 
@@ -1718,6 +1735,20 @@ app.post('/projects/:id/publish', async (c) => {
       .eq('project_id', projectId)
       .eq('enabled', true)
       .maybeSingle();
+
+    const securityAudit =
+      auditGeneratedSecurity(files);
+
+    if (!securityAudit.passed) {
+      return c.json(
+        {
+          error:
+            'Security audit blocked publishing.',
+          securityAudit
+        },
+        422
+      );
+    }
 
     const deployFiles = cmsSettings?.public_slug
       ? injectCmsRuntime(
@@ -2797,6 +2828,7 @@ app.delete('/admin/accounts/:id', async (c) => {
 app.notFound((c) => c.json({ error: 'Route not found.' }, 404));
 app.onError((error, c) => { console.error(error); return c.json({ error: error instanceof Error ? error.message : 'Unexpected server error.' }, 500); });
 
+registerAssistantChatRoutes(app);
 registerCmsRoutes(app, {
   requireUser,
   requireSupabase

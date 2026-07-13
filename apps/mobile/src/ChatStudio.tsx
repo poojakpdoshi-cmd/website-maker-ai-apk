@@ -10,6 +10,8 @@ type ChatResult = {
   projectName: string;
 } | null;
 
+type ChatHistoryItem = { role: 'assistant' | 'user'; text: string };
+
 type WorkspaceTab =
   | 'create'
   | 'preview'
@@ -44,6 +46,7 @@ type Props = {
       dataUrl: string;
     } | null
   ) => Promise<ChatResult>;
+  onChat: (prompt: string, history: ChatHistoryItem[]) => Promise<string>;
   onOpenPreview: () => void;
   onNavigate: (tab: WorkspaceTab) => void;
 };
@@ -61,6 +64,12 @@ const starters = [
   'Build a professional analytics dashboard'
 ];
 
+function isWebsiteBuildRequest(value: string): boolean {
+  const target = /\b(website|web site|landing page|portfolio|e-?commerce|online store|dashboard|web app|frontend|full[- ]stack site)\b/i;
+  const action = /\b(build|create|make|design|generate|develop|redesign|code|need|want)\b/i;
+  return target.test(value) && action.test(value);
+}
+
 function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
@@ -69,6 +78,7 @@ export default function ChatStudio({
   busy,
   activity,
   onGenerate,
+  onChat,
   onOpenPreview,
   onNavigate
 }: Props) {
@@ -162,9 +172,10 @@ export default function ChatStudio({
 
     const request = draft.trim();
 
-    if (busy || request.length < 20) return;
+    if (busy || request.length < 1) return;
 
     const attachedImage = image;
+    const chatHistory = messages;
 
     setMessages((current) => [
       ...current,
@@ -179,6 +190,23 @@ export default function ChatStudio({
 
     setDraft('');
     setImage(null);
+
+    if (!isWebsiteBuildRequest(request)) {
+      try {
+        const reply = await onChat(request, chatHistory);
+        setMessages((current) => [
+          ...current,
+          { id: makeId(), role: 'assistant', text: reply }
+        ]);
+      } catch (chatError) {
+        const text = chatError instanceof Error ? chatError.message : 'Assistant request failed.';
+        setMessages((current) => [
+          ...current,
+          { id: makeId(), role: 'assistant', text: `Assistant error: ${text}` }
+        ]);
+      }
+      return;
+    }
 
     try {
       const generated = await onGenerate(
