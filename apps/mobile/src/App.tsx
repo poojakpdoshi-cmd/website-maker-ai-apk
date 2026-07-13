@@ -5,6 +5,7 @@ import AdminPanelV5 from './AdminPanelV5';
 import ChatStudio, { type LiveBuildActivity } from './ChatStudio';
 
 import CmsStudio from './CmsStudio';
+import type { FullStackReport } from './FullStackReportCard';
 type AppTheme = 'dark' | 'light' | 'system';
 type RuntimeConfig = { apiBase: string; supabaseUrl: string; supabaseAnonKey: string };
 type WebsitePlan = { businessName: string; websiteType: string; tagline: string; pages: string[]; features: string[]; theme: { style: string; primary: string; secondary: string; background: string; text: string } };
@@ -850,8 +851,37 @@ const token = userSession?.token || session?.access_token || '';
   const status = useMemo(() => result ? `${result.plan.businessName} • ${result.framework} • ${result.fileCount} files • ${result.mode === 'ai' ? 'Gemini-assisted brain' : 'Built-in brain'}` : 'No website generated yet', [result]);
 
   async function readResponse(response: Response) {
-    const data = await response.json().catch(() => ({ error: 'The server returned an invalid response.' }));
-    if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
+    const data = await response
+      .json()
+      .catch(() => ({
+        error:
+          'The server returned an invalid response.'
+      }));
+
+    if (!response.ok) {
+      const securityErrors =
+        Array.isArray(data?.securityAudit?.errors)
+          ? data.securityAudit.errors.filter(
+              (item: unknown) =>
+                typeof item === 'string'
+            )
+          : [];
+
+      const securityDetails =
+        securityErrors.length > 0
+          ? `\n\nSecurity issues:\n• ${securityErrors.join(
+              '\n• '
+            )}`
+          : '';
+
+      throw new Error(
+        `${
+          data.error ||
+          `Request failed (${response.status})`
+        }${securityDetails}`
+      );
+    }
+
     return data;
   }
 
@@ -1716,7 +1746,7 @@ async function openProject(projectId: string) {
     setLoading(true); setError('');
     try {
       const response = await fetch(`${config.apiBase}/projects/${projectId}?email=${encodeURIComponent(email)}`, { headers: authHeaders() });
-      const data = await readResponse(response) as { version: { version_number: number; plan: WebsitePlan; preview_html: string } };
+      const data = await readResponse(response) as { version: { version_number: number; plan: WebsitePlan; preview_html: string; full_stack_report?: FullStackReport | null } };
       setResult({ projectId, versionNumber: data.version.version_number, plan: data.version.plan, previewHtml: data.version.preview_html, framework: 'vite-react', fileCount: 9, mode: 'built-in' }); setTab('preview');
     } catch (projectError) { setError(projectError instanceof Error ? projectError.message : 'Could not open project.'); }
     finally { setLoading(false); }
