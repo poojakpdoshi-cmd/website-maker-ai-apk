@@ -58,8 +58,8 @@ jobs:
           test -f apps/mobile/assets/icon.png
           test -f apps/mobile/public/webforge-logo.svg
 
-          grep -n "OWNER LOGIN" apps/mobile/src/App.tsx
-          grep -n "USER LOGIN" apps/mobile/src/App.tsx
+          grep -n "readResponse" apps/mobile/src/App.tsx
+          grep -n "fullStackReport" apps/mobile/src/App.tsx
           grep -n "V4.2.*CHAT BUILD" apps/mobile/src/App.tsx
 
           grep -n ">Setup<\|Connection settings" \
