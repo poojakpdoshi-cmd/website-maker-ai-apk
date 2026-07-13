@@ -42,7 +42,18 @@ const server = createServer(async (incoming, outgoing) => {
       init.body = body;
       init.duplex = 'half';
     }
-    const response = await app.fetch(new Request(url, init), env);
+    const executionContext = {
+      waitUntil(promise: Promise<unknown>) {
+        void promise.catch(console.error);
+      },
+      passThroughOnException() {}
+    } as Parameters<typeof app.fetch>[2];
+
+    const response = await app.fetch(
+      new Request(url, init),
+      env,
+      executionContext
+    );
     outgoing.statusCode = response.status;
     response.headers.forEach((value, name) => outgoing.setHeader(name, value));
     outgoing.end(Buffer.from(await response.arrayBuffer()));
