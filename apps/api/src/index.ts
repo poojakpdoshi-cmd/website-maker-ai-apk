@@ -909,8 +909,9 @@ app.post('/generation-jobs/start', async (c) => {
   const authorization =
     c.req.header('Authorization') || '';
 
-  c.executionCtx.waitUntil(
-    fetch(`${publicApiBase(c)}/generate`, {
+  const generationRequest = new Request(
+    new URL('/generate', c.req.url).toString(),
+    {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -924,15 +925,54 @@ app.post('/generation-jobs/start', async (c) => {
         image: parsed.data.image,
         jobId
       })
-    }).then(async (response) => {
-      if (!response.ok) {
-        const failure = await response.text();
-        console.error('Background generation failed:', failure);
-      }
-    }).catch((error) => {
-      console.error('Background generation request failed:', error);
-    })
+    }
   );
+
+  c.executionCtx.waitUntil(
+    Promise.resolve(
+      app.fetch(generationRequest, c.env, c.executionCtx)
+    )
+      .then(async (response) => {
+        if (response.ok) return;
+
+        const failure =
+          (await response.text().catch(() => '')) ||
+          `Generation failed with HTTP ${response.status}.`;
+
+        await supabase
+          .from('generation_jobs')
+          .update({
+            status: 'failed',
+            current_step: 'failed',
+            current_agent: null,
+            progress: 100,
+            error_message: failure,
+            completed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', jobId);
+      })
+      .catch(async (launchError) => {
+        const failure =
+          launchError instanceof Error
+            ? launchError.message
+            : 'The generation service could not start.';
+
+        await supabase
+          .from('generation_jobs')
+          .update({
+            status: 'failed',
+            current_step: 'failed',
+            current_agent: null,
+            progress: 100,
+            error_message: failure,
+            completed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', jobId);
+      })
+  );
+
 
   return c.json({
     jobId,
