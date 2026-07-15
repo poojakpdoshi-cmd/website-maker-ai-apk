@@ -38,6 +38,7 @@ export type LiveBuildActivity = {
 
 type Props = {
   busy: boolean;
+  userKey: string;
   activity?: LiveBuildActivity | null;
   onGenerate: (
     prompt: string,
@@ -55,6 +56,13 @@ type Message = {
   id: string;
   role: 'assistant' | 'user';
   text: string;
+};
+
+type SavedChat = {
+  id: string;
+  title: string;
+  updatedAt: number;
+  messages: Message[];
 };
 
 const starters = [
@@ -76,6 +84,7 @@ function makeId(): string {
 
 export default function ChatStudio({
   busy,
+  userKey,
   activity,
   onGenerate,
   onChat,
@@ -98,18 +107,65 @@ export default function ChatStudio({
     dataUrl: string;
   } | null>(null);
 
+  const storageKey =
+    'webforge-chat-history:' +
+    (userKey || 'anonymous').toLowerCase();
+
+  const [savedChats, setSavedChats] = useState<SavedChat[]>([]);
+  const [activeChatId, setActiveChatId] = useState(() => makeId());
   const [messages, setMessages] = useState<Message[]>([]);
+
+  const buildActive = Boolean(
+    activity &&
+      !['completed', 'failed', 'cancelled'].includes(
+        activity.status.toLowerCase()
+      )
+  );
+
+  useEffect(() => {
+    try {
+      const parsed = JSON.parse(
+        localStorage.getItem(storageKey) || '[]'
+      ) as SavedChat[];
+      setSavedChats(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      setSavedChats([]);
+    }
+  }, [storageKey]);
+
+  useEffect(() => {
+    if (messages.length === 0) return;
+
+    setSavedChats((current) => {
+      const title =
+        messages.find((item) => item.role === 'user')?.text
+          .replace(/\s+/g, ' ')
+          .slice(0, 52) || 'New chat';
+
+      const next: SavedChat[] = [
+        {
+          id: activeChatId,
+          title,
+          updatedAt: Date.now(),
+          messages
+        },
+        ...current.filter((item) => item.id !== activeChatId)
+      ].slice(0, 100);
+
+      localStorage.setItem(storageKey, JSON.stringify(next));
+      return next;
+    });
+  }, [activeChatId, messages, storageKey]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({
       behavior: 'smooth',
       block: 'end'
     });
-  }, [messages, busy]);
+  }, [messages, buildActive]);
 
   function newChat(): void {
-    if (busy) return;
-
+    setActiveChatId(makeId());
     setMessages([]);
     setDraft('');
     setImage(null);
@@ -172,7 +228,7 @@ export default function ChatStudio({
 
     const request = draft.trim();
 
-    if (busy || request.length < 1) return;
+    if (request.length < 1) return;
 
     const attachedImage = image;
     const chatHistory = messages;
@@ -205,6 +261,19 @@ export default function ChatStudio({
           { id: makeId(), role: 'assistant', text: `Assistant error: ${text}` }
         ]);
       }
+      return;
+    }
+
+    if (buildActive) {
+      setMessages((current) => [
+        ...current,
+        {
+          id: makeId(),
+          role: 'assistant',
+          text:
+            'A website build is already running. You can keep chatting, but wait for it to finish before starting another build.'
+        }
+      ]);
       return;
     }
 
@@ -321,11 +390,51 @@ export default function ChatStudio({
           type="button"
           className="claude-new-chat"
           onClick={newChat}
-          disabled={busy}
         >
           <span>＋</span>
           New chat
         </button>
+
+        <div className="claude-saved-chats">
+          <strong>Recent chats</strong>
+          {savedChats.length === 0 ? (
+            <small>No saved chats yet</small>
+          ) : (
+            savedChats.map((chat) => (
+              <div key={chat.id} className="claude-saved-chat-row">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveChatId(chat.id);
+                    setMessages(chat.messages);
+                    setMenuOpen(false);
+                  }}
+                >
+                  {chat.title}
+                </button>
+                <button
+                  type="button"
+                  aria-label="Delete chat"
+                  onClick={() => {
+                    setSavedChats((current) => {
+                      const next = current.filter(
+                        (item) => item.id !== chat.id
+                      );
+                      localStorage.setItem(
+                        storageKey,
+                        JSON.stringify(next)
+                      );
+                      return next;
+                    });
+                    if (activeChatId === chat.id) newChat();
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            ))
+          )}
+        </div>
 
         <nav className="claude-drawer-nav">
           <button type="button" onClick={newChat}>
@@ -383,13 +492,13 @@ export default function ChatStudio({
       <main className="claude-chat-main">
         <div
           className={
-            messages.length === 0
+            messages.length === 0 && !buildActive
               ? 'claude-chat-scroll empty-chat'
               : 'claude-chat-scroll'
           }
           aria-live="polite"
         >
-          {messages.length === 0 ? (
+          {messages.length === 0 && !buildActive ? (
             <section className="claude-welcome">
               <div className="claude-welcome-logo">W</div>
 
@@ -441,7 +550,7 @@ export default function ChatStudio({
                 </article>
               ))}
 
-              {busy && (
+              {buildActive && (
                 <button
                   type="button"
                   className="claude-agent-working"
@@ -522,13 +631,11 @@ export default function ChatStudio({
               rows={1}
               maxLength={6000}
               placeholder="Message WebForge..."
-              disabled={busy}
               onKeyDown={(event) => {
                 if (
                   event.key === 'Enter' &&
                   !event.shiftKey &&
-                  draft.trim().length >= 20 &&
-                  !busy
+                  draft.trim().length >= 1
                 ) {
                   event.preventDefault();
                   event.currentTarget.form?.requestSubmit();
@@ -547,7 +654,6 @@ export default function ChatStudio({
                         (current) => !current
                       )
                     }
-                    disabled={busy}
                     aria-label="Attach photo or file"
                   >
                     ＋
@@ -610,16 +716,10 @@ export default function ChatStudio({
               <button
                 type="submit"
                 className="claude-send-button"
-                disabled={
-                  busy || draft.trim().length < 20
-                }
+                disabled={draft.trim().length < 1}
                 aria-label="Send message"
               >
-                {busy ? (
-                  <span className="claude-stop-icon" />
-                ) : (
-                  '↑'
-                )}
+                {'↑'}
               </button>
             </div>
           </form>

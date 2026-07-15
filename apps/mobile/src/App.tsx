@@ -1118,7 +1118,6 @@ async function loadProjects(activeEmail = email, activeToken = token) {
     let cancelled = false;
 
     async function resumeGeneration(): Promise<void> {
-      setLoading(true);
       setMessage('Restoring your active WebForge task…');
       setError('');
 
@@ -2029,6 +2028,7 @@ async function openProject(projectId: string) {
     {tab === 'chat' && (
       <ChatStudio
         busy={loading}
+        userKey={userSession?.internalEmail || session?.user?.email || email}
         activity={activity}
         onOpenPreview={() => setTab('preview')}
         onNavigate={(nextTab) => {
