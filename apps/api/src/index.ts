@@ -14,7 +14,8 @@ import type { GeneratedProjectFile, WebsitePlan } from '@wmai/shared';
 import { injectCmsRuntime } from './cms-live';
 import { registerCmsMediaRoutes } from './cms-media-routes';
 import { processCmsSchedules } from './cms-scheduler';
-import { buildFullStackInstruction } from './fullstack-policy';
+import { buildFullStackInstruction } from "./fullstack-policy";
+import { ensureFullStackArtifacts } from "./fullstack-fallback";
 import { createFullStackReport } from './fullstack-report';
 import { auditGeneratedSecurity } from './security-audit-policy';
 type Bindings = {
@@ -1320,6 +1321,11 @@ app.post('/generate', async (c) => {
       jobStatus: 'running'
     });
 
+    generated.files = ensureFullStackArtifacts(
+      parsed.data.prompt,
+      generated.files
+    );
+
     const deterministicValidation =
       validateGeneratedProject(
         generated.files,
@@ -1474,6 +1480,11 @@ app.post('/generate', async (c) => {
             generated,
             repairPatch
           );
+        generated.files = ensureFullStackArtifacts(
+          parsed.data.prompt,
+          generated.files
+        );
+
 
           const repairedValidation =
             validateGeneratedProject(
