@@ -1133,37 +1133,3 @@ body {
   white-space: normal !important;
   overflow-wrap: anywhere !important;
 }
-
-/* WebForge V4.4 final topbar alignment */
-.claude-topbar {
-  display: grid !important;
-  grid-template-columns: 40px minmax(0, 1fr) auto !important;
-  align-items: center !important;
-  min-height: 72px !important;
-  height: auto !important;
-  border-bottom: 0 !important;
-  box-shadow: none !important;
-}
-
-.claude-brand {
-  min-width: 0 !important;
-  align-items: center !important;
-}
-
-.claude-brand > div:last-child {
-  min-width: 0 !important;
-}
-
-.claude-brand strong {
-  overflow: hidden !important;
-  line-height: 1.2 !important;
-  text-overflow: ellipsis !important;
-  white-space: nowrap !important;
-}
-
-.claude-drawer-nav button span:last-child {
-  min-width: 0 !important;
-  max-width: 100% !important;
-  white-space: normal !important;
-  overflow-wrap: anywhere !important;
-}
