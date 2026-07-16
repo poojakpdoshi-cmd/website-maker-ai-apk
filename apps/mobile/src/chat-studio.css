@@ -1031,3 +1031,62 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* WebForge drawer history and colour fix */
+.claude-saved-chats {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid #eadfd5;
+  border-radius: 14px;
+  background: #fffaf6;
+  color: #302923;
+}
+
+.claude-saved-chats > strong,
+.claude-saved-chats > small {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.claude-saved-chat-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 34px;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.claude-saved-chat-row button {
+  border: 0;
+  border-radius: 9px;
+  padding: 9px;
+  background: #f5ebe2;
+  color: #302923;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.claude-saved-chat-row button:last-child {
+  color: #b53d32;
+  text-align: center;
+}
+
+.claude-drawer-nav {
+  padding: 8px;
+  border: 1px solid #eadfd5;
+  border-radius: 16px;
+  background: #fff8f2 !important;
+}
+
+.claude-drawer-nav button {
+  color: #302923 !important;
+  font-weight: 600;
+}
+
+.claude-drawer-nav button:nth-child(1) span { color: #df6c4f; }
+.claude-drawer-nav button:nth-child(2) span { color: #3978c5; }
+.claude-drawer-nav button:nth-child(3) span { color: #4b9560; }
+.claude-drawer-nav button:nth-child(4) span { color: #8a5fc2; }
+.claude-drawer-nav button:nth-child(5) span { color: #c5852e; }
+.claude-drawer-nav button:nth-child(6) span { color: #c55278; }
