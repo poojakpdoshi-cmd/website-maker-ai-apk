@@ -1157,7 +1157,7 @@ app.post('/generate', async (c) => {
       progress: 32,
       jobStatus: 'running'
     });
-    const { error: projectError } = await supabase.from('projects').insert({ id: projectId, email, name: planResult.plan.businessName, description: parsed.data.prompt, website_type: planResult.plan.websiteType, status: 'preview_ready', plan: planResult.plan, framework: 'vite-react' });
+    const { error: projectError } = await supabase.from('projects').insert({ id: projectId, email, name: planResult.plan.businessName, description: parsed.data.prompt, website_type: planResult.plan.websiteType, status: 'building', plan: planResult.plan, framework: 'vite-react' });
     if (projectError) throw new Error('Could not save the generated project.');
 
     let formPublicKey: string | undefined;
@@ -1618,6 +1618,7 @@ await recordGenerationEvent(supabase, {
       preview_html: generated.previewHtml
     });
     if (versionError) throw new Error('Could not save the first project version.');
+    await supabase.from('projects').update({ status: 'preview_ready' }).eq('id', projectId).eq('email', email);
 
     await recordGenerationEvent(supabase, {
       jobId,
@@ -1755,7 +1756,7 @@ app.get('/projects/:id', async (c) => {
   if (!access) return c.json({ error: 'Your login session is missing or expired.' }, 401);
   if (!access.ok) return c.json({ error: access.error }, access.status);
   const supabase = requireSupabase(c.env);
-  const { data: project } = await supabase.from('projects').select('id,name,website_type,status,framework,github_repository,production_url,deployment_state,created_at,updated_at').eq('id', c.req.param('id')).eq('email', parsed.data.email.toLowerCase()).maybeSingle();
+  const { data: project } = await supabase.from('projects').select('*').eq('id', c.req.param('id')).eq('email', parsed.data.email.toLowerCase()).maybeSingle();
   if (!project) return c.json({ error: 'Project not found.' }, 404);
   const { data: version } = await supabase.from('project_versions').select('version_number,plan,preview_html,created_at,full_stack_report').eq('project_id', project.id).order('version_number', { ascending: false }).limit(1).maybeSingle();
   return c.json({ project, version });
