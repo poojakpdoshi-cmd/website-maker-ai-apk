@@ -1618,28 +1618,38 @@ await recordGenerationEvent(supabase, {
       preview_html: generated.previewHtml
     });
     if (versionError) throw new Error('Could not save the first project version.');
-    await supabase.from('projects').update({ status: 'preview_ready' }).eq('id', projectId).eq('email', email);
 
-    await recordGenerationEvent(supabase, {
-      jobId,
-      email,
-      eventType: 'validation',
-      agentName: 'Validator',
-      title: 'Validating generated project',
-      detail: 'Checking project structure, preview and saved version.',
-      progress: 88,
-      jobStatus: 'running'
-    });
+    const completedAt = new Date().toISOString();
 
-    await supabase.from('generation_jobs').update({
-      project_id: projectId,
-      status: 'completed',
-      current_step: 'preview_ready',
-      current_agent: null,
-      progress: 100,
-      output_plan: planResult.plan,
-      completed_at: new Date().toISOString()
-    }).eq('id', jobId);
+    const { error: projectReadyError } = await supabase
+      .from('projects')
+      .update({ status: 'preview_ready' })
+      .eq('id', projectId)
+      .eq('email', email);
+
+    if (projectReadyError) {
+      throw new Error('Could not prepare the website preview.');
+    }
+
+    const { error: completedJobError } = await supabase
+      .from('generation_jobs')
+      .update({
+        project_id: projectId,
+        status: 'completed',
+        current_step: 'preview_ready',
+        current_agent: null,
+        progress: 100,
+        output_plan: planResult.plan,
+        error_message: null,
+        completed_at: completedAt,
+        updated_at: completedAt
+      })
+      .eq('id', jobId)
+      .eq('email', email);
+
+    if (completedJobError) {
+      throw new Error('Could not finalize the generated website.');
+    }
 
     await recordGenerationEvent(supabase, {
       jobId,
@@ -1652,6 +1662,7 @@ await recordGenerationEvent(supabase, {
       jobStatus: 'completed',
       metadata: { projectId }
     });
+
 const fullStackReport = createFullStackReport(
   parsed.data.prompt,
   generated.files

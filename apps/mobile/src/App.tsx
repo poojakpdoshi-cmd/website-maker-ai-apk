@@ -1412,7 +1412,8 @@ async function loadProjects(activeEmail = email, activeToken = token) {
     image?: {
       name: string;
       dataUrl: string;
-    } | null
+    } | null,
+    activityListener?: (activity: LiveBuildActivity) => void
   ): Promise<GenerateResponse | null> {
     const basePrompt =
       (customPrompt || prompt).trim();
@@ -1457,6 +1458,11 @@ async function loadProjects(activeEmail = email, activeToken = token) {
     setError('');
     setMessage('WebForge Council is starting…');
 
+    const publishActivity = (next: LiveBuildActivity): void => {
+      setActivity(next);
+      activityListener?.(next);
+    };
+
     try {
       const startResponse = await fetch(
         `${config.apiBase}/generation-jobs/start`,
@@ -1486,7 +1492,7 @@ async function loadProjects(activeEmail = email, activeToken = token) {
         started.jobId
       );
 
-      setActivity({
+      publishActivity({
         jobId: started.jobId,
         status: started.status,
         progress: started.progress,
@@ -1517,7 +1523,7 @@ async function loadProjects(activeEmail = email, activeToken = token) {
           events: LiveBuildActivity['events'];
         };
 
-        setActivity({
+        publishActivity({
           jobId: started.jobId,
           status: statusData.job.status,
           progress: Number(statusData.job.progress || 0),
@@ -2053,11 +2059,12 @@ async function openProject(projectId: string) {
           if (!response.ok || !data.reply) throw new Error(data.error || data.providerErrors?.join(' | ') || 'Assistant request failed.');
           return data.reply;
         }}
-        onGenerate={async (chatPrompt, chatImage) => {
+        onGenerate={async (chatPrompt, chatImage, activityListener) => {
           const generated = await generateWebsite(
             chatPrompt,
             true,
-            chatImage
+            chatImage,
+            activityListener
           );
 
           return generated

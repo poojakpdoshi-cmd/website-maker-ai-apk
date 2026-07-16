@@ -45,7 +45,8 @@ type Props = {
     image?: {
       name: string;
       dataUrl: string;
-    } | null
+    } | null,
+    activityListener?: (activity: LiveBuildActivity) => void
   ) => Promise<ChatResult>;
   onChat: (prompt: string, history: ChatHistoryItem[]) => Promise<string>;
   onOpenPreview: () => void;
@@ -63,6 +64,7 @@ type SavedChat = {
   title: string;
   updatedAt: number;
   messages: Message[];
+  activity?: LiveBuildActivity | null;
 };
 
 const starters = [
@@ -114,11 +116,22 @@ export default function ChatStudio({
   const [savedChats, setSavedChats] = useState<SavedChat[]>([]);
   const [activeChatId, setActiveChatId] = useState(() => makeId());
   const [messages, setMessages] = useState<Message[]>([]);
+  const activeChatIdRef = useRef(activeChatId);
+
+  const [chatActivities, setChatActivities] = useState<
+    Record<string, LiveBuildActivity>
+  >({});
+
+  const activeActivity =
+    chatActivities[activeChatId] ||
+    (Object.keys(chatActivities).length === 0
+      ? activity || null
+      : null);
 
   const buildActive = Boolean(
-    activity &&
+    activeActivity &&
       !['completed', 'failed', 'cancelled'].includes(
-        activity.status.toLowerCase()
+        activeActivity.status.toLowerCase()
       )
   );
 
@@ -127,7 +140,16 @@ export default function ChatStudio({
       const parsed = JSON.parse(
         localStorage.getItem(storageKey) || '[]'
       ) as SavedChat[];
-      setSavedChats(Array.isArray(parsed) ? parsed : []);
+      const chats = Array.isArray(parsed) ? parsed : [];
+      setSavedChats(chats);
+
+      setChatActivities(
+        Object.fromEntries(
+          chats
+            .filter((chat) => Boolean(chat.activity))
+            .map((chat) => [chat.id, chat.activity])
+        ) as Record<string, LiveBuildActivity>
+      );
     } catch {
       setSavedChats([]);
     }
@@ -147,7 +169,8 @@ export default function ChatStudio({
           id: activeChatId,
           title,
           updatedAt: Date.now(),
-          messages
+          messages,
+          activity: activeActivity
         },
         ...current.filter((item) => item.id !== activeChatId)
       ].slice(0, 100);
@@ -155,7 +178,34 @@ export default function ChatStudio({
       localStorage.setItem(storageKey, JSON.stringify(next));
       return next;
     });
-  }, [activeChatId, messages, storageKey]);
+  }, [activeActivity, activeChatId, messages, storageKey]);
+
+  useEffect(() => {
+    activeChatIdRef.current = activeChatId;
+  }, [activeChatId]);
+
+  useEffect(() => {
+    setSavedChats((current) => {
+      let changed = false;
+
+      const next = current.map((chat) => {
+        const nextActivity = chatActivities[chat.id];
+
+        if (!nextActivity || chat.activity === nextActivity) {
+          return chat;
+        }
+
+        changed = true;
+        return { ...chat, activity: nextActivity };
+      });
+
+      if (changed) {
+        localStorage.setItem(storageKey, JSON.stringify(next));
+      }
+
+      return changed ? next : current;
+    });
+  }, [chatActivities, storageKey]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({
@@ -165,12 +215,29 @@ export default function ChatStudio({
   }, [messages, buildActive]);
 
   function newChat(): void {
+    const hadActiveBuild =
+      buildActive ||
+      Boolean(
+        localStorage.getItem(
+          'webforge-active-generation-job'
+        )
+      );
+
+    localStorage.removeItem(
+      'webforge-active-generation-job'
+    );
+
     setActiveChatId(makeId());
     setMessages([]);
     setDraft('');
     setImage(null);
     setMenuOpen(false);
     setAttachmentMenuOpen(false);
+    setLiveRoomOpen(false);
+
+    if (hadActiveBuild) {
+      window.location.reload();
+    }
   }
 
   function selectAttachment(
@@ -232,6 +299,7 @@ export default function ChatStudio({
 
     const attachedImage = image;
     const chatHistory = messages;
+    const requestChatId = activeChatId;
 
     setMessages((current) => [
       ...current,
@@ -280,7 +348,13 @@ export default function ChatStudio({
     try {
       const generated = await onGenerate(
         request,
-        attachedImage
+        attachedImage,
+        (nextActivity) => {
+          setChatActivities((current) => ({
+            ...current,
+            [requestChatId]: nextActivity
+          }));
+        }
       );
 
       if (!generated) {
@@ -562,11 +636,11 @@ export default function ChatStudio({
 
                   <div>
                     <strong>
-                      {activity?.currentAgent || 'WebForge Council'} is working
+                      {activeActivity?.currentAgent || 'WebForge Council'} is working
                     </strong>
 
                     <p>
-                      {activity?.events.at(-1)?.detail ||
+                      {activeActivity?.events.at(-1)?.detail ||
                         'Planning, coding and validating your project'}
                     </p>
 
@@ -757,10 +831,10 @@ export default function ChatStudio({
 
               <div>
                 <strong>
-                  {activity?.currentAgent || 'WebForge Council'} is working
+                  {activeActivity?.currentAgent || 'WebForge Council'} is working
                 </strong>
                 <span>
-                  {activity?.events.at(-1)?.detail ||
+                  {activeActivity?.events.at(-1)?.detail ||
                     'Your project is being processed by the agents.'}
                 </span>
               </div>
@@ -769,21 +843,21 @@ export default function ChatStudio({
             <div className="claude-progress-track">
               <span
                 style={{
-                  width: `${Math.max(2, activity?.progress || 2)}%`,
+                  width: `${Math.max(2, activeActivity?.progress || 2)}%`,
                   animation: activity ? 'none' : undefined
                 }}
               />
             </div>
 
             <p className="claude-live-progress-label">
-              {activity?.progress || 2}% complete
+              {activeActivity?.progress || 2}% complete
             </p>
 
             <div className="claude-build-timeline">
-              {activity?.events.length ? (
-                activity.events.map((event, index) => {
+              {activeActivity?.events.length ? (
+                (activeActivity?.events || []).map((event, index) => {
                   const isLast =
-                    index === activity.events.length - 1;
+                    index === (activeActivity?.events.length || 0) - 1;
 
                   const complete =
                     event.status === 'completed' ||
