@@ -12,6 +12,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 
 import './webforge-final-ui.css';
 import './chat-studio.css';
+import './webforge-v43-performance.css';
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
@@ -21,3 +22,16 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
 
 
 import './cms-studio.css';
+
+const webforgeUiVersion = '4.3.0';
+
+if (localStorage.getItem('webforge-ui-version') !== webforgeUiVersion) {
+  localStorage.removeItem('webforge-active-generation-job');
+  localStorage.setItem('webforge-ui-version', webforgeUiVersion);
+
+  if ('caches' in window) {
+    void caches.keys().then((keys) =>
+      Promise.all(keys.map((key) => caches.delete(key)))
+    );
+  }
+}
