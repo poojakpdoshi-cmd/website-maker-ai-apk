@@ -61,6 +61,8 @@ export default function AdminPanelV5({
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [passwordAccountId, setPasswordAccountId] = useState('');
+  const [passwordDraft, setPasswordDraft] = useState('');
 
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -205,13 +207,15 @@ export default function AdminPanelV5({
   }
 
   async function changeUserPassword(account: Account) {
-    const nextPassword = window.prompt(
-      `Enter a new password for ${account.username} (minimum 8 characters):`
-    );
+    if (passwordAccountId !== account.id) {
+      setPasswordAccountId(account.id);
+      setPasswordDraft('');
+      setError('');
+      setMessage('');
+      return;
+    }
 
-    if (nextPassword === null) return;
-
-    if (nextPassword.length < 8) {
+    if (passwordDraft.length < 8) {
       setError('Password must be at least 8 characters.');
       return;
     }
@@ -229,12 +233,16 @@ export default function AdminPanelV5({
             'content-type': 'application/json',
             Authorization: `Bearer ${token}`
           },
-          body: JSON.stringify({ password: nextPassword })
+          body: JSON.stringify({ password: passwordDraft })
         }
       );
 
       await parseResponse(response);
-      setMessage(`Password changed for ${account.username}. Existing user sessions were revoked.`);
+      setPasswordAccountId('');
+      setPasswordDraft('');
+      setMessage(
+        `Password changed for ${account.username}. Existing user sessions were revoked.`
+      );
     } catch (changeError) {
       setError(
         changeError instanceof Error
@@ -592,6 +600,21 @@ export default function AdminPanelV5({
                           {account.status}
                         </span>
 
+                        {passwordAccountId === account.id && (
+                          <input
+                            type="password"
+                            className="admin-inline-password-v5"
+                            value={passwordDraft}
+                            onChange={(event) =>
+                              setPasswordDraft(event.target.value)
+                            }
+                            placeholder="New password"
+                            autoComplete="new-password"
+                            minLength={8}
+                            disabled={busy}
+                          />
+                        )}
+
                         <button
                           type="button"
                           className="admin-user-action-v5"
@@ -600,8 +623,24 @@ export default function AdminPanelV5({
                             void changeUserPassword(account)
                           }
                         >
-                          Change Password
+                          {passwordAccountId === account.id
+                            ? 'Save Password'
+                            : 'Change Password'}
                         </button>
+
+                        {passwordAccountId === account.id && (
+                          <button
+                            type="button"
+                            className="admin-user-action-v5"
+                            disabled={busy}
+                            onClick={() => {
+                              setPasswordAccountId('');
+                              setPasswordDraft('');
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        )}
 
                         <button
                           type="button"
