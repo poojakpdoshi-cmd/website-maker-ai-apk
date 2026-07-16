@@ -17,5 +17,11 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           test -n "$SUPABASE_DB_URL"
-          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 \
-            -f supabase/migrations/009_full_stack_report.sql
+          for migration in \
+            supabase/migrations/006_website_cms.sql \
+            supabase/migrations/007_cms_media_library.sql \
+            supabase/migrations/008_cms_scheduled_publishing.sql \
+            supabase/migrations/009_full_stack_report.sql
+          do
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f "$migration"
+          done
