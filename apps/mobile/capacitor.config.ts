@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.poojak.webforgeai',
-  appName: 'WebForge.Ai',
+  appName: 'Nexora AI',
   webDir: 'dist',
 
   server: {
