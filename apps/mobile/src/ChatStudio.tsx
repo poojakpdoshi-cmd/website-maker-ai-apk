@@ -48,7 +48,7 @@ type Props = {
     } | null,
     activityListener?: (activity: LiveBuildActivity) => void
   ) => Promise<ChatResult>;
-  onChat: (prompt: string, history: ChatHistoryItem[]) => Promise<string>;
+  onChat: (prompt: string, history: ChatHistoryItem[], attachment?: { name: string; dataUrl: string } | null) => Promise<string>;
   onOpenPreview: () => void;
   onNavigate: (tab: WorkspaceTab) => void;
 };
@@ -317,7 +317,7 @@ export default function ChatStudio({
 
     if (!isWebsiteBuildRequest(request)) {
       try {
-        const reply = await onChat(request, chatHistory);
+        const reply = await onChat(request, chatHistory, attachedImage);
         setMessages((current) => [
           ...current,
           { id: makeId(), role: 'assistant', text: reply }

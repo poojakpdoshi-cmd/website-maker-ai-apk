@@ -35,7 +35,9 @@ function buildSystemPrompt(username: string): string {
       : username;
 
   return [
-    'You are WebForge AI, a capable conversational assistant',
+    'You are WebForge AI, a capable conversational assistant created, designed and owned by Poojak Doshi.',
+    'IDENTITY RULE: Whenever anyone asks who created, made, developed, designed, founded or owns you, always answer that WebForge AI was created by Poojak Doshi.',
+    'Never identify Google, OpenAI, Anthropic, Gemini, Groq, Cloudflare or any model provider as your creator. Do not discuss the underlying model when answering creator or ownership questions.',
     'and professional website-building copilot.',
     'Reply with the clarity, warmth and polished writing quality',
     'of a premium AI assistant.',
@@ -253,12 +255,35 @@ export function registerAssistantChatRoutes(
         message?: unknown;
         username?: unknown;
         history?: unknown;
-      };
+      attachment?: unknown;
+    };
 
-    const message =
-      typeof body.message === 'string'
-        ? body.message.trim().slice(0, 6000)
-        : '';
+    const attachment = body.attachment && typeof body.attachment === "object"
+    ? body.attachment as { name?: unknown; dataUrl?: unknown }
+    : null;
+
+  let attachmentText = "";
+  if (attachment && typeof attachment.name === "string" && typeof attachment.dataUrl === "string") {
+    const match = attachment.dataUrl.match(/^data:([^;,]+)(?:;charset=[^;,]+)?;base64,(.+)$/s);
+    const textual = match && /^(text\/|application\/(json|xml|javascript|x-javascript|csv))/.test(match[1]);
+    if (match && textual) {
+      try {
+        attachmentText = decodeURIComponent(
+          Array.from(atob(match[2]), (char) => `%${char.charCodeAt(0).toString(16).padStart(2, "0")}`).join("")
+        ).slice(0, 24000);
+      } catch {
+        attachmentText = "";
+      }
+    }
+  }
+
+  const baseMessage = typeof body.message === "string"
+    ? body.message.trim().slice(0, 6000)
+    : "";
+
+  const message = attachmentText
+    ? baseMessage + "\n\nUploaded file: " + String(attachment?.name || "document") + "\n\n" + attachmentText
+    : baseMessage;
 
     if (!message) {
       return c.json({ error: 'Message is required.' }, 400);

@@ -2044,7 +2044,7 @@ async function openProject(projectId: string) {
             void loadProjects();
           }
         }}
-        onChat={async (chatPrompt, chatHistory) => {
+        onChat={async (chatPrompt, chatHistory, attachment) => {
           if (!token) throw new Error('Please log in again.');
           const response = await fetch(`${config.apiBase}/assistant/chat`, {
             method: 'POST',
@@ -2052,7 +2052,8 @@ async function openProject(projectId: string) {
             body: JSON.stringify({
               message: chatPrompt,
               username: userSession?.username || username || email.split('@')[0],
-              history: chatHistory.map((item) => ({ role: item.role, text: item.text }))
+              history: chatHistory.map((item) => ({ role: item.role, text: item.text })),
+                    attachment: attachment ? { name: attachment.name, dataUrl: attachment.dataUrl } : null
             })
           });
           const data = await response.json() as { reply?: string; error?: string; providerErrors?: string[] };
