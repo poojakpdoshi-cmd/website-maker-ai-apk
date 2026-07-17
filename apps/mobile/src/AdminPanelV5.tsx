@@ -310,7 +310,7 @@ export default function AdminPanelV5({
       <main className="admin-login-v5">
         <section className="admin-login-card-v5">
           <div className="admin-logo-v5">
-          <img src="/nexora-logo.svg" alt="Nexora AI" />
+          <img src="/nexora-logo.png" alt="Nexora AI" />
         </div>
 
           <p className="admin-kicker-v5">
@@ -391,7 +391,7 @@ export default function AdminPanelV5({
       <aside className="admin-sidebar-v5">
         <div className="admin-brand-v5">
           <div className="admin-logo-small-v5">
-            <img src="/nexora-logo.svg" alt="Nexora AI" />
+            <img src="/nexora-logo.png" alt="Nexora AI" />
           </div>
 
           <div>

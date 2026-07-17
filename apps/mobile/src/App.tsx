@@ -1884,7 +1884,7 @@ async function openProject(projectId: string) {
       <main className="login-shell">
         <section className="login-card universal-login-card">
           <div className="brand-mark logo-shell">
-            <img src="/nexora-logo.svg" alt="Nexora AI" />
+            <img src="/nexora-logo.png" alt="Nexora AI" />
           </div>
 
           <p className="eyebrow">MADE BY POOJAK DOSHI</p>
