@@ -35,3 +35,5 @@ if (localStorage.getItem('nexora-ui-version') !== nexoraUiVersion) {
     );
   }
 }
+
+import './nexora-app-shell.css';
