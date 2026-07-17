@@ -121,7 +121,9 @@ export function auditGeneratedSecurity(
     /\b(?:redirect|location\.href|window\.open)\s*\(\s*(?:req\.|request\.|params\.|query\.)/i;
 
   const uploadEvidence =
-    /\b(?:upload|multipart|formdata|file)\b/i.test(allContent);
+    /(?:<input[^>]+type\s*=\s*['"]file['"]|new\s+FormData\s*\(|multipart\/form-data|\bFileReader\b|\b(?:multer|busboy|formidable)\b|\b(?:uploadFile|uploadImage|handleFileUpload)\b)/i.test(
+      allContent
+    );
 
   const uploadProtection =
     /\b(?:fileSize|maxSize|mimeType|contentType|allowedTypes|sanitizeFilename)\b/i.test(
