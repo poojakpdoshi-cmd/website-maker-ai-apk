@@ -110,7 +110,7 @@ export default function ChatStudio({
   } | null>(null);
 
   const storageKey =
-    'webforge-chat-history:' +
+    'nexora-chat-history:' +
     (userKey || 'anonymous').toLowerCase();
 
   const [savedChats, setSavedChats] = useState<SavedChat[]>([]);
@@ -219,12 +219,12 @@ export default function ChatStudio({
       buildActive ||
       Boolean(
         localStorage.getItem(
-          'webforge-active-generation-job'
+          'nexora-active-generation-job'
         )
       );
 
     localStorage.removeItem(
-      'webforge-active-generation-job'
+      'nexora-active-generation-job'
     );
 
     setActiveChatId(makeId());
@@ -411,7 +411,7 @@ export default function ChatStudio({
           <div className="claude-brand-icon">W</div>
 
           <div>
-            <strong>WebForge</strong>
+            <strong>Nexora</strong>
             <small>AI website builder</small>
           </div>
         </div>
@@ -446,7 +446,7 @@ export default function ChatStudio({
             <div className="claude-brand-icon">W</div>
 
             <div>
-              <strong>WebForge.Ai</strong>
+              <strong>Nexora AI</strong>
               <small>Workspace</small>
             </div>
           </div>
@@ -558,7 +558,7 @@ export default function ChatStudio({
         </nav>
 
         <div className="claude-drawer-footer">
-          <strong>WebForge.Ai</strong>
+          <strong>Nexora AI</strong>
           <span>Made by Poojak Doshi</span>
         </div>
       </aside>
@@ -576,7 +576,7 @@ export default function ChatStudio({
             <section className="claude-welcome">
               <div className="claude-welcome-logo">W</div>
 
-              <p>WebForge Council</p>
+              <p>Nexora Council</p>
 
               <h1>
                 What would you like
@@ -585,7 +585,7 @@ export default function ChatStudio({
               </h1>
 
               <span className="claude-welcome-copy">
-                Describe your idea and WebForge will plan,
+                Describe your idea and Nexora will plan,
                 design, code, review and validate it.
               </span>
 
@@ -616,7 +616,7 @@ export default function ChatStudio({
 
                   <div className="claude-message-body">
                     {message.role === 'assistant' && (
-                      <strong>WebForge</strong>
+                      <strong>Nexora</strong>
                     )}
 
                     <p>{message.text}</p>
@@ -636,7 +636,7 @@ export default function ChatStudio({
 
                   <div>
                     <strong>
-                      {activeActivity?.currentAgent || 'WebForge Council'} is working
+                      {activeActivity?.currentAgent || 'Nexora Council'} is working
                     </strong>
 
                     <p>
@@ -704,7 +704,7 @@ export default function ChatStudio({
               }
               rows={1}
               maxLength={6000}
-              placeholder="Message WebForge..."
+              placeholder="Message Nexora..."
               onKeyDown={(event) => {
                 if (
                   event.key === 'Enter' &&
@@ -799,7 +799,7 @@ export default function ChatStudio({
           </form>
 
           <small className="claude-disclaimer">
-            WebForge may make mistakes. Review before publishing.
+            Nexora may make mistakes. Review before publishing.
           </small>
         </div>
       </main>
@@ -831,7 +831,7 @@ export default function ChatStudio({
 
               <div>
                 <strong>
-                  {activeActivity?.currentAgent || 'WebForge Council'} is working
+                  {activeActivity?.currentAgent || 'Nexora Council'} is working
                 </strong>
                 <span>
                   {activeActivity?.events.at(-1)?.detail ||

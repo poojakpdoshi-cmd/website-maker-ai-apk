@@ -1,5 +1,5 @@
 /* =========================================================
-   WEBFORGE.AI — MINIMAL LIGHT
+   NEXORA.AI — MINIMAL LIGHT
    White + Ice Grey + Cobalt Blue
    ========================================================= */
 
@@ -231,7 +231,7 @@ form button:hover,
 
 /* Main navigation */
 
-.webforge-app-nav,
+.nexora-app-nav,
 .app-shell > nav {
   padding: 6px !important;
 
@@ -246,7 +246,7 @@ form button:hover,
   backdrop-filter: blur(14px) !important;
 }
 
-.webforge-app-nav button,
+.nexora-app-nav button,
 .app-shell > nav button {
   color: var(--light-muted) !important;
   background: transparent !important;
@@ -257,7 +257,7 @@ form button:hover,
   box-shadow: none !important;
 }
 
-.webforge-app-nav button.active,
+.nexora-app-nav button.active,
 .app-shell > nav button.active {
   color: var(--light-blue) !important;
   background: var(--light-blue-soft) !important;
@@ -677,13 +677,13 @@ footer {
     border-radius: 18px !important;
   }
 
-  .webforge-app-nav,
+  .nexora-app-nav,
   .app-shell > nav {
     border-radius: 13px !important;
   }
 }
 
-/* Final WebForge authentication and logo */
+/* Final Nexora authentication and logo */
 
 .dual-login-card {
   width: min(100%, 520px);

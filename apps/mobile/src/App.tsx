@@ -401,8 +401,8 @@ const websiteTemplates: WebsiteTemplate[] = [
 
 const ownerEmail = 'poojakpdoshi@gmail.com';
 const configKey = 'wmai-runtime-config';
-const userSessionKey = 'webforge-user-session';
-const themeKey = 'webforge-appearance';
+const userSessionKey = 'nexora-user-session';
+const themeKey = 'nexora-appearance';
 
 
 function formatQuotaReset(
@@ -631,7 +631,7 @@ function safeDownloadName(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, 60) || 'webforge-project';
+    .slice(0, 60) || 'nexora-project';
 }
 
 function defaultConfig(): RuntimeConfig {
@@ -714,7 +714,7 @@ export default function App() {
   ] = useState<string[]>(() => {
     try {
       const stored = localStorage.getItem(
-        'webforge-capability-packs'
+        'nexora-capability-packs'
       );
 
       return stored
@@ -799,7 +799,7 @@ const token = userSession?.token || session?.access_token || '';
             : 'light'
           : appTheme;
 
-      document.documentElement.dataset.webforgeTheme =
+      document.documentElement.dataset.nexoraTheme =
         resolvedTheme;
 
       document.documentElement.style.colorScheme =
@@ -822,7 +822,7 @@ const token = userSession?.token || session?.access_token || '';
 
   useEffect(() => {
     localStorage.setItem(
-      'webforge-capability-packs',
+      'nexora-capability-packs',
       JSON.stringify(selectedCapabilityIds)
     );
   }, [selectedCapabilityIds]);
@@ -1040,7 +1040,7 @@ async function loadProjects(activeEmail = email, activeToken = token) {
         setApproved(true);
 
         const guideKey =
-          `webforge-token-guide-seen:${refreshed.username.toLowerCase()}`;
+          `nexora-token-guide-seen:${refreshed.username.toLowerCase()}`;
 
         if (!localStorage.getItem(guideKey)) {
           setShowSetupGuide(true);
@@ -1096,7 +1096,7 @@ async function loadProjects(activeEmail = email, activeToken = token) {
   // RESUME_ACTIVE_GENERATION_JOB
   useEffect(() => {
     const jobId = localStorage.getItem(
-      'webforge-active-generation-job'
+      'nexora-active-generation-job'
     );
 
     const activeToken =
@@ -1118,7 +1118,7 @@ async function loadProjects(activeEmail = email, activeToken = token) {
     let cancelled = false;
 
     async function resumeGeneration(): Promise<void> {
-      setMessage('Restoring your active WebForge task…');
+      setMessage('Restoring your active Nexora task…');
       setError('');
 
       try {
@@ -1159,7 +1159,7 @@ async function loadProjects(activeEmail = email, activeToken = token) {
 
           if (data.job.status === 'failed') {
             localStorage.removeItem(
-              'webforge-active-generation-job'
+              'nexora-active-generation-job'
             );
 
             throw new Error(
@@ -1225,7 +1225,7 @@ async function loadProjects(activeEmail = email, activeToken = token) {
             };
 
             localStorage.removeItem(
-              'webforge-active-generation-job'
+              'nexora-active-generation-job'
             );
 
             setResult(generated);
@@ -1264,7 +1264,7 @@ async function loadProjects(activeEmail = email, activeToken = token) {
         errorMessage.toLowerCase().includes('not found')
       ) {
         localStorage.removeItem(
-          'webforge-active-generation-job'
+          'nexora-active-generation-job'
         );
       }
 
@@ -1456,7 +1456,7 @@ async function loadProjects(activeEmail = email, activeToken = token) {
 
     setLoading(true);
     setError('');
-    setMessage('WebForge Council is starting…');
+    setMessage('Nexora Council is starting…');
 
     const publishActivity = (next: LiveBuildActivity): void => {
       setActivity(next);
@@ -1488,7 +1488,7 @@ async function loadProjects(activeEmail = email, activeToken = token) {
       };
 
       localStorage.setItem(
-        'webforge-active-generation-job',
+        'nexora-active-generation-job',
         started.jobId
       );
 
@@ -1534,7 +1534,7 @@ async function loadProjects(activeEmail = email, activeToken = token) {
 
         if (statusData.job.status === 'failed') {
           localStorage.removeItem(
-            'webforge-active-generation-job'
+            'nexora-active-generation-job'
           );
 
           throw new Error(
@@ -1599,7 +1599,7 @@ async function loadProjects(activeEmail = email, activeToken = token) {
           };
 
           localStorage.removeItem(
-            'webforge-active-generation-job'
+            'nexora-active-generation-job'
           );
 
           setResult(generated);
@@ -1710,7 +1710,7 @@ async function loadProjects(activeEmail = email, activeToken = token) {
       ) {
         await navigator.share({
           title: `${source.projectName} source code`,
-          text: 'WebForge.Ai React project source',
+          text: 'Nexora AI React project source',
           files: [file]
         });
       } else {
@@ -1884,11 +1884,11 @@ async function openProject(projectId: string) {
       <main className="login-shell">
         <section className="login-card universal-login-card">
           <div className="brand-mark logo-shell">
-            <img src="/webforge-logo.svg" alt="WebForge.Ai" />
+            <img src="/nexora-logo.svg" alt="Nexora AI" />
           </div>
 
           <p className="eyebrow">MADE BY POOJAK DOSHI</p>
-          <h1>WebForge.Ai</h1>
+          <h1>Nexora AI</h1>
           <p className="muted">Secure access to your workspace</p>
 
           <form onSubmit={handleUsernameLogin}>
@@ -1938,8 +1938,8 @@ async function openProject(projectId: string) {
         : 'app-shell'
     }
   >
-    <header><div><p className="eyebrow">WEBFORGE.AI</p><h1>Build and publish without coding</h1></div><span className="pill">V4.2 • CHAT BUILD</span></header>
-    <nav className="webforge-app-nav">
+    <header><div><p className="eyebrow">NEXORA.AI</p><h1>Build and publish without coding</h1></div><span className="pill">V4.2 • CHAT BUILD</span></header>
+    <nav className="nexora-app-nav">
       <button
         className={tab === 'chat' ? 'active' : ''}
         onClick={() => setTab('chat')}
@@ -2569,7 +2569,7 @@ async function openProject(projectId: string) {
         <p className="eyebrow">PUBLISHING ACCOUNTS</p>
         <h2>Paste access tokens</h2>
         <p className="muted">
-          Tokens are sent to the backend, verified, encrypted and stored for this WebForge account.
+          Tokens are sent to the backend, verified, encrypted and stored for this Nexora account.
         </p>
 
         <button
@@ -2595,18 +2595,18 @@ async function openProject(projectId: string) {
 
               <ol>
                 <li>Tap the direct GitHub button below and sign in.</li>
-                <li>Keep the description as WebForge.Ai.</li>
+                <li>Keep the description as Nexora AI.</li>
                 <li>Select an expiration date.</li>
                 <li>Enable the public_repo permission.</li>
                 <li>Generate and copy the token immediately.</li>
-                <li>Return to WebForge.Ai and paste it in the GitHub field.</li>
+                <li>Return to Nexora AI and paste it in the GitHub field.</li>
               </ol>
 
               <button
                 type="button"
                 onClick={() =>
                   void Browser.open({
-                    url: 'https://github.com/settings/tokens/new?scopes=public_repo&description=WebForge.Ai'
+                    url: 'https://github.com/settings/tokens/new?scopes=public_repo&description=Nexora AI'
                   })
                 }
               >
@@ -2620,7 +2620,7 @@ async function openProject(projectId: string) {
               <ol>
                 <li>Tap the direct Vercel button below and sign in.</li>
                 <li>Tap Create Token.</li>
-                <li>Name the token WebForge.Ai.</li>
+                <li>Name the token Nexora AI.</li>
                 <li>Select the account where websites should deploy.</li>
                 <li>Select an expiration date and create the token.</li>
                 <li>Copy it, return here and paste it in the Vercel field.</li>
@@ -2656,7 +2656,7 @@ async function openProject(projectId: string) {
                   ).toLowerCase();
 
                   localStorage.setItem(
-                    `webforge-token-guide-seen:${accountName}`,
+                    `nexora-token-guide-seen:${accountName}`,
                     '1'
                   );
 
@@ -2744,8 +2744,8 @@ async function openProject(projectId: string) {
         </button>
       </section>
     )}
-    {tab === 'account' && <section className="panel"><p className="eyebrow">ACCOUNT</p><h2>{userSession?.username || email}</h2><div className="account-grid"><article><span>Role</span><strong>{access?.role}</strong></article><article><span>Devices</span><strong>{access?.activeDevices}/{access?.maxDevices}</strong></article><article><span>Subscription</span><strong>{formatSubscriptionRemaining(userSession?.subscriptionExpiresAt ?? access?.subscriptionExpiresAt, subscriptionClock)}</strong></article><article><span>GitHub</span><strong>{connections.github ? 'Connected' : 'Not connected'}</strong></article><article><span>Vercel</span><strong>{connections.vercel ? 'Connected' : 'Not connected'}</strong></article><article><span>Daily AI builds</span><strong>{usage ? usage.unlimited ? 'Unlimited' : `${usage.used}/${usage.limit}` : '—'}</strong></article></div>{!userSession && email === ownerEmail && <button onClick={() => setMode('admin-login')}>Open Admin</button>}<section className="usage-meter"><div className="usage-meter-heading"><div><span>Daily generation quota</span><small>{usage ? usage.unlimited ? 'Admin account has unlimited generation access.' : `${usage.remaining} website generation${usage.remaining === 1 ? '' : 's'} remaining today.` : usageLoading ? 'Loading usage…' : 'Open Account to load usage.'}</small></div><button type="button" className="refresh" onClick={() => void loadUsage()} disabled={usageLoading}>{usageLoading ? 'Checking…' : 'Refresh'}</button></div>{usage && !usage.unlimited && <><div className="usage-progress" role="progressbar" aria-valuemin={0} aria-valuemax={usage.limit} aria-valuenow={usage.used}><span style={{ width: `${usage.percentage}%` }} /></div><div className="usage-meter-footer"><span>{usage.used} used</span><span>{formatQuotaReset(usage.resetAt, subscriptionClock)}</span><span>{usage.limit} limit</span></div></>}</section><section className="theme-setting"><div><span>Appearance</span><small>Choose how WebForge.Ai looks on this device.</small></div><div className="theme-choice"><button type="button" className={appTheme === 'dark' ? 'selected' : ''} onClick={() => setAppTheme('dark')}>Dark</button><button type="button" className={appTheme === 'light' ? 'selected' : ''} onClick={() => setAppTheme('light')}>Light</button><button type="button" className={appTheme === 'system' ? 'selected' : ''} onClick={() => setAppTheme('system')}>System</button></div></section><button className="logout" onClick={() => void logout()}>Log out</button></section>}
-    <footer>WebForge.Ai V4.2 · Made by Poojak Doshi</footer>
+    {tab === 'account' && <section className="panel"><p className="eyebrow">ACCOUNT</p><h2>{userSession?.username || email}</h2><div className="account-grid"><article><span>Role</span><strong>{access?.role}</strong></article><article><span>Devices</span><strong>{access?.activeDevices}/{access?.maxDevices}</strong></article><article><span>Subscription</span><strong>{formatSubscriptionRemaining(userSession?.subscriptionExpiresAt ?? access?.subscriptionExpiresAt, subscriptionClock)}</strong></article><article><span>GitHub</span><strong>{connections.github ? 'Connected' : 'Not connected'}</strong></article><article><span>Vercel</span><strong>{connections.vercel ? 'Connected' : 'Not connected'}</strong></article><article><span>Daily AI builds</span><strong>{usage ? usage.unlimited ? 'Unlimited' : `${usage.used}/${usage.limit}` : '—'}</strong></article></div>{!userSession && email === ownerEmail && <button onClick={() => setMode('admin-login')}>Open Admin</button>}<section className="usage-meter"><div className="usage-meter-heading"><div><span>Daily generation quota</span><small>{usage ? usage.unlimited ? 'Admin account has unlimited generation access.' : `${usage.remaining} website generation${usage.remaining === 1 ? '' : 's'} remaining today.` : usageLoading ? 'Loading usage…' : 'Open Account to load usage.'}</small></div><button type="button" className="refresh" onClick={() => void loadUsage()} disabled={usageLoading}>{usageLoading ? 'Checking…' : 'Refresh'}</button></div>{usage && !usage.unlimited && <><div className="usage-progress" role="progressbar" aria-valuemin={0} aria-valuemax={usage.limit} aria-valuenow={usage.used}><span style={{ width: `${usage.percentage}%` }} /></div><div className="usage-meter-footer"><span>{usage.used} used</span><span>{formatQuotaReset(usage.resetAt, subscriptionClock)}</span><span>{usage.limit} limit</span></div></>}</section><section className="theme-setting"><div><span>Appearance</span><small>Choose how Nexora AI looks on this device.</small></div><div className="theme-choice"><button type="button" className={appTheme === 'dark' ? 'selected' : ''} onClick={() => setAppTheme('dark')}>Dark</button><button type="button" className={appTheme === 'light' ? 'selected' : ''} onClick={() => setAppTheme('light')}>Light</button><button type="button" className={appTheme === 'system' ? 'selected' : ''} onClick={() => setAppTheme('system')}>System</button></div></section><button className="logout" onClick={() => void logout()}>Log out</button></section>}
+    <footer>Nexora AI V4.2 · Made by Poojak Doshi</footer>
   </main>;
 }
 

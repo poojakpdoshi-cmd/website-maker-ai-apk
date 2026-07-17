@@ -1,4 +1,4 @@
-/* WebForge.Ai final clean blue-white UI */
+/* Nexora AI final clean blue-white UI */
 
 :root {
   --wf-bg: #f7faff;
@@ -122,7 +122,7 @@ form button:hover,
   color: white !important;
 }
 
-.webforge-app-nav,
+.nexora-app-nav,
 .app-shell > nav {
   background: rgba(255,255,255,.96) !important;
   border: 1px solid var(--wf-border) !important;
@@ -130,7 +130,7 @@ form button:hover,
   box-shadow: 0 10px 28px rgba(15,23,42,.06) !important;
 }
 
-.webforge-app-nav button,
+.nexora-app-nav button,
 .app-shell > nav button {
   background: transparent !important;
   border-color: transparent !important;
@@ -138,7 +138,7 @@ form button:hover,
   box-shadow: none !important;
 }
 
-.webforge-app-nav button.active,
+.nexora-app-nav button.active,
 .app-shell > nav button.active {
   background: var(--wf-blue-soft) !important;
   border-color: #bfdbfe !important;

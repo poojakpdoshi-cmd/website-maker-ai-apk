@@ -311,7 +311,7 @@
   }
 }
 
-/* WEBFORGE_CMS_STYLE_PART_3 */
+/* NEXORA_CMS_STYLE_PART_3 */
 
 .cms-seo-card {
   display: grid;
@@ -448,7 +448,7 @@
   }
 }
 
-/* WEBFORGE_CMS_REVISIONS */
+/* NEXORA_CMS_REVISIONS */
 
 .cms-revisions {
   display: grid;
@@ -529,7 +529,7 @@
   }
 }
 
-/* WEBFORGE_CMS_VISUAL_EDITOR */
+/* NEXORA_CMS_VISUAL_EDITOR */
 
 .cms-visual-fields {
   display: grid;
@@ -573,7 +573,7 @@
   }
 }
 
-/* WEBFORGE_CMS_MEDIA_LIBRARY */
+/* NEXORA_CMS_MEDIA_LIBRARY */
 
 .cms-image-field {
   display: grid;
@@ -738,7 +738,7 @@
   }
 }
 
-/* WEBFORGE_CMS_SEARCH */
+/* NEXORA_CMS_SEARCH */
 
 .cms-search-box {
   display: flex;
@@ -763,7 +763,7 @@
   border-radius: 10px;
 }
 
-/* WEBFORGE_CMS_DRAFT_PREVIEW */
+/* NEXORA_CMS_DRAFT_PREVIEW */
 
 .cms-draft-preview {
   display: grid;
@@ -819,7 +819,7 @@
 }
 
 
-/* WEBFORGE_CMS_SCHEDULING */
+/* NEXORA_CMS_SCHEDULING */
 
 .cms-schedule-card {
   display: grid;

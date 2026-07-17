@@ -476,14 +476,14 @@ footer { text-align: center; color: #747d93; padding: 28px 0 0; font-size: 12px;
   box-shadow: 0 8px 22px rgba(80, 68, 205, .24);
 }
 
-html[data-webforge-theme='light'] body,
-html[data-webforge-theme='light'] #root {
+html[data-nexora-theme='light'] body,
+html[data-nexora-theme='light'] #root {
   background: #f5f3ef;
   color: #22211f;
 }
 
-html[data-webforge-theme='light'] .app-shell,
-html[data-webforge-theme='light'] .login-shell {
+html[data-nexora-theme='light'] .app-shell,
+html[data-nexora-theme='light'] .login-shell {
   background:
     radial-gradient(
       circle at 90% 0%,
@@ -494,32 +494,32 @@ html[data-webforge-theme='light'] .login-shell {
   color: #22211f;
 }
 
-html[data-webforge-theme='light'] header,
-html[data-webforge-theme='light'] .webforge-app-nav {
+html[data-nexora-theme='light'] header,
+html[data-nexora-theme='light'] .nexora-app-nav {
   background: rgba(250, 248, 244, .92);
   border-color: rgba(35, 33, 30, .11);
 }
 
-html[data-webforge-theme='light'] .panel,
-html[data-webforge-theme='light'] .login-card,
-html[data-webforge-theme='light'] .template-card,
-html[data-webforge-theme='light'] .analytics-grid article,
-html[data-webforge-theme='light'] .analytics-chart-card,
-html[data-webforge-theme='light'] .analytics-types-card {
+html[data-nexora-theme='light'] .panel,
+html[data-nexora-theme='light'] .login-card,
+html[data-nexora-theme='light'] .template-card,
+html[data-nexora-theme='light'] .analytics-grid article,
+html[data-nexora-theme='light'] .analytics-chart-card,
+html[data-nexora-theme='light'] .analytics-types-card {
   background: rgba(255, 255, 255, .78);
   border-color: rgba(35, 33, 30, .11);
   box-shadow: 0 20px 55px rgba(40, 35, 28, .07);
 }
 
-html[data-webforge-theme='light'] input,
-html[data-webforge-theme='light'] textarea,
-html[data-webforge-theme='light'] select {
+html[data-nexora-theme='light'] input,
+html[data-nexora-theme='light'] textarea,
+html[data-nexora-theme='light'] select {
   background: rgba(255, 255, 255, .82);
   color: #22211f;
   border-color: rgba(35, 33, 30, .16);
 }
 
-html[data-webforge-theme='light'] iframe {
+html[data-nexora-theme='light'] iframe {
   background: white;
 }
 

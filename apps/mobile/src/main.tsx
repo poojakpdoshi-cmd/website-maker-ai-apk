@@ -2,7 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './styles.css';
-import './webforge-theme.css';
+import './nexora-theme.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
@@ -10,9 +10,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   </React.StrictMode>
 );
 
-import './webforge-final-ui.css';
+import './nexora-final-ui.css';
 import './chat-studio.css';
-import './webforge-v43-performance.css';
+import './nexora-v43-performance.css';
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {
@@ -23,11 +23,11 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
 
 import './cms-studio.css';
 
-const webforgeUiVersion = '4.3.0';
+const nexoraUiVersion = '4.3.0';
 
-if (localStorage.getItem('webforge-ui-version') !== webforgeUiVersion) {
-  localStorage.removeItem('webforge-active-generation-job');
-  localStorage.setItem('webforge-ui-version', webforgeUiVersion);
+if (localStorage.getItem('nexora-ui-version') !== nexoraUiVersion) {
+  localStorage.removeItem('nexora-active-generation-job');
+  localStorage.setItem('nexora-ui-version', nexoraUiVersion);
 
   if ('caches' in window) {
     void caches.keys().then((keys) =>

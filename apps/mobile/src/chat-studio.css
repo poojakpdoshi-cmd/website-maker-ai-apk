@@ -34,7 +34,7 @@ body {
 }
 
 .chat-page-active > header,
-.chat-page-active > .webforge-app-nav,
+.chat-page-active > .nexora-app-nav,
 .chat-page-active > .notice-wide {
   display: none !important;
 }
@@ -396,10 +396,10 @@ body {
   content: "";
   border-radius: 50%;
   background: var(--wf-accent);
-  animation: webforgePulse 1.3s ease-in-out infinite;
+  animation: nexoraPulse 1.3s ease-in-out infinite;
 }
 
-@keyframes webforgePulse {
+@keyframes nexoraPulse {
   0%,
   100% {
     opacity: .4;
@@ -708,10 +708,10 @@ body {
   display: block;
   border-radius: inherit;
   background: var(--wf-accent);
-  animation: webforgeProgress 1.7s ease-in-out infinite alternate;
+  animation: nexoraProgress 1.7s ease-in-out infinite alternate;
 }
 
-@keyframes webforgeProgress {
+@keyframes nexoraProgress {
   from {
     width: 28%;
   }
@@ -923,7 +923,7 @@ body {
 }
 
 
-/* WEBFORGE MOBILE DRAWER AND ATTACHMENT FIX */
+/* NEXORA MOBILE DRAWER AND ATTACHMENT FIX */
 .claude-workspace,
 .claude-chat-main,
 .claude-chat-scroll,
@@ -1032,7 +1032,7 @@ body {
   white-space: nowrap;
 }
 
-/* WebForge drawer history and colour fix */
+/* Nexora drawer history and colour fix */
 .claude-saved-chats {
   margin-top: 14px;
   padding: 12px;
@@ -1100,7 +1100,7 @@ body {
 @media (max-width:480px){.claude-drawer-nav{grid-template-columns:1fr 1fr!important}.claude-drawer-nav button{font-size:15px!important}}
 /* v44-mobile-cleanup:end */
 
-/* WebForge V4.4 final topbar alignment */
+/* Nexora V4.4 final topbar alignment */
 .claude-topbar {
   display: grid !important;
   grid-template-columns: 40px minmax(0, 1fr) auto !important;

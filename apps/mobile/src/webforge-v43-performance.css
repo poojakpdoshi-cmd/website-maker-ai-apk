@@ -1,4 +1,4 @@
-/* WebForge V4.3 — Claude-style clarity and fast mobile rendering */
+/* Nexora V4.3 — Claude-style clarity and fast mobile rendering */
 
 :root {
   --wf-bg: #f7f5f0;
@@ -125,7 +125,7 @@ input {
 }
 
 .claude-build-timeline::before {
-  content: "WHAT WEBFORGE HAS BUILT";
+  content: "WHAT NEXORA HAS BUILT";
   display: block;
   margin: 6px 0 12px;
   color: #a9523a;

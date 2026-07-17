@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
 import './admin-v6.css';
-import './webforge-minimal-light.css';
+import './nexora-minimal-light.css';
 
 type AdminMode = 'user' | 'admin-login' | 'admin-dashboard';
 
@@ -192,7 +192,7 @@ export default function AdminPanelV5({
 
       setNewUsername('');
       setNewPassword('');
-      setMessage('New WebForge user created.');
+      setMessage('New Nexora user created.');
 
       await loadDashboard();
     } catch (createError) {
@@ -310,7 +310,7 @@ export default function AdminPanelV5({
       <main className="admin-login-v5">
         <section className="admin-login-card-v5">
           <div className="admin-logo-v5">
-          <img src="/webforge-logo.svg" alt="WebForge.Ai" />
+          <img src="/nexora-logo.svg" alt="Nexora AI" />
         </div>
 
           <p className="admin-kicker-v5">
@@ -391,11 +391,11 @@ export default function AdminPanelV5({
       <aside className="admin-sidebar-v5">
         <div className="admin-brand-v5">
           <div className="admin-logo-small-v5">
-            <img src="/webforge-logo.svg" alt="WebForge.Ai" />
+            <img src="/nexora-logo.svg" alt="Nexora AI" />
           </div>
 
           <div>
-            <strong>WebForge.Ai</strong>
+            <strong>Nexora AI</strong>
             <span>Control Room</span>
           </div>
         </div>
@@ -438,7 +438,7 @@ export default function AdminPanelV5({
       <section className="admin-workspace-v5">
         <header className="admin-topbar-v5">
           <div>
-            <p>WEBFORGE CONTROL</p>
+            <p>NEXORA CONTROL</p>
 
             <h1>
               {section === 'overview'
