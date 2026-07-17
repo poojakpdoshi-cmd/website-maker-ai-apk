@@ -1710,7 +1710,7 @@ async function loadProjects(activeEmail = email, activeToken = token) {
       ) {
         await navigator.share({
           title: `${source.projectName} source code`,
-          text: 'Nexora AI React project source',
+          text: 'Nexora.Ai React project source',
           files: [file]
         });
       } else {
@@ -1884,11 +1884,11 @@ async function openProject(projectId: string) {
       <main className="login-shell">
         <section className="login-card universal-login-card">
           <div className="brand-mark logo-shell">
-            <img src="/nexora-logo.png" alt="Nexora AI" />
+            <img src="/nexora-logo.png" alt="Nexora.Ai" />
           </div>
 
           <p className="eyebrow">MADE BY POOJAK DOSHI</p>
-          <h1>Nexora AI</h1>
+          <h1>Nexora.Ai</h1>
           <p className="muted">Secure access to your workspace</p>
 
           <form onSubmit={handleUsernameLogin}>
@@ -1938,7 +1938,7 @@ async function openProject(projectId: string) {
         : 'app-shell'
     }
   >
-    <header><div><p className="eyebrow">NEXORA.AI</p><h1>Build and publish without coding</h1></div><span className="pill">V4.2 • CHAT BUILD</span></header>
+    <header><div><p className="eyebrow">Nexora.Ai</p><h1>Build and publish without coding</h1></div></header>
     <nav className="nexora-app-nav">
       <button
         className={tab === 'chat' ? 'active' : ''}
@@ -2595,18 +2595,18 @@ async function openProject(projectId: string) {
 
               <ol>
                 <li>Tap the direct GitHub button below and sign in.</li>
-                <li>Keep the description as Nexora AI.</li>
+                <li>Keep the description as Nexora.Ai.</li>
                 <li>Select an expiration date.</li>
                 <li>Enable the public_repo permission.</li>
                 <li>Generate and copy the token immediately.</li>
-                <li>Return to Nexora AI and paste it in the GitHub field.</li>
+                <li>Return to Nexora.Ai and paste it in the GitHub field.</li>
               </ol>
 
               <button
                 type="button"
                 onClick={() =>
                   void Browser.open({
-                    url: 'https://github.com/settings/tokens/new?scopes=public_repo&description=Nexora AI'
+                    url: 'https://github.com/settings/tokens/new?scopes=public_repo&description=Nexora.Ai'
                   })
                 }
               >
@@ -2620,7 +2620,7 @@ async function openProject(projectId: string) {
               <ol>
                 <li>Tap the direct Vercel button below and sign in.</li>
                 <li>Tap Create Token.</li>
-                <li>Name the token Nexora AI.</li>
+                <li>Name the token Nexora.Ai.</li>
                 <li>Select the account where websites should deploy.</li>
                 <li>Select an expiration date and create the token.</li>
                 <li>Copy it, return here and paste it in the Vercel field.</li>
@@ -2744,8 +2744,8 @@ async function openProject(projectId: string) {
         </button>
       </section>
     )}
-    {tab === 'account' && <section className="panel"><p className="eyebrow">ACCOUNT</p><h2>{userSession?.username || email}</h2><div className="account-grid"><article><span>Role</span><strong>{access?.role}</strong></article><article><span>Devices</span><strong>{access?.activeDevices}/{access?.maxDevices}</strong></article><article><span>Subscription</span><strong>{formatSubscriptionRemaining(userSession?.subscriptionExpiresAt ?? access?.subscriptionExpiresAt, subscriptionClock)}</strong></article><article><span>GitHub</span><strong>{connections.github ? 'Connected' : 'Not connected'}</strong></article><article><span>Vercel</span><strong>{connections.vercel ? 'Connected' : 'Not connected'}</strong></article><article><span>Daily AI builds</span><strong>{usage ? usage.unlimited ? 'Unlimited' : `${usage.used}/${usage.limit}` : '—'}</strong></article></div>{!userSession && email === ownerEmail && <button onClick={() => setMode('admin-login')}>Open Admin</button>}<section className="usage-meter"><div className="usage-meter-heading"><div><span>Daily generation quota</span><small>{usage ? usage.unlimited ? 'Admin account has unlimited generation access.' : `${usage.remaining} website generation${usage.remaining === 1 ? '' : 's'} remaining today.` : usageLoading ? 'Loading usage…' : 'Open Account to load usage.'}</small></div><button type="button" className="refresh" onClick={() => void loadUsage()} disabled={usageLoading}>{usageLoading ? 'Checking…' : 'Refresh'}</button></div>{usage && !usage.unlimited && <><div className="usage-progress" role="progressbar" aria-valuemin={0} aria-valuemax={usage.limit} aria-valuenow={usage.used}><span style={{ width: `${usage.percentage}%` }} /></div><div className="usage-meter-footer"><span>{usage.used} used</span><span>{formatQuotaReset(usage.resetAt, subscriptionClock)}</span><span>{usage.limit} limit</span></div></>}</section><section className="theme-setting"><div><span>Appearance</span><small>Choose how Nexora AI looks on this device.</small></div><div className="theme-choice"><button type="button" className={appTheme === 'dark' ? 'selected' : ''} onClick={() => setAppTheme('dark')}>Dark</button><button type="button" className={appTheme === 'light' ? 'selected' : ''} onClick={() => setAppTheme('light')}>Light</button><button type="button" className={appTheme === 'system' ? 'selected' : ''} onClick={() => setAppTheme('system')}>System</button></div></section><button className="logout" onClick={() => void logout()}>Log out</button></section>}
-    <footer>Nexora AI V4.2 · Made by Poojak Doshi</footer>
+    {tab === 'account' && <section className="panel"><p className="eyebrow">ACCOUNT</p><h2>{userSession?.username || email}</h2><div className="account-grid"><article><span>Role</span><strong>{access?.role}</strong></article><article><span>Devices</span><strong>{access?.activeDevices}/{access?.maxDevices}</strong></article><article><span>Subscription</span><strong>{formatSubscriptionRemaining(userSession?.subscriptionExpiresAt ?? access?.subscriptionExpiresAt, subscriptionClock)}</strong></article><article><span>GitHub</span><strong>{connections.github ? 'Connected' : 'Not connected'}</strong></article><article><span>Vercel</span><strong>{connections.vercel ? 'Connected' : 'Not connected'}</strong></article><article><span>Daily AI builds</span><strong>{usage ? usage.unlimited ? 'Unlimited' : `${usage.used}/${usage.limit}` : '—'}</strong></article></div>{!userSession && email === ownerEmail && <button onClick={() => setMode('admin-login')}>Open Admin</button>}<section className="usage-meter"><div className="usage-meter-heading"><div><span>Daily generation quota</span><small>{usage ? usage.unlimited ? 'Admin account has unlimited generation access.' : `${usage.remaining} website generation${usage.remaining === 1 ? '' : 's'} remaining today.` : usageLoading ? 'Loading usage…' : 'Open Account to load usage.'}</small></div><button type="button" className="refresh" onClick={() => void loadUsage()} disabled={usageLoading}>{usageLoading ? 'Checking…' : 'Refresh'}</button></div>{usage && !usage.unlimited && <><div className="usage-progress" role="progressbar" aria-valuemin={0} aria-valuemax={usage.limit} aria-valuenow={usage.used}><span style={{ width: `${usage.percentage}%` }} /></div><div className="usage-meter-footer"><span>{usage.used} used</span><span>{formatQuotaReset(usage.resetAt, subscriptionClock)}</span><span>{usage.limit} limit</span></div></>}</section><section className="theme-setting"><div><span>Appearance</span><small>Choose how Nexora.Ai looks on this device.</small></div><div className="theme-choice"><button type="button" className={appTheme === 'dark' ? 'selected' : ''} onClick={() => setAppTheme('dark')}>Dark</button><button type="button" className={appTheme === 'light' ? 'selected' : ''} onClick={() => setAppTheme('light')}>Light</button><button type="button" className={appTheme === 'system' ? 'selected' : ''} onClick={() => setAppTheme('system')}>System</button></div></section><button className="logout" onClick={() => void logout()}>Log out</button></section>}
+    <footer>Nexora.Ai V4.2 · Made by Poojak Doshi</footer>
   </main>;
 }
 

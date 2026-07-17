@@ -446,7 +446,7 @@ export default function ChatStudio({
             <div className="claude-brand-icon">W</div>
 
             <div>
-              <strong>Nexora AI</strong>
+              <strong>Nexora.Ai</strong>
               <small>Workspace</small>
             </div>
           </div>
@@ -558,7 +558,7 @@ export default function ChatStudio({
         </nav>
 
         <div className="claude-drawer-footer">
-          <strong>Nexora AI</strong>
+          <strong>Nexora.Ai</strong>
           <span>Made by Poojak Doshi</span>
         </div>
       </aside>
