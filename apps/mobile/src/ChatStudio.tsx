@@ -40,6 +40,8 @@ type Props = {
   busy: boolean;
   userKey: string;
   activity?: LiveBuildActivity | null;
+  thinkMaxEnabled: boolean;
+  onThinkMaxChange: (enabled: boolean) => void;
   onGenerate: (
     prompt: string,
     image?: {
@@ -88,6 +90,8 @@ export default function ChatStudio({
   busy,
   userKey,
   activity,
+  thinkMaxEnabled,
+  onThinkMaxChange,
   onGenerate,
   onChat,
   onOpenPreview,
@@ -297,6 +301,21 @@ export default function ChatStudio({
 
     if (request.length < 1) return;
 
+    const websiteBuildRequest = isWebsiteBuildRequest(request);
+
+    if (websiteBuildRequest && (busy || buildActive)) {
+      setMessages((current) => [
+        ...current,
+        {
+          id: makeId(),
+          role: 'assistant',
+          text:
+            'A website build is already running. You can keep chatting, but wait for it to finish before starting another build.'
+        }
+      ]);
+      return;
+    }
+
     const attachedImage = image;
     const chatHistory = messages;
     const requestChatId = activeChatId;
@@ -315,7 +334,7 @@ export default function ChatStudio({
     setDraft('');
     setImage(null);
 
-    if (!isWebsiteBuildRequest(request)) {
+    if (!websiteBuildRequest) {
       try {
         const reply = await onChat(request, chatHistory, attachedImage);
         setMessages((current) => [
@@ -329,19 +348,6 @@ export default function ChatStudio({
           { id: makeId(), role: 'assistant', text: `Assistant error: ${text}` }
         ]);
       }
-      return;
-    }
-
-    if (buildActive) {
-      setMessages((current) => [
-        ...current,
-        {
-          id: makeId(),
-          role: 'assistant',
-          text:
-            'A website build is already running. You can keep chatting, but wait for it to finish before starting another build.'
-        }
-      ]);
       return;
     }
 
@@ -419,9 +425,12 @@ export default function ChatStudio({
         <button
           type="button"
           className="claude-mode-pill"
+          onClick={() => onThinkMaxChange(!thinkMaxEnabled)}
+          aria-pressed={thinkMaxEnabled}
+          disabled={busy || buildActive}
         >
-          Council mode
-          <span>⌄</span>
+          {thinkMaxEnabled ? 'ThinkMax on' : 'ThinkMax off'}
+          <span aria-hidden="true">⌄</span>
         </button>
       </header>
 
@@ -672,6 +681,27 @@ export default function ChatStudio({
             </button>
           )}
 
+          <label className="thinkmax-control thinkmax-chat-control">
+            <span className="thinkmax-copy">
+              <strong>ThinkMax</strong>
+              <small id="chat-thinkmax-description">
+                Deeper planning and review; generation may take longer.
+              </small>
+            </span>
+            <span className="thinkmax-switch">
+              <input
+                type="checkbox"
+                checked={thinkMaxEnabled}
+                onChange={(event) =>
+                  onThinkMaxChange(event.target.checked)
+                }
+                disabled={busy || buildActive}
+                aria-describedby="chat-thinkmax-description"
+              />
+              <span aria-hidden="true" />
+            </span>
+          </label>
+
           <form
             className="claude-composer"
             onSubmit={submit}
@@ -790,7 +820,11 @@ export default function ChatStudio({
               <button
                 type="submit"
                 className="claude-send-button"
-                disabled={draft.trim().length < 1}
+                disabled={
+                  draft.trim().length < 1 ||
+                  ((busy || buildActive) &&
+                    isWebsiteBuildRequest(draft))
+                }
                 aria-label="Send message"
               >
                 {'↑'}

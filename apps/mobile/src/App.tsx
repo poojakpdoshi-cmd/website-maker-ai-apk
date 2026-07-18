@@ -1,4 +1,10 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import {
+  FormEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
 import { Browser } from '@capacitor/browser';
 import AdminPanelV5 from './AdminPanelV5';
@@ -10,7 +16,7 @@ import TokenWalletPanel from './TokenWalletPanel';
 type AppTheme = 'dark' | 'light' | 'system';
 type RuntimeConfig = { apiBase: string; supabaseUrl: string; supabaseAnonKey: string };
 type WebsitePlan = { businessName: string; websiteType: string; tagline: string; pages: string[]; features: string[]; theme: { style: string; primary: string; secondary: string; background: string; text: string } };
-type GenerateResponse = { projectId: string; jobId?: string; versionNumber?: number; plan: WebsitePlan; previewHtml: string; framework: 'vite-react'; fileCount: number; mode: 'ai' | 'built-in' };
+type GenerateResponse = { projectId: string; jobId?: string; versionNumber?: number; plan: WebsitePlan; previewHtml: string; framework: 'vite-react'; fileCount: number; mode: 'ai' | 'built-in'; thinkMaxCompleted?: boolean };
 type AccessResponse = {
   approved: true;
   role: 'admin' | 'subscriber';
@@ -705,6 +711,8 @@ export default function App() {
   const [otp, setOtp] = useState('');
   const [access, setAccess] = useState<AccessResponse | null>(null);
   const [prompt, setPrompt] = useState('Create a premium modern website for a jewellery shop named Raj Jewels with products, WhatsApp number +919876543210, gallery, enquiry form and SEO.');
+  const [thinkMaxEnabled, setThinkMaxEnabled] = useState(false);
+  const generationInFlightRef = useRef(false);
 
   const [templateSearch, setTemplateSearch] =
     useState('');
@@ -1119,6 +1127,8 @@ async function loadProjects(activeEmail = email, activeToken = token) {
     let cancelled = false;
 
     async function resumeGeneration(): Promise<void> {
+      generationInFlightRef.current = true;
+      setLoading(true);
       setMessage('Restoring your active Nexora task…');
       setError('');
 
@@ -1248,6 +1258,7 @@ async function loadProjects(activeEmail = email, activeToken = token) {
         );
       } finally {
         if (!cancelled) {
+          generationInFlightRef.current = false;
           setLoading(false);
         }
       }
@@ -1275,6 +1286,7 @@ async function loadProjects(activeEmail = email, activeToken = token) {
 
     return () => {
       cancelled = true;
+      generationInFlightRef.current = false;
     };
   }, [
     approved,
@@ -1455,6 +1467,12 @@ async function loadProjects(activeEmail = email, activeToken = token) {
       return null;
     }
 
+    if (generationInFlightRef.current) {
+      setError('A website build is already running.');
+      return null;
+    }
+
+    generationInFlightRef.current = true;
     setLoading(true);
     setError('');
     setMessage('Nexora Council is starting…');
@@ -1477,7 +1495,8 @@ async function loadProjects(activeEmail = email, activeToken = token) {
             email,
             installationId,
             prompt: activePrompt,
-            image: visionImage
+            image: visionImage,
+            ...(thinkMaxEnabled ? { thinkMax: true } : {})
           })
         }
       );
@@ -1639,6 +1658,7 @@ async function loadProjects(activeEmail = email, activeToken = token) {
 
       return null;
     } finally {
+      generationInFlightRef.current = false;
       setLoading(false);
     }
   }
@@ -2034,6 +2054,8 @@ async function openProject(projectId: string) {
         busy={loading}
         userKey={userSession?.internalEmail || session?.user?.email || email}
         activity={activity}
+        thinkMaxEnabled={thinkMaxEnabled}
+        onThinkMaxChange={setThinkMaxEnabled}
         onOpenPreview={() => setTab('preview')}
         onNavigate={(nextTab) => {
           setTab(nextTab);
@@ -2280,7 +2302,58 @@ async function openProject(projectId: string) {
       </section>
     )}
 
-    {tab === 'create' && <section className="panel"><p className="eyebrow">ORCHESTRATED AI BRAIN</p><h2>Describe the complete website</h2><p className="muted">Gemini assists with planning and content. The orchestrator, templates, validators, and build system remain in control.</p><div className="chips"><span>React source</span><span>Auto logo</span><span>SEO</span><span>Database form</span><span>Double validation</span><span>Vercel publish</span></div><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={10} maxLength={6000} /><p className="prompt-count">{prompt.length}/6000</p><button className="primary" onClick={() => void generateWebsite()} disabled={loading || prompt.trim().length < 20}>{loading ? 'Building project…' : 'Generate website'}</button></section>}
+    {tab === 'create' && (
+      <section className="panel">
+        <p className="eyebrow">ORCHESTRATED AI BRAIN</p>
+        <h2>Describe the complete website</h2>
+        <p className="muted">
+          Gemini assists with planning and content. The orchestrator,
+          templates, validators, and build system remain in control.
+        </p>
+        <div className="chips">
+          <span>React source</span>
+          <span>Auto logo</span>
+          <span>SEO</span>
+          <span>Database form</span>
+          <span>Double validation</span>
+          <span>Vercel publish</span>
+        </div>
+        <textarea
+          value={prompt}
+          onChange={(event) => setPrompt(event.target.value)}
+          rows={10}
+          maxLength={6000}
+        />
+        <p className="prompt-count">{prompt.length}/6000</p>
+        <label className="thinkmax-control">
+          <span className="thinkmax-copy">
+            <strong>ThinkMax</strong>
+            <small id="advanced-thinkmax-description">
+              Deeper planning and architecture review. Builds may take longer.
+            </small>
+          </span>
+          <span className="thinkmax-switch">
+            <input
+              type="checkbox"
+              checked={thinkMaxEnabled}
+              onChange={(event) =>
+                setThinkMaxEnabled(event.target.checked)
+              }
+              disabled={loading}
+              aria-describedby="advanced-thinkmax-description"
+            />
+            <span aria-hidden="true" />
+          </span>
+        </label>
+        <button
+          className="primary"
+          onClick={() => void generateWebsite()}
+          disabled={loading || prompt.trim().length < 20}
+        >
+          {loading ? 'Building project…' : 'Generate website'}
+        </button>
+      </section>
+    )}
     {tab === 'preview' && <section className="panel preview-panel">{result ? <><div className="preview-top"><div><p className="eyebrow">LIVE PREVIEW</p><h2>{status}</h2></div><div className="preview-actions"><button onClick={() => void downloadProjectSource(result.projectId)} disabled={downloadingProjectId === result.projectId}>{downloadingProjectId === result.projectId ? 'Preparing ZIP…' : 'Download Source ZIP'}</button><button onClick={publishWebsite} disabled={publishing || !connections.github || !connections.vercel}>{publishing ? 'Publishing…' : 'Push + deploy'}</button></div></div>{(!connections.github || !connections.vercel) && <p className="notice">Connect GitHub and Vercel before publishing.</p>}<iframe title="Generated website preview" sandbox="allow-forms allow-scripts allow-popups" srcDoc={result.previewHtml} /><div className="editor-box"><h3>AI website editor</h3><textarea value={editInstruction} onChange={(event) => setEditInstruction(event.target.value)} rows={4} placeholder="Change the theme, add pricing, remove a section…" /><button onClick={editWebsite} disabled={loading || !editInstruction.trim()}>{loading ? 'Applying changes…' : 'Apply edit'}</button></div></> : <div className="empty">Generate or open a project first.</div>}</section>}
     {tab === 'cms' && (
           <CmsStudio

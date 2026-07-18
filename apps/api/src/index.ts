@@ -6,7 +6,12 @@ import { z } from 'zod';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { buildWebsitePlan, reviseWebsitePlan } from '@wmai/ai-brain';
 import { buildProjectFiles, projectSlug } from '@wmai/template-engine';
-import { runCodingAgent, runReviewerAgent, runRepairAgent } from './ai-council';
+import {
+  runCodingAgent,
+  runReviewerAgent,
+  runRepairAgent,
+  runThinkMaxPlanningAgent
+} from './ai-council';
 import { validateGeneratedProject } from './project-validator';
 import { parseCouncilProjectPatch, applyCouncilProjectPatch } from './council-project';
 import type { GeneratedProjectFile, WebsitePlan } from '@wmai/shared';
@@ -18,6 +23,10 @@ import { buildFullStackInstruction } from "./fullstack-policy";
 import { ensureFullStackArtifacts } from "./fullstack-fallback";
 import { createFullStackReport } from './fullstack-report';
 import { auditGeneratedSecurity } from './security-audit-policy';
+import {
+  runOptionalThinkMax,
+  thinkMaxFlagSchema
+} from './thinkmax';
 import {
   NexoraTokenError,
   finalizeNexoraTokens,
@@ -861,7 +870,8 @@ app.post('/generation-jobs/start', async (c) => {
       mimeType: z.string().regex(/^image\//),
       data: z.string().min(20).max(12000000),
       name: z.string().max(180).optional()
-    }).optional()
+    }).optional(),
+    thinkMax: thinkMaxFlagSchema
   }).safeParse(await c.req.json().catch(() => null));
 
   if (!parsed.success) {
@@ -899,7 +909,9 @@ app.post('/generation-jobs/start', async (c) => {
       current_step: 'request_received',
       current_agent: 'Orchestrator',
       progress: 2,
-      workflow_mode: 'auto',
+      workflow_mode: parsed.data.thinkMax === true
+        ? 'thinkmax'
+        : 'auto',
       started_at: now,
       updated_at: now
     });
@@ -940,6 +952,7 @@ app.post('/generation-jobs/start', async (c) => {
         installationId: parsed.data.installationId,
         prompt: parsed.data.prompt,
         image: parsed.data.image,
+        thinkMax: parsed.data.thinkMax,
         jobId
       })
     }
@@ -952,9 +965,13 @@ app.post('/generation-jobs/start', async (c) => {
       .then(async (response) => {
         if (response.ok) return;
 
+        const failureBody = await response
+          .json<{ error?: unknown }>()
+          .catch(() => null);
         const failure =
-          (await response.text().catch(() => '')) ||
-          `Generation failed with HTTP ${response.status}.`;
+          typeof failureBody?.error === 'string'
+            ? failureBody.error
+            : `Generation failed with HTTP ${response.status}.`;
 
         await supabase
           .from('generation_jobs')
@@ -1074,7 +1091,8 @@ app.post('/generate', async (c) => {
       mimeType: z.string().regex(/^image\//),
       data: z.string().min(20).max(12000000),
       name: z.string().max(180).optional()
-    }).optional()
+    }).optional(),
+    thinkMax: thinkMaxFlagSchema
   }).safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: 'Email, device identifier and a detailed website prompt are required.' }, 400);
   const email = parsed.data.email.toLowerCase();
@@ -1099,7 +1117,7 @@ app.post('/generate', async (c) => {
       return c.json({ error: 'Generation job not found.' }, 404);
     }
 
-    const { error: startError } = await supabase
+    const { data: startedJob, error: startError } = await supabase
       .from('generation_jobs')
       .update({
         status: 'running',
@@ -1109,10 +1127,19 @@ app.post('/generate', async (c) => {
         started_at: new Date().toISOString()
       })
       .eq('id', jobId)
-      .eq('email', email);
+      .eq('email', email)
+      .eq('status', 'queued')
+      .select('id')
+      .maybeSingle();
 
     if (startError) {
       return c.json({ error: 'Could not start generation.' }, 500);
+    }
+
+    if (!startedJob) {
+      return c.json({
+        error: 'Generation job is already running or completed.'
+      }, 409);
     }
   } else {
     const { error: jobError } = await supabase
@@ -1125,6 +1152,9 @@ app.post('/generate', async (c) => {
         current_step: 'planning',
         current_agent: 'Planner',
         progress: 8,
+        workflow_mode: parsed.data.thinkMax === true
+          ? 'thinkmax'
+          : 'auto',
         started_at: new Date().toISOString()
       });
 
@@ -1207,11 +1237,66 @@ app.post('/generate', async (c) => {
       progress: 32,
       jobStatus: 'running'
     });
-    const { error: projectError } = await supabase.from('projects').insert({ id: projectId, email, name: planResult.plan.businessName, description: parsed.data.prompt, website_type: planResult.plan.websiteType, status: 'building', plan: planResult.plan, framework: 'vite-react' });
+
+    if (
+      parsed.data.thinkMax === true &&
+      (!c.env.GROQ_API_KEY || !c.env.GROQ_CODER_MODEL)
+    ) {
+      throw new Error(
+        'ThinkMax is unavailable because advanced planning is not configured.'
+      );
+    }
+
+    if (parsed.data.thinkMax === true) {
+      await recordGenerationEvent(supabase, {
+        jobId,
+        email,
+        eventType: 'thinkmax_refinement_started',
+        agentName: 'ThinkMax',
+        title: 'ThinkMax is refining the project plan',
+        detail:
+          'Reviewing requirements, architecture and implementation priorities.',
+        progress: 34,
+        jobStatus: 'running'
+      });
+    }
+
+    const thinkMaxResult = await runOptionalThinkMax(
+      parsed.data.thinkMax === true,
+      {
+        request:
+          parsed.data.prompt +
+          '\n\n' +
+          buildFullStackInstruction(parsed.data.prompt),
+        plan: planResult.plan
+      },
+      (input) => runThinkMaxPlanningAgent(c.env, input)
+    );
+    const generationPlan = thinkMaxResult.plan;
+
+    if (thinkMaxResult.completed) {
+      await recordGenerationEvent(supabase, {
+        jobId,
+        email,
+        eventType: 'thinkmax_refinement_completed',
+        agentName: 'ThinkMax',
+        title: 'ThinkMax refinement completed',
+        detail:
+          'The refined plan passed structured validation and is ready for implementation.',
+        progress: 38,
+        jobStatus: 'running',
+        metadata: {
+          sectionCount: generationPlan.sections.length,
+          featureCount: generationPlan.features.length
+        }
+      });
+    }
+
+    const { error: projectError } = await supabase.from('projects').insert({ id: projectId, email, name: generationPlan.businessName, description: parsed.data.prompt, website_type: generationPlan.websiteType, status: 'building', plan: generationPlan, framework: 'vite-react' });
     if (projectError) throw new Error('Could not save the generated project.');
 
     let formPublicKey: string | undefined;
-    if (planResult.plan.features.includes('contact-form')) {
+    if (generationPlan.features.includes('contact-form')) {
       const { data: form, error: formError } = await supabase.from('website_forms').insert({ project_id: projectId, name: 'Contact form' }).select('public_key').single();
       if (formError) throw new Error('Could not create the website contact form.');
       formPublicKey = String(form.public_key);
@@ -1252,7 +1337,9 @@ app.post('/generate', async (c) => {
             buildFullStackInstruction(
               parsed.data.prompt
             ),
-            plan: planResult.plan
+            plan: generationPlan,
+            thinkMaxArchitectureBrief:
+              thinkMaxResult.architectureBrief || undefined
           })
         );
 
@@ -1299,7 +1386,7 @@ app.post('/generate', async (c) => {
       jobStatus: 'running'
     });
 
-    let generated = buildProjectFiles(planResult.plan, {
+    let generated = buildProjectFiles(generationPlan, {
       formApiBase: publicApiBase(c),
       formPublicKey
     });
@@ -1443,7 +1530,7 @@ app.post('/generate', async (c) => {
             buildFullStackInstruction(
               parsed.data.prompt
             ),
-            plan: planResult.plan,
+            plan: generationPlan,
             codingBrief,
             files: compactProjectFiles(generated.files)
           })
@@ -1578,7 +1665,7 @@ app.post('/generate', async (c) => {
             buildFullStackInstruction(
               parsed.data.prompt
             ),
-                plan: planResult.plan,
+                plan: generationPlan,
                 files: compactProjectFiles(generated.files)
               })
             );
@@ -1663,7 +1750,7 @@ await recordGenerationEvent(supabase, {
       project_id: projectId,
       version_number: 1,
       prompt: parsed.data.prompt,
-      plan: planResult.plan,
+      plan: generationPlan,
       generated_files: generated.files,
       preview_html: generated.previewHtml
     });
@@ -1689,7 +1776,7 @@ await recordGenerationEvent(supabase, {
         current_step: 'preview_ready',
         current_agent: null,
         progress: 100,
-        output_plan: planResult.plan,
+        output_plan: generationPlan,
         error_message: null,
         completed_at: completedAt,
         updated_at: completedAt
@@ -1712,7 +1799,10 @@ await recordGenerationEvent(supabase, {
       detail: 'The React project and preview are ready.',
       progress: 100,
       jobStatus: 'completed',
-      metadata: { projectId }
+      metadata: {
+        projectId,
+        thinkMaxCompleted: thinkMaxResult.completed
+      }
     });
 
 const fullStackReport = createFullStackReport(
@@ -1721,7 +1811,7 @@ const fullStackReport = createFullStackReport(
 );
 
 return c.json({
-      fullStackReport, projectId, jobId, plan: planResult.plan, previewHtml: generated.previewHtml, framework: generated.framework, fileCount: generated.files.length, mode: planResult.mode });
+      fullStackReport, projectId, jobId, plan: generationPlan, previewHtml: generated.previewHtml, framework: generated.framework, fileCount: generated.files.length, mode: planResult.mode, thinkMaxCompleted: thinkMaxResult.completed });
   } catch (error) {
     const failureMessage =
       error instanceof Error ? error.message : 'Generation failed';

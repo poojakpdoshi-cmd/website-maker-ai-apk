@@ -133,6 +133,30 @@ export async function runCodingAgent(
   );
 }
 
+export async function runThinkMaxPlanningAgent(
+  env: CouncilBindings,
+  input: string
+): Promise<string> {
+  return callGroq(
+    env,
+    env.GROQ_CODER_MODEL,
+    [
+      'You are Nexora ThinkMax Architecture Reviewer.',
+      'Refine the supplied website plan before implementation.',
+      'Return strict JSON with exactly these keys:',
+      '{"refinedPlan":WebsitePlan,"architectureBrief":"...","reviewSummary":"..."}.',
+      'Preserve all explicit user requirements and supplied contact details.',
+      'Do not invent contact details, claims, statistics or integrations.',
+      'The refined plan must use the same WebsitePlan shape as the input.',
+      'architectureBrief must be concise, actionable implementation guidance.',
+      'reviewSummary must be a concise outcome, not private reasoning.',
+      'Do not include chain-of-thought, markdown fences or extra keys.'
+    ].join(' '),
+    input,
+    18000
+  );
+}
+
 export async function runReviewerAgent(
   env: CouncilBindings,
   input: string
