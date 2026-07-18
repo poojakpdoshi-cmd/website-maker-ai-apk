@@ -1,0 +1,175 @@
+.token-wallet-card {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+  padding: 20px;
+  border: 1px solid #dbe4f0;
+  border-radius: 20px;
+  background: linear-gradient(145deg, #ffffff, #f5f8ff);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+}
+
+.token-wallet-heading,
+.token-wallet-meta,
+.token-history article,
+.admin-billing-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.token-wallet-heading h3,
+.token-wallet-heading p,
+.token-wallet-heading span {
+  margin: 0;
+}
+
+.token-wallet-heading span,
+.token-wallet-meta,
+.token-history article span,
+.admin-billing-summary small {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.token-wallet-balance {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.token-wallet-balance strong {
+  font-size: clamp(36px, 10vw, 58px);
+  letter-spacing: -0.06em;
+}
+
+.token-wallet-progress {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+.token-wallet-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2563eb, #7c3aed);
+}
+
+.token-costs,
+.token-history {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 14px;
+}
+
+.token-costs summary,
+.token-history summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.token-costs > div {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.token-costs > div > span {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #eef4ff;
+  color: #334155;
+  font-size: 12px;
+}
+
+.token-history > div {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.token-history article {
+  padding: 11px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.token-history article > div {
+  display: grid;
+  gap: 3px;
+}
+
+.token-history b.credit { color: #15803d; }
+.token-history b.debit { color: #be123c; }
+.token-wallet-error { color: #be123c; }
+
+.admin-billing-control {
+  flex-basis: 100%;
+  width: 100%;
+}
+
+.admin-billing-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid #dbe4f0;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.admin-billing-summary {
+  grid-column: 1 / -1;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: #eef4ff;
+}
+
+.admin-billing-editor label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.admin-billing-editor input,
+.admin-billing-editor select {
+  width: 100%;
+  min-width: 0;
+  height: 42px;
+  padding: 0 11px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
+}
+
+.admin-billing-editor .admin-primary-v5 {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 620px) {
+  .token-wallet-heading,
+  .token-wallet-meta,
+  .admin-billing-summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .admin-billing-editor {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-billing-editor .admin-primary-v5,
+  .admin-billing-summary {
+    grid-column: auto;
+  }
+}

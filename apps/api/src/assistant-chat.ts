@@ -1,3 +1,12 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
+import {
+  NexoraTokenError,
+  finalizeNexoraTokens,
+  getNexoraOperationCost,
+  refundNexoraTokens,
+  reserveNexoraTokens
+} from './subscription-tokens';
+
 type AssistantEnv = {
   GEMINI_API_KEY?: string;
   GEMINI_MODEL?: string;
@@ -239,7 +248,11 @@ async function askCloudflare(
 }
 
 export function registerAssistantChatRoutes(
-  app: { post: (...args: any[]) => unknown }
+  app: { post: (...args: any[]) => unknown },
+  deps: {
+    requireUser: (c: any, email: string, installationId?: string) => Promise<any>;
+    requireSupabase: (env: any) => SupabaseClient;
+  }
 ): void {
   app.post('/assistant/chat', async (c: any) => {
     const authorization =
@@ -255,7 +268,9 @@ export function registerAssistantChatRoutes(
         message?: unknown;
         username?: unknown;
         history?: unknown;
-      attachment?: unknown;
+        email?: unknown;
+        installationId?: unknown;
+        attachment?: unknown;
     };
 
     const attachment = body.attachment && typeof body.attachment === "object"
@@ -289,6 +304,45 @@ export function registerAssistantChatRoutes(
       return c.json({ error: 'Message is required.' }, 400);
     }
 
+    const email = typeof body.email === 'string'
+      ? body.email.trim().toLowerCase()
+      : '';
+    const installationId = typeof body.installationId === 'string'
+      ? body.installationId
+      : '';
+
+    if (!email || !installationId) {
+      return c.json({ error: 'Account identity is required.' }, 400);
+    }
+
+    const access = await deps.requireUser(c, email, installationId);
+    if (!access) return c.json({ error: 'Your login session is missing or expired.' }, 401);
+    if (!access.ok) return c.json({ error: access.error }, access.status);
+
+    const supabase = deps.requireSupabase(c.env);
+    let chatReservationId: string | null = null;
+
+    try {
+      const chatCost = await getNexoraOperationCost(
+        supabase,
+        'assistant_chat',
+        3
+      );
+      chatReservationId = (await reserveNexoraTokens(
+        supabase,
+        email,
+        chatCost,
+        'assistant_chat',
+        crypto.randomUUID(),
+        'AI chat message'
+      )).reservationId;
+    } catch (tokenError) {
+      return c.json(
+        { error: tokenError instanceof Error ? tokenError.message : 'Could not reserve Nexora Tokens.' },
+        (tokenError instanceof NexoraTokenError ? tokenError.status : 500) as any
+      );
+    }
+
     const username = cleanUsername(body.username);
     const system = buildSystemPrompt(username);
     const messages = historyMessages(
@@ -310,6 +364,8 @@ export function registerAssistantChatRoutes(
           messages
         );
 
+        await finalizeNexoraTokens(supabase, chatReservationId);
+
         return c.json({
           reply,
           provider: provider[0]
@@ -322,6 +378,12 @@ export function registerAssistantChatRoutes(
         );
       }
     }
+
+    await refundNexoraTokens(
+      supabase,
+      chatReservationId,
+      errors.join(' | ') || 'All AI providers failed'
+    );
 
     return c.json(
       {

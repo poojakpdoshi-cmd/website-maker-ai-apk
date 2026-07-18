@@ -6,6 +6,7 @@ import ChatStudio, { type LiveBuildActivity } from './ChatStudio';
 
 import CmsStudio from './CmsStudio';
 import type { FullStackReport } from './FullStackReportCard';
+import TokenWalletPanel from './TokenWalletPanel';
 type AppTheme = 'dark' | 'light' | 'system';
 type RuntimeConfig = { apiBase: string; supabaseUrl: string; supabaseAnonKey: string };
 type WebsitePlan = { businessName: string; websiteType: string; tagline: string; pages: string[]; features: string[]; theme: { style: string; primary: string; secondary: string; background: string; text: string } };
@@ -2022,10 +2023,7 @@ async function openProject(projectId: string) {
 
             <button
         className={tab === 'account' ? 'active' : ''}
-        onClick={() => {
-          setTab('account');
-          void loadUsage();
-        }}
+        onClick={() => setTab('account')}
       >
         Account
       </button>
@@ -2053,6 +2051,8 @@ async function openProject(projectId: string) {
               message: chatPrompt,
               username: userSession?.username || username || email.split('@')[0],
               history: chatHistory.map((item) => ({ role: item.role, text: item.text })),
+              email: userSession?.internalEmail || session?.user?.email || email,
+              installationId,
                     attachment: attachment ? { name: attachment.name, dataUrl: attachment.dataUrl } : null
             })
           });
@@ -2744,13 +2744,51 @@ async function openProject(projectId: string) {
         </button>
       </section>
     )}
-    {tab === 'account' && <section className="panel"><p className="eyebrow">ACCOUNT</p><h2>{userSession?.username || email}</h2><div className="account-grid"><article><span>Role</span><strong>{access?.role}</strong></article><article><span>Devices</span><strong>{access?.activeDevices}/{access?.maxDevices}</strong></article><article><span>Subscription</span><strong>{formatSubscriptionRemaining(userSession?.subscriptionExpiresAt ?? access?.subscriptionExpiresAt, subscriptionClock)}</strong></article><article><span>GitHub</span><strong>{connections.github ? 'Connected' : 'Not connected'}</strong></article><article><span>Vercel</span><strong>{connections.vercel ? 'Connected' : 'Not connected'}</strong></article><article><span>Daily AI builds</span><strong>{usage ? usage.unlimited ? 'Unlimited' : `${usage.used}/${usage.limit}` : '—'}</strong></article></div>{!userSession && email === ownerEmail && <button onClick={() => setMode('admin-login')}>Open Admin</button>}<section className="usage-meter"><div className="usage-meter-heading"><div><span>Daily generation quota</span><small>{usage ? usage.unlimited ? 'Admin account has unlimited generation access.' : `${usage.remaining} website generation${usage.remaining === 1 ? '' : 's'} remaining today.` : usageLoading ? 'Loading usage…' : 'Open Account to load usage.'}</small></div><button type="button" className="refresh" onClick={() => void loadUsage()} disabled={usageLoading}>{usageLoading ? 'Checking…' : 'Refresh'}</button></div>{usage && !usage.unlimited && <><div className="usage-progress" role="progressbar" aria-valuemin={0} aria-valuemax={usage.limit} aria-valuenow={usage.used}><span style={{ width: `${usage.percentage}%` }} /></div><div className="usage-meter-footer"><span>{usage.used} used</span><span>{formatQuotaReset(usage.resetAt, subscriptionClock)}</span><span>{usage.limit} limit</span></div></>}</section><section className="theme-setting"><div><span>Appearance</span><small>Choose how Nexora.Ai looks on this device.</small></div><div className="theme-choice"><button type="button" className={appTheme === 'dark' ? 'selected' : ''} onClick={() => setAppTheme('dark')}>Dark</button><button type="button" className={appTheme === 'light' ? 'selected' : ''} onClick={() => setAppTheme('light')}>Light</button><button type="button" className={appTheme === 'system' ? 'selected' : ''} onClick={() => setAppTheme('system')}>System</button></div></section><button className="logout" onClick={() => void logout()}>Log out</button></section>}
-    <footer>Nexora.Ai V4.2 · Made by Poojak Doshi</footer>
+    {tab === 'account' && (
+      <section className="panel">
+        <p className="eyebrow">ACCOUNT</p>
+        <h2>{userSession?.username || email}</h2>
+
+        <div className="account-grid">
+          <article><span>Role</span><strong>{access?.role}</strong></article>
+          <article><span>Devices</span><strong>{access?.activeDevices}/{access?.maxDevices}</strong></article>
+          <article><span>Subscription</span><strong>{formatSubscriptionRemaining(userSession?.subscriptionExpiresAt ?? access?.subscriptionExpiresAt, subscriptionClock)}</strong></article>
+          <article><span>GitHub</span><strong>{connections.github ? 'Connected' : 'Not connected'}</strong></article>
+          <article><span>Vercel</span><strong>{connections.vercel ? 'Connected' : 'Not connected'}</strong></article>
+        </div>
+
+        <TokenWalletPanel
+          apiBase={config.apiBase}
+          email={userSession?.internalEmail || session?.user?.email || email}
+          token={token}
+          installationId={installationId}
+        />
+
+        {!userSession && email === ownerEmail && (
+          <button onClick={() => setMode('admin-login')}>Open Admin</button>
+        )}
+
+        <section className="theme-setting">
+          <div>
+            <span>Appearance</span>
+            <small>Choose how Nexora.Ai looks on this device.</small>
+          </div>
+          <div className="theme-choice">
+            <button type="button" className={appTheme === 'dark' ? 'selected' : ''} onClick={() => setAppTheme('dark')}>Dark</button>
+            <button type="button" className={appTheme === 'light' ? 'selected' : ''} onClick={() => setAppTheme('light')}>Light</button>
+            <button type="button" className={appTheme === 'system' ? 'selected' : ''} onClick={() => setAppTheme('system')}>System</button>
+          </div>
+        </section>
+
+        <button className="logout" onClick={() => void logout()}>Log out</button>
+      </section>
+    )}
+    <footer>Nexora.Ai · Made by Poojak Doshi</footer>
   </main>;
 }
 
 function SetupScreen({ config, onSave, onCancel, error }: { config: RuntimeConfig; onSave: (config: RuntimeConfig) => void; onCancel?: () => void; error: string }) {
   const [draft, setDraft] = useState(config);
-  return <main className="login-shell"><section className="login-card"><div className="brand-mark">⚙</div><p className="eyebrow">ONE-TIME APP SETUP</p><h1>Connect the APK</h1><p className="muted">Paste the public backend URL and the two public Supabase values. These can be changed later without rebuilding the APK.</p><form onSubmit={(event) => { event.preventDefault(); onSave(draft); }}><label>Backend API URL<input value={draft.apiBase} onChange={(event) => setDraft({ ...draft, apiBase: event.target.value })} placeholder="https://your-api.workers.dev" /></label><label>Supabase Project URL<input value={draft.supabaseUrl} onChange={(event) => setDraft({ ...draft, supabaseUrl: event.target.value })} placeholder="https://xxxxx.supabase.co" /></label><label>Supabase anon/public key<input value={draft.supabaseAnonKey} onChange={(event) => setDraft({ ...draft, supabaseAnonKey: event.target.value })} placeholder="eyJ..." /></label><button>Save and continue</button></form>{onCancel && <button className="small-button" onClick={onCancel}>Cancel</button>}{error && <p className="error">{error}</p>}<p className="tiny">Never paste the Supabase service-role key or Gemini key here.</p></section></main>;
+  return <main className="login-shell"><section className="login-card"><div className="brand-mark logo-shell"><img src="/nexora-logo.png" alt="Nexora.Ai" /></div><p className="eyebrow">ONE-TIME APP SETUP</p><h1>Connect the APK</h1><p className="muted">Paste the public backend URL and the two public Supabase values. These can be changed later without rebuilding the APK.</p><form onSubmit={(event) => { event.preventDefault(); onSave(draft); }}><label>Backend API URL<input value={draft.apiBase} onChange={(event) => setDraft({ ...draft, apiBase: event.target.value })} placeholder="https://your-api.workers.dev" /></label><label>Supabase Project URL<input value={draft.supabaseUrl} onChange={(event) => setDraft({ ...draft, supabaseUrl: event.target.value })} placeholder="https://xxxxx.supabase.co" /></label><label>Supabase anon/public key<input value={draft.supabaseAnonKey} onChange={(event) => setDraft({ ...draft, supabaseAnonKey: event.target.value })} placeholder="eyJ..." /></label><button>Save and continue</button></form>{onCancel && <button className="small-button" onClick={onCancel}>Cancel</button>}{error && <p className="error">{error}</p>}<p className="tiny">Never paste the Supabase service-role key or Gemini key here.</p></section></main>;
 }
 

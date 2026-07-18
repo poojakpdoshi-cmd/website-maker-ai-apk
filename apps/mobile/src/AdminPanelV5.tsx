@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import './admin-v6.css';
 import './nexora-minimal-light.css';
+import AdminBillingControls, { type BillingAccount } from './AdminBillingControls';
 
 type AdminMode = 'user' | 'admin-login' | 'admin-dashboard';
 
@@ -20,9 +21,7 @@ type Summary = {
   deployments: number;
 };
 
-type Account = {
-  id: string;
-  username: string;
+type Account = BillingAccount & {
   internal_email: string;
   status: string;
   created_at: string;
@@ -650,6 +649,17 @@ export default function AdminPanelV5({
                         >
                           Delete User
                         </button>
+
+                        <AdminBillingControls
+                          apiBase={apiBase}
+                          token={token}
+                          account={account}
+                          busy={busy}
+                          onBusy={setBusy}
+                          onMessage={setMessage}
+                          onError={setError}
+                          onUpdated={() => loadDashboard()}
+                        />
                       </div>
                     </article>
                   ))

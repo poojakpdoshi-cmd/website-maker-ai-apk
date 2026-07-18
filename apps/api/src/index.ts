@@ -18,6 +18,16 @@ import { buildFullStackInstruction } from "./fullstack-policy";
 import { ensureFullStackArtifacts } from "./fullstack-fallback";
 import { createFullStackReport } from './fullstack-report';
 import { auditGeneratedSecurity } from './security-audit-policy';
+import {
+  NexoraTokenError,
+  finalizeNexoraTokens,
+  getNexoraOperationCost,
+  loadAdminBillingAccounts,
+  refreshNexoraSubscriptionByEmail,
+  refundNexoraTokens,
+  registerSubscriptionTokenRoutes,
+  reserveNexoraTokens
+} from './subscription-tokens';
 type Bindings = {
   APP_NAME: string;
   PUBLIC_API_BASE_URL?: string;
@@ -280,6 +290,10 @@ async function checkAccess(env: Bindings, rawEmail: string, device?: DeviceInput
   const email = rawEmail.toLowerCase();
   const supabase = getSupabase(env);
   if (!supabase) return { ok: false, status: 503, error: 'Database is not configured.' };
+
+  await refreshNexoraSubscriptionByEmail(supabase, email).catch((error) => {
+    console.error('Subscription refresh failed:', error);
+  });
 
   const { data: user, error: userError } = await supabase.from('approved_users').select('email,status,expires_at,max_devices').eq('email', email).maybeSingle();
   if (userError) return { ok: false, status: 503, error: 'Could not check account access.' };
@@ -633,7 +647,8 @@ app.post('/auth/login', async (c) => {
     approved: true,
     role: access.role,
     maxDevices: access.maxDevices,
-    activeDevices: access.activeDevices
+    activeDevices: access.activeDevices,
+    subscriptionExpiresAt: access.subscriptionExpiresAt
   });
 });
 
@@ -665,7 +680,8 @@ app.get('/auth/me', async (c) => {
     approved: true,
     role: access.role,
     maxDevices: access.maxDevices,
-    activeDevices: access.activeDevices
+    activeDevices: access.activeDevices,
+    subscriptionExpiresAt: access.subscriptionExpiresAt
   });
 });
 
@@ -695,7 +711,7 @@ app.post('/auth/check-access', async (c) => {
   const device = body.data.installationId ? { installationId: body.data.installationId, deviceName: body.data.deviceName, androidVersion: body.data.androidVersion } : undefined;
   const access = await checkAccess(c.env, body.data.email, device);
   if (!access.ok) return c.json({ error: access.error }, access.status);
-  return c.json({ approved: true, role: access.role, maxDevices: access.maxDevices, activeDevices: access.activeDevices });
+  return c.json({ approved: true, role: access.role, maxDevices: access.maxDevices, activeDevices: access.activeDevices, subscriptionExpiresAt: access.subscriptionExpiresAt });
 });
 
 
@@ -1067,11 +1083,6 @@ app.post('/generate', async (c) => {
   if (!access.ok) return c.json({ error: access.error }, access.status);
 
   const supabase = requireSupabase(c.env);
-  if (access.role === 'subscriber') {
-    const quota = await dailyGenerationAllowed(supabase, email);
-    if (!quota.allowed) return c.json({ error: `Daily website limit reached (${quota.used}/${quota.limit}).` }, 429);
-  }
-
   const projectId = crypto.randomUUID();
   const jobId = parsed.data.jobId || crypto.randomUUID();
 
@@ -1122,6 +1133,45 @@ app.post('/generate', async (c) => {
         error: 'Could not start the generation job.'
       }, 500);
     }
+  }
+
+  let generationReservationId: string | null = null;
+
+  try {
+    const generationCost =
+      await getNexoraOperationCost(supabase, 'website_generation', 100) +
+      (parsed.data.image
+        ? await getNexoraOperationCost(supabase, 'image_analysis', 15)
+        : 0);
+
+    const reservation = await reserveNexoraTokens(
+      supabase,
+      email,
+      generationCost,
+      'website_generation',
+      jobId,
+      parsed.data.image
+        ? 'Website generation with image analysis'
+        : 'Complete website generation'
+    );
+
+    generationReservationId = reservation.reservationId;
+  } catch (tokenError) {
+    const message = tokenError instanceof Error
+      ? tokenError.message
+      : 'Could not reserve Nexora Tokens.';
+
+    await supabase.from('generation_jobs').update({
+      status: 'failed',
+      current_step: 'token_check_failed',
+      error_message: message,
+      completed_at: new Date().toISOString()
+    }).eq('id', jobId);
+
+    return c.json(
+      { error: message },
+      (tokenError instanceof NexoraTokenError ? tokenError.status : 500) as any
+    );
   }
 
   try {
@@ -1651,6 +1701,8 @@ await recordGenerationEvent(supabase, {
       throw new Error('Could not finalize the generated website.');
     }
 
+    await finalizeNexoraTokens(supabase, generationReservationId);
+
     await recordGenerationEvent(supabase, {
       jobId,
       email,
@@ -1673,6 +1725,12 @@ return c.json({
   } catch (error) {
     const failureMessage =
       error instanceof Error ? error.message : 'Generation failed';
+
+    await refundNexoraTokens(
+      supabase,
+      generationReservationId,
+      failureMessage
+    );
 
     await recordGenerationEvent(supabase, {
       jobId,
@@ -1708,6 +1766,30 @@ app.post('/projects/:id/edit', async (c) => {
   if (!project) return c.json({ error: 'Project not found.' }, 404);
   const { data: latest } = await supabase.from('project_versions').select('version_number,plan').eq('project_id', projectId).order('version_number', { ascending: false }).limit(1).maybeSingle();
   if (!latest) return c.json({ error: 'Project version not found.' }, 404);
+
+  let editReservationId: string | null = null;
+
+  try {
+    const editCost = await getNexoraOperationCost(
+      supabase,
+      'website_edit',
+      60
+    );
+    editReservationId = (await reserveNexoraTokens(
+      supabase,
+      parsed.data.email.toLowerCase(),
+      editCost,
+      'website_edit',
+      projectId,
+      'Website edit or redesign'
+    )).reservationId;
+  } catch (tokenError) {
+    return c.json(
+      { error: tokenError instanceof Error ? tokenError.message : 'Could not reserve Nexora Tokens.' },
+      (tokenError instanceof NexoraTokenError ? tokenError.status : 500) as any
+    );
+  }
+
   try {
     const revised = await reviseWebsitePlan(latest.plan as WebsitePlan, parsed.data.instruction, { apiKey: c.env.GEMINI_API_KEY, model: c.env.GEMINI_MODEL });
     let { data: form } = await supabase.from('website_forms').select('public_key').eq('project_id', projectId).eq('active', true).maybeSingle();
@@ -1725,8 +1807,14 @@ app.post('/projects/:id/edit', async (c) => {
       ), project_id: projectId, version_number: versionNumber, prompt: parsed.data.instruction, plan: revised.plan, generated_files: generated.files, preview_html: generated.previewHtml });
     if (error) throw new Error('Could not save the edited version.');
     await supabase.from('projects').update({ plan: revised.plan, name: revised.plan.businessName, website_type: revised.plan.websiteType, status: 'preview_ready', production_url: null }).eq('id', projectId);
+    await finalizeNexoraTokens(supabase, editReservationId);
     return c.json({ projectId, versionNumber, plan: revised.plan, previewHtml: generated.previewHtml, framework: generated.framework, fileCount: generated.files.length, mode: revised.mode });
   } catch (error) {
+    await refundNexoraTokens(
+      supabase,
+      editReservationId,
+      error instanceof Error ? error.message : 'Website edit failed'
+    );
     return c.json({ error: error instanceof Error ? error.message : 'Could not edit the website.' }, 500);
   }
 });
@@ -1786,6 +1874,8 @@ app.post('/projects/:id/publish', async (c) => {
   const { data: version } = await supabase.from('project_versions').select('generated_files').eq('project_id', projectId).order('version_number', { ascending: false }).limit(1).maybeSingle();
   if (!version?.generated_files || !Array.isArray(version.generated_files)) return c.json({ error: 'Generated project files are missing.' }, 409);
 
+  let publishReservationId: string | null = null;
+
   try {
     await supabase.from('projects').update({ status: 'publishing', deployment_state: 'PUBLISHING' }).eq('id', projectId);
     const github = await getConnection(supabase, c.env, parsed.data.email, 'github');
@@ -1813,6 +1903,20 @@ app.post('/projects/:id/publish', async (c) => {
       );
     }
 
+    const publishCost = await getNexoraOperationCost(
+      supabase,
+      'publish',
+      20
+    );
+    publishReservationId = (await reserveNexoraTokens(
+      supabase,
+      parsed.data.email.toLowerCase(),
+      publishCost,
+      'publish',
+      projectId,
+      'Publish website'
+    )).reservationId;
+
     const deployFiles = cmsSettings?.public_slug
       ? injectCmsRuntime(
           files,
@@ -1834,8 +1938,14 @@ app.post('/projects/:id/publish', async (c) => {
       const hostname = new URL(deployment.deploymentUrl).hostname;
       await supabase.from('website_forms').update({ allowed_domain: hostname }).eq('project_id', projectId);
     }
+    await finalizeNexoraTokens(supabase, publishReservationId);
     return c.json({ projectId, githubRepository: repository.url, productionUrl: deployment.deploymentUrl, deploymentId: deployment.deploymentId, state: deployment.readyState });
   } catch (error) {
+    await refundNexoraTokens(
+      supabase,
+      publishReservationId,
+      error instanceof Error ? error.message : 'Publishing failed'
+    );
     await supabase.from('projects').update({ status: 'publish_failed', deployment_state: 'ERROR' }).eq('id', projectId);
     return c.json({ error: error instanceof Error ? error.message : 'Publishing failed.' }, 500);
   }
@@ -2652,19 +2762,16 @@ app.get('/admin/accounts', async (c) => {
 
   const supabase = requireSupabase(c.env);
 
-  const { data, error } = await supabase
-    .from('user_accounts')
-    .select('id,username,internal_email,status,created_at,updated_at')
-    .order('created_at', { ascending: false })
-    .limit(200);
-
-  if (error) {
+  try {
+    const accounts = await loadAdminBillingAccounts(supabase);
+    return c.json({ accounts });
+  } catch (error) {
     return c.json({
-      error: 'Could not load username accounts. Run migration 004 in Supabase.'
+      error: error instanceof Error
+        ? error.message
+        : 'Could not load username accounts.'
     }, 500);
   }
-
-  return c.json({ accounts: data || [] });
 });
 
 app.post('/admin/accounts/create', async (c) => {
@@ -2742,9 +2849,9 @@ app.post('/admin/accounts/create', async (c) => {
     .upsert({
       email: internalEmail,
       status: 'active',
-      expires_at: null,
+      expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
       max_devices: 2,
-      daily_website_limit: 5,
+      daily_website_limit: 100,
       approved_at: new Date().toISOString()
     }, {
       onConflict: 'email'
@@ -2891,7 +2998,16 @@ app.delete('/admin/accounts/:id', async (c) => {
 app.notFound((c) => c.json({ error: 'Route not found.' }, 404));
 app.onError((error, c) => { console.error(error); return c.json({ error: error instanceof Error ? error.message : 'Unexpected server error.' }, 500); });
 
-registerAssistantChatRoutes(app);
+registerAssistantChatRoutes(app, {
+  requireUser,
+  requireSupabase
+});
+
+registerSubscriptionTokenRoutes(app, {
+  requireUser,
+  requireAdmin,
+  requireSupabase
+});
 registerCmsRoutes(app, {
   requireUser,
   requireSupabase
