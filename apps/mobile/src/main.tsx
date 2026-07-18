@@ -4,6 +4,43 @@ import App from './App';
 import './styles.css';
 import './nexora-theme.css';
 
+const isAndroid = /Android/i.test(navigator.userAgent);
+
+function updateViewportHeight() {
+  const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+
+  document.documentElement.style.setProperty(
+    '--nexora-viewport-height',
+    `${Math.round(viewportHeight)}px`
+  );
+}
+
+function keepFocusedFieldVisible() {
+  if (!isAndroid) return;
+
+  const activeElement = document.activeElement;
+
+  if (
+    activeElement instanceof HTMLInputElement ||
+    activeElement instanceof HTMLTextAreaElement ||
+    activeElement instanceof HTMLSelectElement ||
+    (activeElement instanceof HTMLElement && activeElement.isContentEditable)
+  ) {
+    window.setTimeout(() => {
+      activeElement.scrollIntoView({ block: 'center', inline: 'nearest' });
+    }, 120);
+  }
+}
+
+updateViewportHeight();
+
+window.addEventListener('resize', updateViewportHeight);
+window.visualViewport?.addEventListener('resize', () => {
+  updateViewportHeight();
+  keepFocusedFieldVisible();
+});
+document.addEventListener('focusin', keepFocusedFieldVisible);
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />

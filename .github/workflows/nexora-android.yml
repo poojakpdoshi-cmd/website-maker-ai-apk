@@ -38,16 +38,132 @@ jobs:
             npm install
           fi
 
+      - name: Verify exact Nexora brand sources
+        working-directory: apps/mobile
+        run: |
+          set -euo pipefail
+
+          sha256sum --check --strict \
+            ../../.github/branding/nexora-source-assets.sha256
+
+          expected_assets=(
+            assets/launcher-brand/logo.png
+            assets/splash-brand/logo.jpeg
+          )
+          expected_public=(
+            public/icons/apple-touch-icon.png
+            public/icons/icon-192.png
+            public/icons/icon-512.png
+            public/manifest.webmanifest
+            public/nexora-logo.png
+            public/sw.js
+          )
+
+          diff -u \
+            <(printf '%s\n' "${expected_assets[@]}") \
+            <(find assets -type f -printf '%p\n' | LC_ALL=C sort)
+          diff -u \
+            <(printf '%s\n' "${expected_public[@]}") \
+            <(find public -type f -printf '%p\n' | LC_ALL=C sort)
+
+          test ! -e assets/splash.png
+          test ! -e assets/splash-dark.png
+          test ! -e assets/icon.png
+          test ! -e assets/icon-only.png
+          test ! -e assets/icon-only.svg
+          test ! -e public/nexora-logo.svg
+          test ! -e public/webforge-logo.svg
+          file public/nexora-logo.png | grep -q 'PNG image data, 640 x 640'
+
       - name: Build mobile web app
         run: npm run build -w @wmai/mobile
+
+      - name: Verify packaged web branding
+        working-directory: apps/mobile
+        run: |
+          set -euo pipefail
+
+          cmp public/nexora-logo.png dist/nexora-logo.png
+          cmp public/icons/apple-touch-icon.png dist/icons/apple-touch-icon.png
+          cmp public/icons/icon-192.png dist/icons/icon-192.png
+          cmp public/icons/icon-512.png dist/icons/icon-512.png
+
+          if find dist -type f \
+            \( -iname '*webforge*' -o -iname '*.svg' \) \
+            -print -quit | grep -q .; then
+            echo 'Legacy WebForge/old SVG branding reached the web bundle.' >&2
+            exit 1
+          fi
 
       - name: Prepare Android project
         working-directory: apps/mobile
         run: |
+          set -euo pipefail
+
           if [ ! -d android ]; then
             npx cap add android
           fi
+          npx capacitor-assets generate --android \
+            --assetPath assets/splash-brand \
+            --logoSplashScale 0.5 \
+            --iconBackgroundColor '#000008' \
+            --iconBackgroundColorDark '#000008' \
+            --splashBackgroundColor '#000008' \
+            --splashBackgroundColorDark '#000008'
+
+          splash_backup="$(mktemp -d)"
+          (
+            cd android/app/src/main/res
+            find . -type f -name splash.png \
+              -exec cp --parents '{}' "$splash_backup" ';'
+          )
+
+          npx capacitor-assets generate --android \
+            --assetPath assets/launcher-brand \
+            --iconBackgroundColor '#000008' \
+            --iconBackgroundColorDark '#000008'
+
+          cp -R "$splash_backup"/. android/app/src/main/res/
+          rm -rf "$splash_backup"
           npx cap sync android
+
+          launcher_png_count="$(find android/app/src/main/res -type f \
+            \( -name 'ic_launcher.png' \
+              -o -name 'ic_launcher_round.png' \
+              -o -name 'ic_launcher_foreground.png' \
+              -o -name 'ic_launcher_background.png' \) \
+            | wc -l)"
+          launcher_xml_count="$(find android/app/src/main/res/mipmap-anydpi-v26 \
+            -type f \( -name 'ic_launcher.xml' \
+              -o -name 'ic_launcher_round.xml' \) | wc -l)"
+          splash_count="$(find android/app/src/main/res \
+            -type f -name 'splash.png' | wc -l)"
+
+          test "$launcher_png_count" -eq 24
+          test "$launcher_xml_count" -eq 2
+          test "$splash_count" -eq 26
+
+          sha256sum --check --strict \
+            ../../.github/branding/nexora-android-generated.sha256
+
+          packaged_public=android/app/src/main/assets/public
+          cmp public/nexora-logo.png "$packaged_public/nexora-logo.png"
+          cmp public/icons/apple-touch-icon.png \
+            "$packaged_public/icons/apple-touch-icon.png"
+          cmp public/icons/icon-192.png "$packaged_public/icons/icon-192.png"
+          cmp public/icons/icon-512.png "$packaged_public/icons/icon-512.png"
+
+          if find "$packaged_public" -type f \
+            \( -iname '*webforge*' -o -iname '*.svg' \) \
+            -print -quit | grep -q .; then
+            echo 'Legacy WebForge/old SVG branding reached the Android package.' >&2
+            exit 1
+          fi
+
+          grep -q 'android:icon="@mipmap/ic_launcher"' \
+            android/app/src/main/AndroidManifest.xml
+          grep -q 'android:roundIcon="@mipmap/ic_launcher_round"' \
+            android/app/src/main/AndroidManifest.xml
 
       - name: Build debug APK
         working-directory: apps/mobile/android

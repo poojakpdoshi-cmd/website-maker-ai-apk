@@ -2049,6 +2049,13 @@ async function openProject(projectId: string) {
       </button>
     </nav>
     {message && <p className="success notice-wide">{message}</p>}{error && <p className="error notice-wide" role="alert">{error}</p>}
+    <div
+      className={
+        tab === 'chat'
+          ? 'nexora-main-content chat-content'
+          : 'nexora-main-content'
+      }
+    >
     {tab === 'chat' && (
       <ChatStudio
         busy={loading}
@@ -2857,6 +2864,7 @@ async function openProject(projectId: string) {
       </section>
     )}
     <footer>Nexora.Ai · Made by Poojak Doshi</footer>
+    </div>
   </main>;
 }
 

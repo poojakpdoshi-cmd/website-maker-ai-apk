@@ -57,8 +57,7 @@ jobs:
 
       - name: Verify WebForge source
         run: |
-          test -f apps/mobile/assets/icon.png
-          test -f apps/mobile/public/webforge-logo.svg
+          test -f apps/mobile/assets/launcher-brand/logo.png
 
           grep -n "readResponse" apps/mobile/src/App.tsx
           grep -n "full_stack_report" apps/mobile/src/App.tsx
@@ -81,10 +80,9 @@ jobs:
         run: |
           rm -rf android
 
-          cp -f assets/icon-only.png assets/icon.png
-
           npx cap add android
-          npx capacitor-assets generate --android
+          npx capacitor-assets generate --android \
+            --assetPath assets/launcher-brand
           npx cap sync android
 
           sed -i 's/versionCode 1/versionCode 42/' \
