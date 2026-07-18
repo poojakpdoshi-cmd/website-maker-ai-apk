@@ -5,6 +5,7 @@ import {
   useRef,
   useState
 } from 'react';
+import ThinkMaxControl from './ThinkMaxControl';
 
 type ChatResult = {
   projectName: string;
@@ -681,26 +682,14 @@ export default function ChatStudio({
             </button>
           )}
 
-          <label className="thinkmax-control thinkmax-chat-control">
-            <span className="thinkmax-copy">
-              <strong>ThinkMax</strong>
-              <small id="chat-thinkmax-description">
-                Deeper planning and review; generation may take longer.
-              </small>
-            </span>
-            <span className="thinkmax-switch">
-              <input
-                type="checkbox"
-                checked={thinkMaxEnabled}
-                onChange={(event) =>
-                  onThinkMaxChange(event.target.checked)
-                }
-                disabled={busy || buildActive}
-                aria-describedby="chat-thinkmax-description"
-              />
-              <span aria-hidden="true" />
-            </span>
-          </label>
+          <ThinkMaxControl
+            enabled={thinkMaxEnabled}
+            onChange={onThinkMaxChange}
+            disabled={busy || buildActive}
+            description="Deeper planning and review; generation may take longer."
+            descriptionId="chat-thinkmax-description"
+            chat
+          />
 
           <form
             className="claude-composer"

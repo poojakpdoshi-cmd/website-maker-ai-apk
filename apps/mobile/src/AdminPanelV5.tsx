@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import './admin-v6.css';
 import './nexora-minimal-light.css';
 import AdminBillingControls, { type BillingAccount } from './AdminBillingControls';
+import { requestJson } from './api-errors';
 
 type AdminMode = 'user' | 'admin-login' | 'admin-dashboard';
 
@@ -9,7 +10,7 @@ type Props = {
   apiBase: string;
   initialMode: 'admin-login' | 'admin-dashboard';
   onMode: (mode: AdminMode) => void;
-  onSetup: () => void;
+  onSetup?: () => void;
 };
 
 type Summary = {
@@ -214,8 +215,12 @@ export default function AdminPanelV5({
       return;
     }
 
-    if (passwordDraft.length < 8) {
-      setError('Password must be at least 8 characters.');
+    if (
+      passwordDraft.length < 10 ||
+      !/[A-Za-z]/.test(passwordDraft) ||
+      !/[0-9]/.test(passwordDraft)
+    ) {
+      setError('Password must be at least 10 characters and include a letter and a number.');
       return;
     }
 
@@ -224,7 +229,7 @@ export default function AdminPanelV5({
     setMessage('');
 
     try {
-      const response = await fetch(
+      await requestJson<{ changed: true }>(
         `${apiBase}/admin/accounts/${encodeURIComponent(account.id)}/password`,
         {
           method: 'PATCH',
@@ -236,7 +241,6 @@ export default function AdminPanelV5({
         }
       );
 
-      await parseResponse(response);
       setPasswordAccountId('');
       setPasswordDraft('');
       setMessage(
@@ -535,8 +539,10 @@ export default function AdminPanelV5({
                       onChange={(event) =>
                         setNewPassword(event.target.value)
                       }
-                      placeholder="Minimum 8 characters"
+                      placeholder="10+ characters with a letter and number"
                       autoComplete="new-password"
+                      minLength={10}
+                      pattern="(?=.*[A-Za-z])(?=.*[0-9]).{10,}"
                       required
                     />
 
@@ -609,7 +615,8 @@ export default function AdminPanelV5({
                             }
                             placeholder="New password"
                             autoComplete="new-password"
-                            minLength={8}
+                            minLength={10}
+                            pattern="(?=.*[A-Za-z])(?=.*[0-9]).{10,}"
                             disabled={busy}
                           />
                         )}
@@ -685,9 +692,11 @@ export default function AdminPanelV5({
               <strong>Username and password</strong>
             </article>
 
-            <button onClick={onSetup}>
-              Connection setup
-            </button>
+            {onSetup && (
+              <button onClick={onSetup}>
+                Connection setup
+              </button>
+            )}
           </section>
         )}
       </section>

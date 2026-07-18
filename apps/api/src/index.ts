@@ -4,6 +4,12 @@ import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
 import { z } from 'zod';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import {
+  isValidNormalizedUsername,
+  normalizeUsername,
+  passwordRequirements,
+  strongPasswordSchema
+} from './auth-credentials';
 import { buildWebsitePlan, reviseWebsitePlan } from '@wmai/ai-brain';
 import { buildProjectFiles, projectSlug } from '@wmai/template-engine';
 import {
@@ -88,7 +94,7 @@ type ConnectionRecord = {
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
-app.use('*', cors({ origin: '*', allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'], allowHeaders: ['Content-Type', 'Authorization', 'X-Device-Id'] }));
+app.use('*', cors({ origin: '*', allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'], allowHeaders: ['Content-Type', 'Authorization', 'X-Device-Id'] }));
 
 const DEFAULT_ADMIN_USERNAME = 'Poojak@King';
 const DEFAULT_ADMIN_PASSWORD_SALT = '664ad767ddf31d232e775b07c4818233';
@@ -133,7 +139,8 @@ async function usernameSessionIdentity(
   if (
     error ||
     !session ||
-    session.revoked_at
+    session.revoked_at ||
+    new Date(session.expires_at).getTime() <= Date.now()
   ) {
     return null;
   }
@@ -194,6 +201,18 @@ function constantTimeEqual(left: string, right: string): boolean {
   let difference = 0;
   for (let index = 0; index < left.length; index += 1) difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
   return difference === 0;
+}
+
+function logDatabaseError(
+  operation: string,
+  error: { code?: unknown; message?: unknown } | null
+): void {
+  console.error(operation, {
+    code: typeof error?.code === 'string' ? error.code : 'unknown',
+    message: typeof error?.message === 'string'
+      ? error.message
+      : 'Unknown database error.'
+  });
 }
 
 function randomToken(): string {
@@ -547,7 +566,7 @@ app.get('/health', (c) => c.json({
 
 app.post('/auth/login', async (c) => {
   const parsed = z.object({
-    username: z.string().trim().min(3).max(40),
+    username: z.string().min(1).max(80),
     password: z.string().min(8).max(200),
     installationId: z.string().uuid(),
     deviceName: z.string().max(120).optional(),
@@ -562,11 +581,11 @@ app.post('/auth/login', async (c) => {
 
   const supabase = requireSupabase(c.env);
 
-  const username = parsed.data.username
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '.')
-    .replace(/\.{2,}/g, '.');
+  const username = normalizeUsername(parsed.data.username);
+
+  if (!isValidNormalizedUsername(username)) {
+    return c.json({ error: 'Enter a valid username and password.' }, 400);
+  }
 
   const { data: account, error: accountError } = await supabase
     .from('user_accounts')
@@ -711,6 +730,111 @@ app.post('/auth/logout', async (c) => {
     .eq('token_hash', await sha256Hex(token));
 
   return c.json({ loggedOut: true });
+});
+
+app.patch('/auth/password', async (c) => {
+  const identity = await usernameSessionIdentity(
+    c.env,
+    c.req.header('Authorization')
+  );
+
+  if (!identity) {
+    return c.json({ error: 'Your session is missing or expired. Log in again.' }, 401);
+  }
+
+  const parsed = z.object({
+    currentPassword: z.string().min(1).max(200),
+    newPassword: strongPasswordSchema
+  }).safeParse(await c.req.json().catch(() => null));
+
+  if (!parsed.success) {
+    return c.json({ error: passwordRequirements }, 400);
+  }
+
+  if (parsed.data.currentPassword === parsed.data.newPassword) {
+    return c.json({ error: 'Choose a new password that is different from the current password.' }, 400);
+  }
+
+  const supabase = requireSupabase(c.env);
+  const { data: account, error: lookupError } = await supabase
+    .from('user_accounts')
+    .select('id,password_salt,password_hash,password_iterations,status')
+    .eq('id', identity.userId)
+    .maybeSingle();
+
+  if (lookupError) {
+    logDatabaseError('Self-service password verification failed.', lookupError);
+    return c.json({ error: 'Could not verify the current password.' }, 500);
+  }
+
+  if (!account || account.status !== 'active') {
+    return c.json({ error: 'Your account is not active.' }, 403);
+  }
+
+  const currentDigest = await passwordHash(
+    parsed.data.currentPassword,
+    account.password_salt,
+    Number(account.password_iterations)
+  );
+
+  if (!constantTimeEqual(currentDigest, account.password_hash)) {
+    return c.json({ error: 'The current password is incorrect.' }, 400);
+  }
+
+  const passwordSalt = bytesToHex(
+    crypto.getRandomValues(new Uint8Array(16))
+  );
+  const passwordIterations = 100000;
+  const passwordDigest = await passwordHash(
+    parsed.data.newPassword,
+    passwordSalt,
+    passwordIterations
+  );
+  const changedAt = new Date().toISOString();
+
+  const { error: updateError } = await supabase
+    .from('user_accounts')
+    .update({
+      password_salt: passwordSalt,
+      password_hash: passwordDigest,
+      password_iterations: passwordIterations,
+      password_changed_at: changedAt,
+      updated_at: changedAt
+    })
+    .eq('id', account.id);
+
+  if (updateError) {
+    logDatabaseError('Self-service password update failed.', updateError);
+    return c.json({ error: 'Could not change the password.' }, 500);
+  }
+
+  const { error: revokeError } = await supabase
+    .from('user_sessions')
+    .update({ revoked_at: changedAt })
+    .eq('user_id', account.id)
+    .neq('id', identity.id)
+    .is('revoked_at', null);
+
+  if (revokeError) {
+    logDatabaseError('Self-service password session revocation failed.', revokeError);
+    return c.json({
+      error: 'Password changed, but other sessions could not be revoked. Contact support.'
+    }, 500);
+  }
+
+  const { error: auditError } = await supabase.from('audit_logs').insert({
+    actor_email: identity.internalEmail,
+    action: 'change_own_password',
+    target_type: 'user_account',
+    target_id: account.id,
+    metadata: { username: identity.username }
+  });
+
+  if (auditError) {
+    logDatabaseError('Self-service password audit logging failed.', auditError);
+  }
+
+  return c.json({ changed: true });
 });
 
 app.post('/auth/check-access', async (c) => {
@@ -2876,24 +3000,22 @@ app.post('/admin/accounts/create', async (c) => {
       .max(40)
       .regex(/^[A-Za-z0-9._ -]+$/),
 
-    password: z.string()
-      .min(8)
-      .max(200)
+    password: strongPasswordSchema
   }).safeParse(await c.req.json().catch(() => null));
 
   if (!parsed.success) {
     return c.json({
-      error: 'Use 3–40 letters, numbers, spaces, dots, dashes or underscores. Password must be at least 8 characters.'
+      error: `Use 3-40 letters, numbers, spaces, dots, dashes or underscores. ${passwordRequirements}`
     }, 400);
   }
 
   const supabase = requireSupabase(c.env);
 
-  const username = parsed.data.username
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '.')
-    .replace(/\.{2,}/g, '.');
+  const username = normalizeUsername(parsed.data.username);
+
+  if (!isValidNormalizedUsername(username)) {
+    return c.json({ error: 'Enter a valid username.' }, 400);
+  }
   const internalEmail = `${username}@users.webforge.local`;
 
   const passwordSalt = bytesToHex(
@@ -2978,11 +3100,11 @@ app.patch('/admin/accounts/:id/password', async (c) => {
   }
 
   const parsed = z.object({
-    password: z.string().min(8).max(200)
+    password: strongPasswordSchema
   }).safeParse(await c.req.json().catch(() => null));
 
   if (!parsed.success) {
-    return c.json({ error: 'Password must be at least 8 characters.' }, 400);
+    return c.json({ error: passwordRequirements }, 400);
   }
 
   const supabase = requireSupabase(c.env);
@@ -2995,6 +3117,9 @@ app.patch('/admin/accounts/:id/password', async (c) => {
     .maybeSingle();
 
   if (lookupError || !account) {
+    if (lookupError) {
+      logDatabaseError('Admin password reset account lookup failed.', lookupError);
+    }
     return c.json({ error: 'User account not found.' }, 404);
   }
 
@@ -3014,18 +3139,27 @@ app.patch('/admin/accounts/:id/password', async (c) => {
       password_salt: passwordSalt,
       password_hash: passwordDigest,
       password_iterations: passwordIterations,
+      password_changed_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     })
     .eq('id', account.id);
 
   if (updateError) {
+    logDatabaseError('Admin password reset update failed.', updateError);
     return c.json({ error: 'Could not change the user password.' }, 500);
   }
 
-  await supabase
+  const { error: sessionError } = await supabase
     .from('user_sessions')
     .delete()
     .eq('user_id', account.id);
+
+  if (sessionError) {
+    logDatabaseError('Admin password reset session revocation failed.', sessionError);
+    return c.json({
+      error: 'Password changed, but existing sessions could not be revoked. Contact support.'
+    }, 500);
+  }
 
   await supabase.from('audit_logs').insert({
     actor_email: adminUsername(c.env),

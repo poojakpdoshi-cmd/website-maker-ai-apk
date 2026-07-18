@@ -16,6 +16,8 @@
     "typecheck": "npm run typecheck -w @wmai/mobile && npm run typecheck -w @wmai/admin && npm run typecheck -w @wmai/api-node",
     "typecheck:api": "npm --prefix apps/api run typecheck",
     "test": "tsx scripts/smoke-test.ts",
+    "test:auth": "tsx scripts/auth-regression.ts",
+    "test:thinkmax-layout": "tsx scripts/thinkmax-layout-regression.ts",
     "termux:check": "npm run typecheck && npm test && npm run build",
     "dev:api": "npm run dev -w @wmai/api-node",
     "start:api": "npm run start -w @wmai/api-node"

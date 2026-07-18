@@ -38,6 +38,16 @@ jobs:
             npm install
           fi
 
+      - name: Install Worker test dependencies
+        run: npm --prefix apps/api ci
+
+      - name: Run authentication and ThinkMax release checks
+        run: |
+          npm run typecheck -w @wmai/mobile
+          npm --prefix apps/api run typecheck
+          npm run test:auth
+          npm run test:thinkmax-layout
+
       - name: Verify exact Nexora brand sources
         working-directory: apps/mobile
         run: |

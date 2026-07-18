@@ -146,6 +146,10 @@ async function main() {
     path.join(repositoryRoot, 'apps/mobile/src/ChatStudio.tsx'),
     'utf8'
   );
+  const controlSource = fs.readFileSync(
+    path.join(repositoryRoot, 'apps/mobile/src/ThinkMaxControl.tsx'),
+    'utf8'
+  );
 
   assert.ok(
     (apiSource.match(/thinkMax: thinkMaxFlagSchema/g) || []).length >= 2,
@@ -180,7 +184,10 @@ async function main() {
     ),
     'Resumed generation must activate the duplicate-call guard.'
   );
-  assert.ok(chatSource.includes('type="checkbox"'));
+  assert.ok(chatSource.includes('<ThinkMaxControl'));
+  assert.ok(controlSource.includes('role="switch"'));
+  assert.ok(controlSource.includes('aria-checked={enabled}'));
+  assert.ok(!controlSource.includes('<label'));
   assert.ok(chatSource.includes('websiteBuildRequest && (busy || buildActive)'));
 
   console.log('SUCCESS: ThinkMax contract and flow tests passed.');

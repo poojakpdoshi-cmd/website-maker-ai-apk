@@ -13,8 +13,15 @@ import ChatStudio, { type LiveBuildActivity } from './ChatStudio';
 import CmsStudio from './CmsStudio';
 import type { FullStackReport } from './FullStackReportCard';
 import TokenWalletPanel from './TokenWalletPanel';
+import ThinkMaxControl from './ThinkMaxControl';
+import { ApiRequestError, requestJson } from './api-errors';
+import {
+  cleanRuntimeConfig,
+  resolveRuntimeConfig,
+  type RuntimeConfig,
+  validRuntimeConfig
+} from './runtime-config';
 type AppTheme = 'dark' | 'light' | 'system';
-type RuntimeConfig = { apiBase: string; supabaseUrl: string; supabaseAnonKey: string };
 type WebsitePlan = { businessName: string; websiteType: string; tagline: string; pages: string[]; features: string[]; theme: { style: string; primary: string; secondary: string; background: string; text: string } };
 type GenerateResponse = { projectId: string; jobId?: string; versionNumber?: number; plan: WebsitePlan; previewHtml: string; framework: 'vite-react'; fileCount: number; mode: 'ai' | 'built-in'; thinkMaxCompleted?: boolean };
 type AccessResponse = {
@@ -650,12 +657,15 @@ function defaultConfig(): RuntimeConfig {
 }
 
 function loadConfig(): RuntimeConfig {
-  try {
-    const stored = localStorage.getItem(configKey);
-    return stored ? { ...defaultConfig(), ...JSON.parse(stored) } : defaultConfig();
-  } catch {
-    return defaultConfig();
-  }
+  const bundled = defaultConfig();
+  const allowStoredOverride = import.meta.env.DEV ||
+    !validRuntimeConfig(bundled);
+
+  return resolveRuntimeConfig(
+    bundled,
+    localStorage.getItem(configKey),
+    allowStoredOverride
+  );
 }
 
 function createInstallationId(): string {
@@ -671,9 +681,10 @@ function createInstallationId(): string {
 
 const installationId = createInstallationId();
 
-function validConfig(config: RuntimeConfig) {
-  return /^https?:\/\//.test(config.apiBase) && /^https:\/\//.test(config.supabaseUrl) && config.supabaseAnonKey.length > 20;
-}
+const runtimeConfigOverrideAllowed = import.meta.env.DEV ||
+  !validRuntimeConfig(defaultConfig());
+
+const validConfig = validRuntimeConfig;
 
 export default function App() {
   const [config, setConfig] = useState<RuntimeConfig>(loadConfig);
@@ -705,6 +716,10 @@ export default function App() {
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newAccountPassword, setNewAccountPassword] = useState('');
+  const [confirmAccountPassword, setConfirmAccountPassword] = useState('');
+  const [passwordChanging, setPasswordChanging] = useState(false);
 
   const [approved, setApproved] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
@@ -1016,13 +1031,12 @@ async function loadProjects(activeEmail = email, activeToken = token) {
       return;
     }
 
-    void fetch(`${config.apiBase}/auth/me`, {
+    void requestJson<UsernameSession>(`${config.apiBase}/auth/me`, {
       headers: {
         Authorization: `Bearer ${saved.token}`,
         'X-Device-Id': installationId
       }
     })
-      .then(readResponse)
       .then(async (data) => {
         const refreshed: UsernameSession = {
           ...saved,
@@ -1068,17 +1082,10 @@ async function loadProjects(activeEmail = email, activeToken = token) {
         ]);
       })
       .catch((startupError: unknown) => {
-      const failure =
-        startupError instanceof Error
-          ? startupError.message
-          : String(startupError ?? '');
-
-      const sessionRejected =
-        /(?:401|403|unauthori[sz]ed|invalid session|session[^.]{0,40}revoked|account[^.]{0,40}blocked|subscription[^.]{0,40}expired)/i.test(
-          failure
-        );
-
-      if (sessionRejected) {
+      if (
+        startupError instanceof ApiRequestError &&
+        startupError.kind === 'unauthorized'
+      ) {
         localStorage.removeItem(userSessionKey);
         setUserSession(null);
         setSession(null);
@@ -1089,15 +1096,12 @@ async function loadProjects(activeEmail = email, activeToken = token) {
       setUserSession(saved);
       setSession(null);
       setEmail(saved.internalEmail);
-
-      setAccess({
-        approved: true,
-        role: saved.role,
-        maxDevices: saved.maxDevices,
-        activeDevices: saved.activeDevices
-      });
-
-      setApproved(true);
+      setApproved(false);
+      setError(
+        startupError instanceof Error
+          ? startupError.message
+          : 'Cannot verify the saved session. Check your connection and try again.'
+      );
     });
   }, [config.apiBase]);
 
@@ -1297,7 +1301,13 @@ async function loadProjects(activeEmail = email, activeToken = token) {
   ]);
 
   function saveRuntimeConfig(next: RuntimeConfig) {
-    const clean = { apiBase: next.apiBase.trim().replace(/\/$/, ''), supabaseUrl: next.supabaseUrl.trim().replace(/\/$/, ''), supabaseAnonKey: next.supabaseAnonKey.trim() };
+    if (!runtimeConfigOverrideAllowed) {
+      setShowSetup(false);
+      setError('This release uses its verified build-time backend configuration.');
+      return;
+    }
+
+    const clean = cleanRuntimeConfig(next);
     if (!validConfig(clean)) { setError('Enter a valid API URL, Supabase project URL, and Supabase anon key.'); return; }
     localStorage.setItem(configKey, JSON.stringify(clean));
     setConfig(clean); setShowSetup(false); setError(''); setMessage('Configuration saved inside the APK.');
@@ -1338,17 +1348,15 @@ async function loadProjects(activeEmail = email, activeToken = token) {
     };
 
     try {
-      const userResponse = await fetch(
-        `${config.apiBase}/auth/login`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify(loginPayload)
-        }
-      );
-
-      if (userResponse.ok) {
-        const data = await userResponse.json() as UsernameSession;
+      try {
+        const data = await requestJson<UsernameSession>(
+          `${config.apiBase}/auth/login`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(loginPayload)
+          }
+        );
 
         if (supabase) {
           await supabase.auth.signOut().catch(() => undefined);
@@ -1376,13 +1384,20 @@ async function loadProjects(activeEmail = email, activeToken = token) {
         ]);
 
         return;
+      } catch (userLoginError) {
+        if (
+          !(userLoginError instanceof ApiRequestError) ||
+          userLoginError.status !== 401
+        ) {
+          throw userLoginError;
+        }
       }
 
-      if (userResponse.status !== 401) {
-        await readResponse(userResponse);
-      }
-
-      const adminResponse = await fetch(
+      const adminData = await requestJson<{
+        token: string;
+        expiresAt: string;
+        username: string;
+      }>(
         `${config.apiBase}/admin/auth/login`,
         {
           method: 'POST',
@@ -1394,16 +1409,6 @@ async function loadProjects(activeEmail = email, activeToken = token) {
         }
       );
 
-      if (!adminResponse.ok) {
-        throw new Error('Incorrect username or password.');
-      }
-
-      const adminData = await adminResponse.json() as {
-        token: string;
-        expiresAt: string;
-        username: string;
-      };
-
       localStorage.setItem('wmai-admin-session', adminData.token);
       localStorage.removeItem(userSessionKey);
 
@@ -1412,8 +1417,19 @@ async function loadProjects(activeEmail = email, activeToken = token) {
       setApproved(false);
       setPassword('');
       setMode('admin-dashboard');
-    } catch {
-      setError('Incorrect username or password.');
+    } catch (loginError) {
+      if (
+        loginError instanceof ApiRequestError &&
+        loginError.status === 401
+      ) {
+        setError('Incorrect username or password.');
+      } else {
+        setError(
+          loginError instanceof Error
+            ? loginError.message
+            : 'Login failed.'
+        );
+      }
     } finally {
       setLoginLoading(false);
     }
@@ -1861,6 +1877,54 @@ async function openProject(projectId: string) {
     finally { setPublishing(false); }
   }
 
+  async function changeOwnPassword(event: FormEvent) {
+    event.preventDefault();
+
+    if (!userSession?.token) {
+      setError('Password changes are available for username accounts.');
+      return;
+    }
+
+    if (newAccountPassword !== confirmAccountPassword) {
+      setError('The new password confirmation does not match.');
+      return;
+    }
+
+    setPasswordChanging(true);
+    setError('');
+    setMessage('');
+
+    try {
+      await requestJson<{ changed: true }>(
+        `${config.apiBase}/auth/password`,
+        {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            Authorization: `Bearer ${userSession.token}`
+          },
+          body: JSON.stringify({
+            currentPassword,
+            newPassword: newAccountPassword
+          })
+        }
+      );
+
+      setCurrentPassword('');
+      setNewAccountPassword('');
+      setConfirmAccountPassword('');
+      setMessage('Password changed. Other logged-in devices must sign in again.');
+    } catch (changeError) {
+      setError(
+        changeError instanceof Error
+          ? changeError.message
+          : 'Could not change the password.'
+      );
+    } finally {
+      setPasswordChanging(false);
+    }
+  }
+
   async function logout() {
     if (userSession?.token) {
       await fetch(`${config.apiBase}/auth/logout`, {
@@ -1884,6 +1948,9 @@ async function openProject(projectId: string) {
     setEmail(ownerEmail);
     setUsername('');
     setPassword('');
+    setCurrentPassword('');
+    setNewAccountPassword('');
+    setConfirmAccountPassword('');
     setOtp('');
     setOtpSent(false);
     setResult(null);
@@ -1898,7 +1965,7 @@ async function openProject(projectId: string) {
   }
 
   if (showSetup) return <SetupScreen config={config} onSave={saveRuntimeConfig} onCancel={validConfig(config) ? () => setShowSetup(false) : undefined} error={error} />;
-  if (mode === 'admin-dashboard') return <AdminPanelV5 apiBase={config.apiBase} initialMode={mode} onMode={setMode} onSetup={() => setShowSetup(true)} />;
+  if (mode === 'admin-dashboard') return <AdminPanelV5 apiBase={config.apiBase} initialMode={mode} onMode={setMode} onSetup={runtimeConfigOverrideAllowed ? () => setShowSetup(true) : undefined} />;
 
   if (!approved) {
     return (
@@ -2332,26 +2399,13 @@ async function openProject(projectId: string) {
           maxLength={6000}
         />
         <p className="prompt-count">{prompt.length}/6000</p>
-        <label className="thinkmax-control">
-          <span className="thinkmax-copy">
-            <strong>ThinkMax</strong>
-            <small id="advanced-thinkmax-description">
-              Deeper planning and architecture review. Builds may take longer.
-            </small>
-          </span>
-          <span className="thinkmax-switch">
-            <input
-              type="checkbox"
-              checked={thinkMaxEnabled}
-              onChange={(event) =>
-                setThinkMaxEnabled(event.target.checked)
-              }
-              disabled={loading}
-              aria-describedby="advanced-thinkmax-description"
-            />
-            <span aria-hidden="true" />
-          </span>
-        </label>
+        <ThinkMaxControl
+          enabled={thinkMaxEnabled}
+          onChange={setThinkMaxEnabled}
+          disabled={loading}
+          description="Deeper planning and architecture review. Builds may take longer."
+          descriptionId="advanced-thinkmax-description"
+        />
         <button
           className="primary"
           onClick={() => void generateWebsite()}
@@ -2843,6 +2897,64 @@ async function openProject(projectId: string) {
           token={token}
           installationId={installationId}
         />
+
+        {userSession && (
+          <section className="account-password-card" aria-labelledby="account-password-title">
+            <div>
+              <span>Security</span>
+              <h3 id="account-password-title">Change password</h3>
+              <small>
+                Other sessions are revoked after a successful change. This device stays signed in.
+              </small>
+            </div>
+
+            <form onSubmit={changeOwnPassword}>
+              <label>
+                Current password
+                <input
+                  type="password"
+                  value={currentPassword}
+                  onChange={(event) => setCurrentPassword(event.target.value)}
+                  autoComplete="current-password"
+                  disabled={passwordChanging}
+                  required
+                />
+              </label>
+
+              <label>
+                New password
+                <input
+                  type="password"
+                  value={newAccountPassword}
+                  onChange={(event) => setNewAccountPassword(event.target.value)}
+                  autoComplete="new-password"
+                  minLength={10}
+                  pattern="(?=.*[A-Za-z])(?=.*[0-9]).{10,}"
+                  title="Use at least 10 characters with a letter and a number."
+                  disabled={passwordChanging}
+                  required
+                />
+              </label>
+
+              <label>
+                Confirm new password
+                <input
+                  type="password"
+                  value={confirmAccountPassword}
+                  onChange={(event) => setConfirmAccountPassword(event.target.value)}
+                  autoComplete="new-password"
+                  minLength={10}
+                  disabled={passwordChanging}
+                  required
+                />
+              </label>
+
+              <button type="submit" disabled={passwordChanging}>
+                {passwordChanging ? 'Changing password…' : 'Change password'}
+              </button>
+            </form>
+          </section>
+        )}
 
         {!userSession && email === ownerEmail && (
           <button onClick={() => setMode('admin-login')}>Open Admin</button>
