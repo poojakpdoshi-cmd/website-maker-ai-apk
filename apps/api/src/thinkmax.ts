@@ -97,9 +97,16 @@ export async function runOptionalThinkMax(
       architectureBrief: refinement.architectureBrief,
       completed: true
     };
-  } catch {
-    throw new Error(
-      'ThinkMax advanced planning could not be completed.'
+  } catch (error) {
+    console.warn(
+      "ThinkMax refinement failed; continuing with the standard plan:",
+      error instanceof Error ? error.message : error
     );
+
+    return {
+      plan: input.plan,
+      architectureBrief: "",
+      completed: false
+    };
   }
 }

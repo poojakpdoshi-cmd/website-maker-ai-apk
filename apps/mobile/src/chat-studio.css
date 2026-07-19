@@ -1253,3 +1253,9 @@ html[data-nexora-theme='light'] .claude-composer-area {
     min-height: 58px;
   }
 }
+
+@media (max-width: 620px) {
+  .claude-composer-area {
+    transform: translateY(14px);
+  }
+}
