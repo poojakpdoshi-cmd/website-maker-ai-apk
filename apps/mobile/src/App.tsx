@@ -16,6 +16,10 @@ import TokenWalletPanel from './TokenWalletPanel';
 import ThinkMaxControl from './ThinkMaxControl';
 import { ApiRequestError, requestJson } from './api-errors';
 import {
+  loginNormalUser,
+  type UsernameSession
+} from './auth-routing';
+import {
   cleanRuntimeConfig,
   resolveRuntimeConfig,
   type RuntimeConfig,
@@ -31,18 +35,6 @@ type AccessResponse = {
   activeDevices: number;
   subscriptionExpiresAt?: string | null;
 };
-type UsernameSession = {
-  token: string;
-  expiresAt: string;
-  username: string;
-  internalEmail: string;
-  approved: true;
-  role: 'admin' | 'subscriber';
-  maxDevices: number;
-  activeDevices: number;
-  subscriptionExpiresAt?: string | null;
-};
-
 type ProjectSourceFile = {
   path: string;
   content: string;
@@ -1350,75 +1342,32 @@ async function loadProjects(activeEmail = email, activeToken = token) {
     };
 
     try {
-      try {
-        const data = await requestJson<UsernameSession>(
-          `${config.apiBase}/auth/login`,
-          {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify(loginPayload)
-          }
-        );
+      const data = await loginNormalUser(config.apiBase, loginPayload);
 
-        if (supabase) {
-          await supabase.auth.signOut().catch(() => undefined);
-        }
-
-        localStorage.setItem(userSessionKey, JSON.stringify(data));
-        localStorage.removeItem('wmai-admin-session');
-
-        setUserSession(data);
-        setSession(null);
-        setEmail(data.internalEmail);
-        setAccess({
-          approved: true,
-          role: data.role,
-          maxDevices: data.maxDevices,
-          activeDevices: data.activeDevices
-        });
-        setApproved(true);
-        setPassword('');
-        setTab('chat');
-
-        await Promise.all([
-          loadProjects(data.internalEmail, data.token),
-          loadConnections(data.internalEmail, data.token)
-        ]);
-
-        return;
-      } catch (userLoginError) {
-        if (
-          !(userLoginError instanceof ApiRequestError) ||
-          userLoginError.status !== 401
-        ) {
-          throw userLoginError;
-        }
+      if (supabase) {
+        await supabase.auth.signOut().catch(() => undefined);
       }
 
-      const adminData = await requestJson<{
-        token: string;
-        expiresAt: string;
-        username: string;
-      }>(
-        `${config.apiBase}/admin/auth/login`,
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            username: username.trim(),
-            password
-          })
-        }
-      );
+      localStorage.setItem(userSessionKey, JSON.stringify(data));
+      localStorage.removeItem('wmai-admin-session');
 
-      localStorage.setItem('wmai-admin-session', adminData.token);
-      localStorage.removeItem(userSessionKey);
-
-      setUserSession(null);
+      setUserSession(data);
       setSession(null);
-      setApproved(false);
+      setEmail(data.internalEmail);
+      setAccess({
+        approved: true,
+        role: data.role,
+        maxDevices: data.maxDevices,
+        activeDevices: data.activeDevices
+      });
+      setApproved(true);
       setPassword('');
-      setMode('admin-dashboard');
+      setTab('chat');
+
+      await Promise.all([
+        loadProjects(data.internalEmail, data.token),
+        loadConnections(data.internalEmail, data.token)
+      ]);
     } catch (loginError) {
       if (
         loginError instanceof ApiRequestError &&
@@ -1435,6 +1384,22 @@ async function loadProjects(activeEmail = email, activeToken = token) {
     } finally {
       setLoginLoading(false);
     }
+  }
+
+  function openAdminLogin() {
+    setError('');
+    setMessage('');
+    setPassword('');
+    setShowLoginPassword(false);
+    setMode('admin-login');
+  }
+
+  function handleAdminMode(nextMode: 'user' | 'admin-login' | 'admin-dashboard') {
+    setError('');
+    setMessage('');
+    setPassword('');
+    setShowLoginPassword(false);
+    setMode(nextMode);
   }
 
   async function generateWebsite(
@@ -1967,7 +1932,7 @@ async function openProject(projectId: string) {
   }
 
   if (showSetup) return <SetupScreen config={config} onSave={saveRuntimeConfig} onCancel={validConfig(config) ? () => setShowSetup(false) : undefined} error={error} />;
-  if (mode === 'admin-login' || mode === 'admin-dashboard') return <AdminPanelV5 apiBase={config.apiBase} initialMode={mode} onMode={setMode} onSetup={runtimeConfigOverrideAllowed ? () => setShowSetup(true) : undefined} />;
+  if (mode === 'admin-login' || mode === 'admin-dashboard') return <AdminPanelV5 apiBase={config.apiBase} initialMode={mode} onMode={handleAdminMode} onSetup={runtimeConfigOverrideAllowed ? () => setShowSetup(true) : undefined} />;
 
   if (!approved) {
     return (
@@ -2026,6 +1991,17 @@ async function openProject(projectId: string) {
               {loginLoading ? 'Signing in…' : 'Log In'}
             </button>
           </form>
+
+          <div className="login-admin-access">
+            <span>Owner controls</span>
+            <button
+              type="button"
+              className="nx-button nx-button--secondary login-admin-access-button"
+              onClick={openAdminLogin}
+            >
+              Admin Access
+            </button>
+          </div>
 
           {message && <p className="success">{message}</p>}
           {error && <p className="error" role="alert">{error}</p>}
@@ -2976,7 +2952,7 @@ async function openProject(projectId: string) {
         )}
 
         {!userSession && email === ownerEmail && (
-          <button onClick={() => setMode('admin-login')}>Open Admin</button>
+          <button onClick={openAdminLogin}>Open Admin</button>
         )}
 
         <section className="theme-setting">

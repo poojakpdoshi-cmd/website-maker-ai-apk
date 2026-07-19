@@ -17,6 +17,7 @@
     "typecheck:api": "npm --prefix apps/api run typecheck",
     "test": "tsx scripts/smoke-test.ts",
     "test:admin-auth": "tsx scripts/auth-regression.ts --admin-only",
+    "test:admin-routing": "tsx scripts/admin-routing-regression.ts",
     "test:auth": "tsx scripts/auth-regression.ts",
     "test:thinkmax-layout": "tsx scripts/thinkmax-layout-regression.ts",
     "termux:check": "npm run typecheck && npm test && npm run build",

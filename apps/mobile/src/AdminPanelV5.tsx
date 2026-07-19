@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import './admin-v6.css';
 import AdminBillingControls, { type BillingAccount } from './AdminBillingControls';
 import { requestJson } from './api-errors';
+import { loginAdmin } from './auth-routing';
 
 type AdminMode = 'user' | 'admin-login' | 'admin-dashboard';
 
@@ -51,6 +52,9 @@ export default function AdminPanelV5({
 
   const [token, setToken] = useState(
     () => localStorage.getItem(adminSessionKey) || ''
+  );
+  const [checkingSession, setCheckingSession] = useState(
+    () => Boolean(localStorage.getItem(adminSessionKey))
   );
 
   const [section, setSection] =
@@ -112,15 +116,21 @@ export default function AdminPanelV5({
   }
 
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      setCheckingSession(false);
+      return;
+    }
 
     void loadDashboard(token)
       .then(() => onMode('admin-dashboard'))
       .catch(() => {
         localStorage.removeItem(adminSessionKey);
         setToken('');
+        setError('');
+        setMessage('');
         onMode('admin-login');
-      });
+      })
+      .finally(() => setCheckingSession(false));
   }, []);
 
   async function login(event: FormEvent) {
@@ -131,23 +141,10 @@ export default function AdminPanelV5({
     setMessage('');
 
     try {
-      const response = await fetch(
-        `${apiBase}/admin/auth/login`,
-        {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json'
-          },
-          body: JSON.stringify({
-            username: adminUsername,
-            password: adminPassword
-          })
-        }
-      );
-
-      const data = await parseResponse(response) as {
-        token: string;
-      };
+      const data = await loginAdmin(apiBase, {
+        username: adminUsername,
+        password: adminPassword
+      });
 
       localStorage.setItem(adminSessionKey, data.token);
       setToken(data.token);
@@ -309,7 +306,27 @@ export default function AdminPanelV5({
     onMode('user');
   }
 
-  if (initialMode === 'admin-login' && !token) {
+  function returnToApp() {
+    setError('');
+    setMessage('');
+    setAdminPassword('');
+    setShowAdminPassword(false);
+    onMode('user');
+  }
+
+  if (checkingSession) {
+    return (
+      <main className="admin-login-v5">
+        <section className="admin-login-card-v5 admin-session-check-v5">
+          <p className="admin-kicker-v5">OWNER CONTROL ROOM</p>
+          <h1>Checking access</h1>
+          <p className="admin-subtitle-v5">Validating the saved admin session.</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!token) {
     return (
       <main className="admin-login-v5">
         <section className="admin-login-card-v5">
@@ -377,7 +394,7 @@ export default function AdminPanelV5({
           <div className="admin-login-links-v5">
             <button
               type="button"
-              onClick={() => onMode('user')}
+              onClick={returnToApp}
             >
               Return to App
             </button>

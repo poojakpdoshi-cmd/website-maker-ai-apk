@@ -291,6 +291,41 @@ html[data-nexora-theme='light'] .login-shell {
   margin-top: 6px;
 }
 
+.login-admin-access {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 10px 11px 10px 14px;
+  border: 1px solid rgba(83, 137, 255, .18);
+  border-radius: 16px;
+  background:
+    linear-gradient(120deg, rgba(54, 134, 255, .07), rgba(189, 77, 255, .045)),
+    rgba(8, 13, 38, .34);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .035),
+    0 10px 24px rgba(2, 5, 18, .14);
+}
+
+.login-admin-access > span {
+  color: var(--nx-muted);
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.login-admin-access-button {
+  min-height: 38px;
+  padding: 8px 14px;
+  border-radius: 12px !important;
+  font-size: 12px;
+  box-shadow:
+    0 3px 0 rgba(2, 5, 18, .74),
+    0 8px 18px rgba(54, 90, 255, .13),
+    inset 0 1px 0 rgba(255, 255, 255, .07) !important;
+}
+
 .login-security-note {
   min-height: 44px;
   display: flex;
@@ -953,6 +988,15 @@ html[data-nexora-theme='light'] .cms-studio {
   .login-card {
     width: calc(100% - 14px);
     padding-inline: 15px !important;
+  }
+
+  .login-admin-access {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .login-admin-access-button {
+    width: 100%;
   }
 
   .nexora-app-nav button {
