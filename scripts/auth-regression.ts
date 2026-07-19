@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
-import { createHash, randomUUID } from 'node:crypto';
+import {
+  createHash,
+  pbkdf2Sync,
+  randomBytes,
+  randomUUID
+} from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import api from '../apps/api/src/index';
@@ -138,10 +143,24 @@ async function fakeSupabaseFetch(
   });
 }
 
+const testAdminPassword = `${randomUUID()}Aa1`;
+const testAdminSalt = randomBytes(16).toString('hex');
+const testAdminIterations = 1000;
+
 const env = {
   APP_NAME: 'Nexora test',
   SUPABASE_URL: 'https://auth-test.supabase.co',
-  SUPABASE_SERVICE_ROLE_KEY: 'test-service-role-key'
+  SUPABASE_SERVICE_ROLE_KEY: 'test-service-role-key',
+  ADMIN_USERNAME: 'Poojak@King',
+  ADMIN_PASSWORD_SALT: testAdminSalt,
+  ADMIN_PASSWORD_HASH: pbkdf2Sync(
+    testAdminPassword,
+    Buffer.from(testAdminSalt, 'hex'),
+    testAdminIterations,
+    32,
+    'sha256'
+  ).toString('hex'),
+  ADMIN_PASSWORD_ITERATIONS: String(testAdminIterations)
 };
 const executionContext = {
   waitUntil() {},
@@ -176,11 +195,71 @@ async function jsonRequest(
   return { response, data };
 }
 
+async function runAdminAuthenticationRegression() {
+  const normalRoute = await jsonRequest('/auth/login', {
+    username: env.ADMIN_USERNAME,
+    password: testAdminPassword,
+    installationId: randomUUID()
+  });
+  assert.equal(normalRoute.response.status, 400);
+  assert.equal(
+    normalRoute.data.error,
+    'Enter a valid username and password.'
+  );
+
+  const rejected = await jsonRequest('/admin/auth/login', {
+    username: env.ADMIN_USERNAME,
+    password: `${testAdminPassword}x`
+  });
+  assert.equal(rejected.response.status, 401);
+  assert.equal(
+    rejected.data.error,
+    'Invalid admin username or password.'
+  );
+
+  const accepted = await jsonRequest('/admin/auth/login', {
+    username: env.ADMIN_USERNAME,
+    password: testAdminPassword
+  });
+  assert.equal(accepted.response.status, 200, JSON.stringify(accepted.data));
+  assert.equal(accepted.data.username, env.ADMIN_USERNAME);
+  assert.ok(accepted.data.token);
+  assert.ok(accepted.data.expiresAt);
+  assert.ok(
+    tables.admin_sessions.some(
+      (session) => session.token_hash === sha256(accepted.data.token)
+    ),
+    'accepted admin credentials create a persisted session'
+  );
+
+  const dashboard = await apiRequest('/admin/summary', {
+    headers: { Authorization: `Bearer ${accepted.data.token}` }
+  });
+  assert.equal(dashboard.status, 200, 'new admin session authorizes the dashboard');
+
+  const appSource = readFileSync(
+    resolve(import.meta.dirname, '../apps/mobile/src/App.tsx'),
+    'utf8'
+  );
+  assert.match(
+    appSource,
+    /mode === 'admin-login' \|\| mode === 'admin-dashboard'/,
+    'admin-login mode renders the dedicated AdminPanelV5 login flow'
+  );
+}
+
 async function main() {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = fakeSupabaseFetch as typeof fetch;
 
   try {
+  await runAdminAuthenticationRegression();
+
+  if (process.argv.includes('--admin-only')) {
+    console.log('Admin authentication regression tests passed.');
+    return;
+  }
+
   const preflight = await apiRequest('/admin/accounts/account-id/password', {
     method: 'OPTIONS',
     headers: {

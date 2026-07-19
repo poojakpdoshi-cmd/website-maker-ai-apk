@@ -1965,7 +1965,7 @@ async function openProject(projectId: string) {
   }
 
   if (showSetup) return <SetupScreen config={config} onSave={saveRuntimeConfig} onCancel={validConfig(config) ? () => setShowSetup(false) : undefined} error={error} />;
-  if (mode === 'admin-dashboard') return <AdminPanelV5 apiBase={config.apiBase} initialMode={mode} onMode={setMode} onSetup={runtimeConfigOverrideAllowed ? () => setShowSetup(true) : undefined} />;
+  if (mode === 'admin-login' || mode === 'admin-dashboard') return <AdminPanelV5 apiBase={config.apiBase} initialMode={mode} onMode={setMode} onSetup={runtimeConfigOverrideAllowed ? () => setShowSetup(true) : undefined} />;
 
   if (!approved) {
     return (
