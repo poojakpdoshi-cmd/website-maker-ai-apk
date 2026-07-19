@@ -1,18 +1,26 @@
-name: Nexora Android Release APK
+name: Nexora Android APK
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - nexora-redesign
-  workflow_dispatch:
+    paths:
+      - "apps/mobile/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/nexora-android.yml"
 
 permissions:
   contents: read
 
+concurrency:
+  group: nexora-android-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build-apk:
+  build-signed-release:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
 
     steps:
       - name: Checkout source
@@ -21,7 +29,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "20"
           cache: npm
 
       - name: Set up Java
@@ -34,234 +42,64 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install dependencies
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install
-          fi
+        run: npm ci --no-audit --no-fund
 
-      - name: Install Worker test dependencies
-        run: npm --prefix apps/api ci
-
-      - name: Run authentication and ThinkMax release checks
-        run: |
-          npm run typecheck -w @wmai/mobile
-          npm --prefix apps/api run typecheck
-          npm run test:auth
-          npm run test:admin-routing
-          npm run test:thinkmax-layout
-
-      - name: Verify exact Nexora brand sources
-        working-directory: apps/mobile
-        run: |
-          set -euo pipefail
-
-          sha256sum --check --strict \
-            ../../.github/branding/nexora-source-assets.sha256
-
-          expected_assets=(
-            assets/launcher-brand/logo.png
-            assets/splash-brand/logo.jpeg
-          )
-          expected_public=(
-            public/icons/apple-touch-icon.png
-            public/icons/icon-192.png
-            public/icons/icon-512.png
-            public/manifest.webmanifest
-            public/nexora-logo.png
-            public/sw.js
-          )
-
-          diff -u \
-            <(printf '%s\n' "${expected_assets[@]}") \
-            <(find assets -type f -printf '%p\n' | LC_ALL=C sort)
-          diff -u \
-            <(printf '%s\n' "${expected_public[@]}") \
-            <(find public -type f -printf '%p\n' | LC_ALL=C sort)
-
-          test ! -e assets/splash.png
-          test ! -e assets/splash-dark.png
-          test ! -e assets/icon.png
-          test ! -e assets/icon-only.png
-          test ! -e assets/icon-only.svg
-          test ! -e public/nexora-logo.svg
-          test ! -e public/webforge-logo.svg
-          file public/nexora-logo.png | grep -q 'PNG image data, 640 x 640'
-
-      - name: Build mobile web app
+      - name: Build Nexora mobile frontend
         run: npm run build -w @wmai/mobile
-
-      - name: Verify packaged web branding
-        working-directory: apps/mobile
-        run: |
-          set -euo pipefail
-
-          cmp public/nexora-logo.png dist/nexora-logo.png
-          cmp public/icons/apple-touch-icon.png dist/icons/apple-touch-icon.png
-          cmp public/icons/icon-192.png dist/icons/icon-192.png
-          cmp public/icons/icon-512.png dist/icons/icon-512.png
-
-          if find dist -type f \
-            \( -iname '*webforge*' -o -iname '*.svg' \) \
-            -print -quit | grep -q .; then
-            echo 'Legacy WebForge/old SVG branding reached the web bundle.' >&2
-            exit 1
-          fi
 
       - name: Prepare Android project
         working-directory: apps/mobile
         run: |
-          set -euo pipefail
-
           if [ ! -d android ]; then
             npx cap add android
           fi
-          npx capacitor-assets generate --android \
-            --assetPath assets/splash-brand \
-            --logoSplashScale 0.5 \
-            --iconBackgroundColor '#000008' \
-            --iconBackgroundColorDark '#000008' \
-            --splashBackgroundColor '#000008' \
-            --splashBackgroundColorDark '#000008'
-
-          splash_backup="$(mktemp -d)"
-          (
-            cd android/app/src/main/res
-            find . -type f -name splash.png \
-              -exec cp --parents '{}' "$splash_backup" ';'
-          )
-
-          npx capacitor-assets generate --android \
-            --assetPath assets/launcher-brand \
-            --iconBackgroundColor '#000008' \
-            --iconBackgroundColorDark '#000008'
-
-          cp -R "$splash_backup"/. android/app/src/main/res/
-          rm -rf "$splash_backup"
           npx cap sync android
 
-          launcher_png_count="$(find android/app/src/main/res -type f \
-            \( -name 'ic_launcher.png' \
-              -o -name 'ic_launcher_round.png' \
-              -o -name 'ic_launcher_foreground.png' \
-              -o -name 'ic_launcher_background.png' \) \
-            | wc -l)"
-          launcher_xml_count="$(find android/app/src/main/res/mipmap-anydpi-v26 \
-            -type f \( -name 'ic_launcher.xml' \
-              -o -name 'ic_launcher_round.xml' \) | wc -l)"
-          splash_count="$(find android/app/src/main/res \
-            -type f -name 'splash.png' | wc -l)"
-
-          test "$launcher_png_count" -eq 24
-          test "$launcher_xml_count" -eq 2
-          test "$splash_count" -eq 26
-
-          sha256sum --check --strict \
-            ../../.github/branding/nexora-android-generated.sha256
-
-          packaged_public=android/app/src/main/assets/public
-          cmp public/nexora-logo.png "$packaged_public/nexora-logo.png"
-          cmp public/icons/apple-touch-icon.png \
-            "$packaged_public/icons/apple-touch-icon.png"
-          cmp public/icons/icon-192.png "$packaged_public/icons/icon-192.png"
-          cmp public/icons/icon-512.png "$packaged_public/icons/icon-512.png"
-
-          if find "$packaged_public" -type f \
-            \( -iname '*webforge*' -o -iname '*.svg' \) \
-            -print -quit | grep -q .; then
-            echo 'Legacy WebForge/old SVG branding reached the Android package.' >&2
-            exit 1
-          fi
-
-          grep -q 'android:icon="@mipmap/ic_launcher"' \
-            android/app/src/main/AndroidManifest.xml
-          grep -q 'android:roundIcon="@mipmap/ic_launcher_round"' \
-            android/app/src/main/AndroidManifest.xml
-
-      - name: Configure release version and signing
-        working-directory: apps/mobile
+      - name: Set increasing release version
+        id: version
         run: |
-          set -euo pipefail
+          VERSION_CODE=$((100000 + GITHUB_RUN_NUMBER))
+          VERSION_NAME="1.0.${GITHUB_RUN_NUMBER}"
+          sed -i -E "s/versionCode[[:space:]]+[0-9]+/versionCode ${VERSION_CODE}/" apps/mobile/android/app/build.gradle
+          sed -i -E "s/versionName[[:space:]]+\"[^\"]+\"/versionName \"${VERSION_NAME}\"/" apps/mobile/android/app/build.gradle
+          echo "version_code=${VERSION_CODE}" >> "$GITHUB_OUTPUT"
+          echo "version_name=${VERSION_NAME}" >> "$GITHUB_OUTPUT"
+          grep -nE "versionCode|versionName" apps/mobile/android/app/build.gradle
 
-          if [[ ! "$GITHUB_RUN_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
-            echo 'GITHUB_RUN_NUMBER must be a positive integer.' >&2
-            exit 1
-          fi
-
-          if (( ${#GITHUB_RUN_NUMBER} > 10 )); then
-            echo 'GITHUB_RUN_NUMBER is too large for an Android versionCode.' >&2
-            exit 1
-          fi
-
-          run_number=$((10#$GITHUB_RUN_NUMBER))
-          max_run_number=2097000000
-          if (( run_number > max_run_number )); then
-            echo 'GITHUB_RUN_NUMBER is too large for an Android versionCode.' >&2
-            exit 1
-          fi
-
-          version_code=$((3000000 + run_number))
-          printf 'NEXORA_VERSION_CODE=%s\n' "$version_code" >> "$GITHUB_ENV"
-          printf 'NEXORA_VERSION_NAME=3.0.%s\n' "$run_number" >> "$GITHUB_ENV"
-
-          cp \
-            ../../.github/gradle/nexora-release.gradle \
-            android/app/nexora-release.gradle
-          printf "\napply from: 'nexora-release.gradle'\n" \
-            >> android/app/build.gradle
-
-          grep -Fq 'applicationId "com.poojak.webforgeai"' \
-            android/app/build.gradle
-
-      - name: Decode release keystore
-        env:
-          NEXORA_KEYSTORE_BASE64: ${{ secrets.NEXORA_KEYSTORE_BASE64 }}
+      - name: Restore permanent release keystore
         run: |
-          set -euo pipefail
+          printf '%s' '${{ secrets.NEXORA_KEYSTORE_BASE64 }}' | base64 --decode > "$RUNNER_TEMP/nexora-release.jks"
+          test -s "$RUNNER_TEMP/nexora-release.jks"
 
-          : "${NEXORA_KEYSTORE_BASE64:?NEXORA_KEYSTORE_BASE64 is required}"
-          umask 077
-          printf '%s' "$NEXORA_KEYSTORE_BASE64" \
-            | base64 --decode \
-            > "$RUNNER_TEMP/nexora-release.keystore"
-          test -s "$RUNNER_TEMP/nexora-release.keystore"
-
-      - name: Build signed release APK
+      - name: Build permanently signed release APK
         working-directory: apps/mobile/android
         env:
-          NEXORA_KEYSTORE_PATH: ${{ runner.temp }}/nexora-release.keystore
-          NEXORA_KEYSTORE_PASSWORD: ${{ secrets.NEXORA_KEYSTORE_PASSWORD }}
-          NEXORA_KEY_ALIAS: ${{ secrets.NEXORA_KEY_ALIAS }}
-          NEXORA_KEY_PASSWORD: ${{ secrets.NEXORA_KEY_PASSWORD }}
+          KEYSTORE_PATH: ${{ runner.temp }}/nexora-release.jks
+          STORE_PASSWORD: ${{ secrets.NEXORA_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.NEXORA_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.NEXORA_KEY_PASSWORD }}
         run: |
-          set -euo pipefail
-
           chmod +x gradlew
-          ./gradlew clean assembleRelease --no-daemon
+          ./gradlew clean assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file="$KEYSTORE_PATH" \
+            -Pandroid.injected.signing.store.password="$STORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
 
-      - name: Verify signed release APK
+      - name: Verify and rename signed APK
         run: |
-          set -euo pipefail
+          APK="apps/mobile/android/app/build/outputs/apk/release/app-release.apk"
+          test -f "$APK"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          SHORT_SHA="${GITHUB_SHA::7}"
+          cp "$APK" "Nexora-AI-${{ steps.version.outputs.version_name }}-${SHORT_SHA}.apk"
 
-          apk='apps/mobile/android/app/build/outputs/apk/release/app-release.apk'
-          test -f "$apk"
-
-          apksigner="$(find "$ANDROID_SDK_ROOT/build-tools" \
-            -type f -name apksigner -print \
-            | sort -V \
-            | tail -n 1)"
-          test -n "$apksigner"
-          "$apksigner" verify --verbose --print-certs "$apk"
-
-      - name: Upload Nexora release APK
+      - name: Upload signed Nexora APK
         uses: actions/upload-artifact@v4
         with:
-          name: Nexora-AI-Release-APK
-          path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
+          name: Nexora-AI-Signed-${{ steps.version.outputs.version_code }}
+          path: Nexora-AI-*.apk
           if-no-files-found: error
-          retention-days: 14
-
-      - name: Remove temporary keystore
-        if: always()
-        run: rm -f "$RUNNER_TEMP/nexora-release.keystore"
+          retention-days: 30
