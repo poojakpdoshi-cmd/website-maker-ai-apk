@@ -1,6 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
 import './admin-v6.css';
-import './nexora-minimal-light.css';
 import AdminBillingControls, { type BillingAccount } from './AdminBillingControls';
 import { requestJson } from './api-errors';
 
@@ -47,6 +46,8 @@ export default function AdminPanelV5({
 }: Props) {
   const [adminUsername, setAdminUsername] = useState('Poojak@King');
   const [adminPassword, setAdminPassword] = useState('');
+  const [showAdminPassword, setShowAdminPassword] =
+    useState(false);
 
   const [token, setToken] = useState(
     () => localStorage.getItem(adminSessionKey) || ''
@@ -340,18 +341,29 @@ export default function AdminPanelV5({
 
             <label>
               Admin password
-              <input
-                type="password"
-                value={adminPassword}
-                onChange={(event) =>
-                  setAdminPassword(event.target.value)
-                }
-                autoComplete="current-password"
-              />
+              <span className="password-input-wrap">
+                <input
+                  type={showAdminPassword ? 'text' : 'password'}
+                  value={adminPassword}
+                  onChange={(event) =>
+                    setAdminPassword(event.target.value)
+                  }
+                  autoComplete="current-password"
+                />
+                <button
+                  type="button"
+                  className="password-visibility-toggle"
+                  aria-label={showAdminPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showAdminPassword}
+                  onClick={() => setShowAdminPassword((visible) => !visible)}
+                >
+                  {showAdminPassword ? 'Hide' : 'Show'}
+                </button>
+              </span>
             </label>
 
             <button
-              className="admin-primary-v5"
+              className="nx-button nx-button--primary admin-primary-v5"
               disabled={busy}
             >
               {busy ? 'Signing in…' : 'Open Control Room'}

@@ -47,9 +47,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   </React.StrictMode>
 );
 
-import './nexora-final-ui.css';
 import './chat-studio.css';
-import './nexora-v43-performance.css';
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => {

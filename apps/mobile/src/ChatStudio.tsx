@@ -415,7 +415,9 @@ export default function ChatStudio({
         </button>
 
         <div className="claude-brand">
-          <div className="claude-brand-icon">N</div>
+          <div className="claude-brand-icon">
+            <img src="/icons/icon-192.png" alt="" />
+          </div>
 
           <div>
             <strong>Nexora</strong>
@@ -453,7 +455,9 @@ export default function ChatStudio({
       >
         <div className="claude-drawer-header">
           <div className="claude-brand">
-            <div className="claude-brand-icon">N</div>
+            <div className="claude-brand-icon">
+              <img src="/icons/icon-192.png" alt="" />
+            </div>
 
             <div>
               <strong>Nexora.Ai</strong>
@@ -584,12 +588,16 @@ export default function ChatStudio({
         >
           {messages.length === 0 && !buildActive ? (
             <section className="claude-welcome">
-              <div className="claude-welcome-logo">N</div>
+              <div className="claude-welcome-logo">
+                <img src="/icons/icon-192.png" alt="" />
+              </div>
 
               <p>Nexora Council</p>
 
               <h1>
-                What would you like
+                What would you
+                <br />
+                <span>like</span>
                 <br />
                 to build?
               </h1>

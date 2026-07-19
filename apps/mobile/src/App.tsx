@@ -716,6 +716,8 @@ export default function App() {
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] =
+    useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newAccountPassword, setNewAccountPassword] = useState('');
   const [confirmAccountPassword, setConfirmAccountPassword] = useState('');
@@ -1993,17 +1995,34 @@ async function openProject(projectId: string) {
 
             <label>
               Password
-              <input
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                type="password"
-                autoComplete="current-password"
-                disabled={loginLoading}
-                required
-              />
+              <span className="password-input-wrap">
+                <input
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  type={showLoginPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  disabled={loginLoading}
+                  required
+                />
+                <button
+                  type="button"
+                  className="password-visibility-toggle"
+                  aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showLoginPassword}
+                  disabled={loginLoading}
+                  onClick={() => setShowLoginPassword((visible) => !visible)}
+                >
+                  {showLoginPassword ? 'Hide' : 'Show'}
+                </button>
+              </span>
             </label>
 
-            <button type="submit" disabled={loginLoading}>
+            <button
+              type="submit"
+              className="nx-button nx-button--primary"
+              aria-busy={loginLoading}
+              disabled={loginLoading}
+            >
               {loginLoading ? 'Signing in…' : 'Log In'}
             </button>
           </form>
@@ -2982,6 +3001,6 @@ async function openProject(projectId: string) {
 
 function SetupScreen({ config, onSave, onCancel, error }: { config: RuntimeConfig; onSave: (config: RuntimeConfig) => void; onCancel?: () => void; error: string }) {
   const [draft, setDraft] = useState(config);
-  return <main className="login-shell"><section className="login-card"><div className="brand-mark logo-shell"><img src="/nexora-logo.png" alt="Nexora.Ai" /></div><p className="eyebrow">ONE-TIME APP SETUP</p><h1>Connect the APK</h1><p className="muted">Paste the public backend URL and the two public Supabase values. These can be changed later without rebuilding the APK.</p><form onSubmit={(event) => { event.preventDefault(); onSave(draft); }}><label>Backend API URL<input value={draft.apiBase} onChange={(event) => setDraft({ ...draft, apiBase: event.target.value })} placeholder="https://your-api.workers.dev" /></label><label>Supabase Project URL<input value={draft.supabaseUrl} onChange={(event) => setDraft({ ...draft, supabaseUrl: event.target.value })} placeholder="https://xxxxx.supabase.co" /></label><label>Supabase anon/public key<input value={draft.supabaseAnonKey} onChange={(event) => setDraft({ ...draft, supabaseAnonKey: event.target.value })} placeholder="eyJ..." /></label><button>Save and continue</button></form>{onCancel && <button className="small-button" onClick={onCancel}>Cancel</button>}{error && <p className="error">{error}</p>}<p className="tiny">Never paste the Supabase service-role key or Gemini key here.</p></section></main>;
+  return <main className="login-shell"><section className="login-card"><div className="brand-mark logo-shell"><img src="/nexora-logo.png" alt="Nexora.Ai" /></div><p className="eyebrow">ONE-TIME APP SETUP</p><h1>Connect the APK</h1><p className="muted">Paste the public backend URL and the two public Supabase values. These can be changed later without rebuilding the APK.</p><form onSubmit={(event) => { event.preventDefault(); onSave(draft); }}><label>Backend API URL<input value={draft.apiBase} onChange={(event) => setDraft({ ...draft, apiBase: event.target.value })} placeholder="https://your-api.workers.dev" /></label><label>Supabase Project URL<input value={draft.supabaseUrl} onChange={(event) => setDraft({ ...draft, supabaseUrl: event.target.value })} placeholder="https://xxxxx.supabase.co" /></label><label>Supabase anon/public key<input value={draft.supabaseAnonKey} onChange={(event) => setDraft({ ...draft, supabaseAnonKey: event.target.value })} placeholder="eyJ..." /></label><button className="nx-button nx-button--primary">Save and continue</button></form>{onCancel && <button className="nx-button nx-button--compact small-button" onClick={onCancel}>Cancel</button>}{error && <p className="error">{error}</p>}<p className="tiny">Never paste the Supabase service-role key or Gemini key here.</p></section></main>;
 }
 
