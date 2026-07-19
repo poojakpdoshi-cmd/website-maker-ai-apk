@@ -8,7 +8,10 @@ import {
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
 import { Browser } from '@capacitor/browser';
 import AdminPanelV5 from './AdminPanelV5';
-import ChatStudio, { type LiveBuildActivity } from './ChatStudio';
+import ChatStudio, {
+  type ChatAssistantReply,
+  type LiveBuildActivity
+} from './ChatStudio';
 
 import CmsStudio from './CmsStudio';
 import type { FullStackReport } from './FullStackReportCard';
@@ -25,9 +28,31 @@ import {
   type RuntimeConfig,
   validRuntimeConfig
 } from './runtime-config';
+import {
+  activeGenerationJobKey,
+  loadGenerationLaunch,
+  normalizeGenerationStatus,
+  removeGenerationLaunch,
+  saveGenerationLaunch,
+  waitForGenerationPoll,
+  type GenerationLaunchPayload
+} from './generation-job';
 type AppTheme = 'dark' | 'light' | 'system';
 type WebsitePlan = { businessName: string; websiteType: string; tagline: string; pages: string[]; features: string[]; theme: { style: string; primary: string; secondary: string; background: string; text: string } };
 type GenerateResponse = { projectId: string; jobId?: string; versionNumber?: number; plan: WebsitePlan; previewHtml: string; framework: 'vite-react'; fileCount: number; mode: 'ai' | 'built-in'; thinkMaxCompleted?: boolean };
+type GenerationStatusResponse = {
+  job: {
+    id: string;
+    project_id?: string | null;
+    status: string;
+    current_step?: string | null;
+    current_agent?: string | null;
+    progress?: number | null;
+    error_message?: string | null;
+    updated_at?: string | null;
+  };
+  events: LiveBuildActivity['events'];
+};
 type AccessResponse = {
   approved: true;
   role: 'admin' | 'subscriber';
@@ -409,6 +434,19 @@ const ownerEmail = 'poojakpdoshi@gmail.com';
 const configKey = 'wmai-runtime-config';
 const userSessionKey = 'nexora-user-session';
 const themeKey = 'nexora-appearance';
+const adminLoginPath = '/admin/auth/login';
+const userLoginPath = '/auth/login';
+
+function initialAppMode(): 'user' | 'admin-login' {
+  return window.location.pathname.replace(/\/+$/, '') === adminLoginPath
+    ? 'admin-login'
+    : 'user';
+}
+
+function replaceAppPath(pathname: string): void {
+  if (window.location.pathname === pathname) return;
+  window.history.replaceState(null, '', `${pathname}${window.location.search}`);
+}
 
 
 function formatQuotaReset(
@@ -681,7 +719,8 @@ const validConfig = validRuntimeConfig;
 export default function App() {
   const [config, setConfig] = useState<RuntimeConfig>(loadConfig);
   const [showSetup, setShowSetup] = useState(() => !validConfig(loadConfig()));
-  const [mode, setMode] = useState<'user' | 'admin-login' | 'admin-dashboard'>('user');
+  const [mode, setMode] = useState<'user' | 'admin-login' | 'admin-dashboard'>(initialAppMode);
+  const [forceUserLogin, setForceUserLogin] = useState(false);
   const supabase = useMemo<SupabaseClient | null>(() => validConfig(config) ? createClient(config.supabaseUrl, config.supabaseAnonKey) : null, [config]);
 
   const [email, setEmail] = useState(ownerEmail);
@@ -722,6 +761,7 @@ export default function App() {
   const [prompt, setPrompt] = useState('Create a premium modern website for a jewellery shop named Raj Jewels with products, WhatsApp number +919876543210, gallery, enquiry form and SEO.');
   const [thinkMaxEnabled, setThinkMaxEnabled] = useState(false);
   const generationInFlightRef = useRef(false);
+  const launchedGenerationJobsRef = useRef(new Set<string>());
 
   const [templateSearch, setTemplateSearch] =
     useState('');
@@ -795,6 +835,18 @@ const [connections, setConnections] = useState<IntegrationStatus>({ github: null
     useState(() => Date.now());
 
 const token = userSession?.token || session?.access_token || '';
+  useEffect(() => {
+    if (mode !== 'user') return;
+
+    if (!approved || forceUserLogin) {
+      replaceAppPath(userLoginPath);
+    } else if (
+      window.location.pathname.replace(/\/+$/, '') === userLoginPath
+    ) {
+      replaceAppPath('/');
+    }
+  }, [approved, forceUserLogin, mode]);
+
   useEffect(() => {
     const timer = window.setInterval(
       () => setSubscriptionClock(Date.now()),
@@ -905,6 +957,264 @@ const token = userSession?.token || session?.access_token || '';
 
   function authHeaders(activeToken = token) {
     return { Authorization: `Bearer ${activeToken}`, 'X-Device-Id': installationId };
+  }
+
+  async function clearGenerationState(jobId: string): Promise<void> {
+    if (localStorage.getItem(activeGenerationJobKey) === jobId) {
+      localStorage.removeItem(activeGenerationJobKey);
+    }
+
+    await removeGenerationLaunch(jobId).catch(() => undefined);
+  }
+
+  async function launchGenerationJob(
+    jobId: string,
+    payload: GenerationLaunchPayload,
+    activeToken: string
+  ): Promise<void> {
+    const response = await fetch(`${config.apiBase}/generate`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...authHeaders(activeToken)
+      },
+      body: JSON.stringify({ ...payload, jobId })
+    });
+
+    if (response.status === 409) return;
+    await readResponse(response);
+  }
+
+  async function ensureGenerationLaunched(
+    jobId: string,
+    activeToken: string,
+    fallbackPayload?: GenerationLaunchPayload
+  ): Promise<boolean> {
+    if (launchedGenerationJobsRef.current.has(jobId)) return true;
+
+    const payload = fallbackPayload || await loadGenerationLaunch(jobId).catch(() => null);
+    if (!payload) return false;
+
+    launchedGenerationJobsRef.current.add(jobId);
+    void launchGenerationJob(jobId, payload, activeToken)
+      .catch(() => {
+        setMessage(
+          'The generation connection was interrupted. Nexora.Ai is reconnecting to the saved task.'
+        );
+      })
+      .finally(() => {
+        launchedGenerationJobsRef.current.delete(jobId);
+      });
+
+    return true;
+  }
+
+  async function fetchGenerationStatus(
+    jobId: string,
+    activeEmail: string,
+    activeToken: string
+  ): Promise<GenerationStatusResponse> {
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      let response: Response;
+      const controller = new AbortController();
+      const timeout = window.setTimeout(
+        () => controller.abort(),
+        15000
+      );
+
+      try {
+        response = await fetch(
+          `${config.apiBase}/generation-jobs/${jobId}` +
+            `?email=${encodeURIComponent(activeEmail)}`,
+          {
+            headers: authHeaders(activeToken),
+            signal: controller.signal
+          }
+        );
+      } catch (statusError) {
+        lastError = controller.signal.aborted
+          ? new Error('The generation status request timed out.')
+          : statusError instanceof Error
+            ? statusError
+            : new Error('Could not reach the generation service.');
+        await waitForGenerationPoll(Math.min(8000, 750 * 2 ** attempt));
+        continue;
+      } finally {
+        window.clearTimeout(timeout);
+      }
+
+      const retryable = response.status === 408 ||
+        response.status === 425 ||
+        response.status === 429 ||
+        response.status >= 500;
+
+      if (!retryable) {
+        return await readResponse(response) as GenerationStatusResponse;
+      }
+
+      lastError = new Error(
+        `Generation status request failed (${response.status}).`
+      );
+      await waitForGenerationPoll(Math.min(8000, 750 * 2 ** attempt));
+    }
+
+    const error = lastError || new Error(
+      'Could not reconnect to the generation service.'
+    );
+    Object.assign(error, { retryable: true });
+    throw error;
+  }
+
+  async function loadCompletedGeneration(
+    jobId: string,
+    projectId: string,
+    events: LiveBuildActivity['events'],
+    activeEmail: string,
+    activeToken: string
+  ): Promise<GenerateResponse> {
+    const projectResponse = await fetch(
+      `${config.apiBase}/projects/${projectId}` +
+        `?email=${encodeURIComponent(activeEmail)}`,
+      { headers: authHeaders(activeToken) }
+    );
+    const projectData = await readResponse(projectResponse) as {
+      project: { id: string; name: string; framework: string };
+      version: {
+        version_number: number;
+        plan: WebsitePlan;
+        preview_html: string;
+      };
+    };
+    const eventsWithMetadata = events as Array<
+      LiveBuildActivity['events'][number] & {
+        metadata?: { fileCount?: number };
+      }
+    >;
+    const fileEvent = [...eventsWithMetadata]
+      .reverse()
+      .find((event) => event.title === 'Project files created');
+
+    if (!projectData.version.preview_html) {
+      throw new Error(
+        'Generation completed, but the website preview is unavailable.'
+      );
+    }
+
+    return {
+      projectId: projectData.project.id,
+      jobId,
+      versionNumber: projectData.version.version_number,
+      plan: projectData.version.plan,
+      previewHtml: projectData.version.preview_html,
+      framework: 'vite-react',
+      fileCount: Number(fileEvent?.metadata?.fileCount || 0),
+      mode: 'ai'
+    };
+  }
+
+  async function pollGenerationJob(options: {
+    jobId: string;
+    activeEmail: string;
+    activeToken: string;
+    publishActivity: (activity: LiveBuildActivity) => void;
+    shouldStop?: () => boolean;
+  }): Promise<GenerateResponse | null> {
+    let reconnectFailures = 0;
+
+    while (!options.shouldStop?.()) {
+      let data: GenerationStatusResponse;
+
+      try {
+        data = await fetchGenerationStatus(
+          options.jobId,
+          options.activeEmail,
+          options.activeToken
+        );
+        reconnectFailures = 0;
+      } catch (pollError) {
+        if (!(pollError as Error & { retryable?: boolean }).retryable) {
+          throw pollError;
+        }
+
+        reconnectFailures += 1;
+        setMessage(
+          `Connection interrupted. Reconnecting to the saved task${
+            reconnectFailures > 1 ? ` (attempt ${reconnectFailures})` : ''
+          }â€¦`
+        );
+        await waitForGenerationPoll(
+          Math.min(15000, 1200 * 2 ** Math.min(reconnectFailures, 4))
+        );
+        continue;
+      }
+
+      if (options.shouldStop?.()) return null;
+
+      const state = normalizeGenerationStatus(data.job.status);
+      const backendProgress = Number(data.job.progress ?? 0);
+      options.publishActivity({
+        jobId: options.jobId,
+        status: state,
+        progress: Number.isFinite(backendProgress)
+          ? Math.min(100, Math.max(0, backendProgress))
+          : 0,
+        currentAgent: data.job.current_agent,
+        currentStep: data.job.current_step,
+        events: data.events || []
+      });
+
+      if (state === 'queued') {
+        const launched = await ensureGenerationLaunched(
+          options.jobId,
+          options.activeToken
+        );
+        setMessage(
+          launched
+            ? 'Nexora.Ai is connecting the saved task to the generation workerâ€¦'
+            : 'The generation task is queued and waiting for its worker.'
+        );
+      } else if (state === 'failed') {
+        await clearGenerationState(options.jobId);
+        throw new Error(
+          data.job.error_message || 'Website generation failed.'
+        );
+      } else if (state === 'cancelled') {
+        await clearGenerationState(options.jobId);
+        throw new Error(
+          data.job.error_message || 'Website generation was cancelled.'
+        );
+      } else if (state === 'unknown') {
+        await clearGenerationState(options.jobId);
+        throw new Error(
+          `The backend returned an unknown generation status: ${
+            data.job.status || 'empty status'
+          }.`
+        );
+      } else if (state === 'completed') {
+        if (!data.job.project_id) {
+          await clearGenerationState(options.jobId);
+          throw new Error(
+            'Generation completed without a project identifier.'
+          );
+        }
+
+        const generated = await loadCompletedGeneration(
+          options.jobId,
+          data.job.project_id,
+          data.events || [],
+          options.activeEmail,
+          options.activeToken
+        );
+        await clearGenerationState(options.jobId);
+        return generated;
+      }
+
+      await waitForGenerationPoll(1500);
+    }
+
+    return null;
   }
 
   async function checkAccess(activeEmail: string, activeToken: string) {
@@ -1102,14 +1412,8 @@ async function loadProjects(activeEmail = email, activeToken = token) {
 
   // RESUME_ACTIVE_GENERATION_JOB
   useEffect(() => {
-    const jobId = localStorage.getItem(
-      'nexora-active-generation-job'
-    );
-
-    const activeToken =
-      userSession?.token ||
-      session?.access_token ||
-      '';
+    const jobId = localStorage.getItem(activeGenerationJobKey);
+    const activeToken = userSession?.token || session?.access_token || '';
 
     if (
       !jobId ||
@@ -1131,129 +1435,20 @@ async function loadProjects(activeEmail = email, activeToken = token) {
       setError('');
 
       try {
-        for (let attempt = 0; attempt < 240; attempt += 1) {
-          if (cancelled) return;
+        const generated = await pollGenerationJob({
+          jobId: activeJobId,
+          activeEmail: email,
+          activeToken,
+          publishActivity: setActivity,
+          shouldStop: () => cancelled
+        });
 
-          const response = await fetch(
-            `${config.apiBase}/generation-jobs/${activeJobId}` +
-              `?email=${encodeURIComponent(email)}`,
-            {
-              headers: authHeaders(activeToken)
-            }
-          );
+        if (!generated || cancelled) return;
 
-          const data = await readResponse(response) as {
-            job: {
-              id: string;
-              project_id?: string | null;
-              status: string;
-              current_step?: string | null;
-              current_agent?: string | null;
-              progress?: number | null;
-              error_message?: string | null;
-            };
-            events: LiveBuildActivity['events'];
-          };
-
-          if (cancelled) return;
-
-          setActivity({
-            jobId: activeJobId,
-            status: data.job.status,
-            progress: Number(data.job.progress || 0),
-            currentAgent: data.job.current_agent,
-            currentStep: data.job.current_step,
-            events: data.events || []
-          });
-
-          if (data.job.status === 'failed') {
-            localStorage.removeItem(
-              'nexora-active-generation-job'
-            );
-
-            throw new Error(
-              data.job.error_message ||
-                'Website generation failed.'
-            );
-          }
-
-          if (
-            data.job.status === 'completed' &&
-            data.job.project_id
-          ) {
-            const projectResponse = await fetch(
-              `${config.apiBase}/projects/` +
-                `${data.job.project_id}` +
-                `?email=${encodeURIComponent(email)}`,
-              {
-                headers: authHeaders(activeToken)
-              }
-            );
-
-            const projectData = await readResponse(
-              projectResponse
-            ) as {
-              project: {
-                id: string;
-                name: string;
-                framework: string;
-              };
-              version: {
-                version_number: number;
-                plan: WebsitePlan;
-                preview_html: string;
-              };
-            };
-
-            const fileEvent = [...data.events]
-              .reverse()
-              .find(
-                (event) =>
-                  event.title === 'Project files created'
-              ) as (
-                LiveBuildActivity['events'][number] & {
-                  metadata?: {
-                    fileCount?: number;
-                  };
-                }
-              ) | undefined;
-
-            const generated: GenerateResponse = {
-              projectId: projectData.project.id,
-              jobId: activeJobId,
-              versionNumber:
-                projectData.version.version_number,
-              plan: projectData.version.plan,
-              previewHtml:
-                projectData.version.preview_html,
-              framework: 'vite-react',
-              fileCount: Number(
-                fileEvent?.metadata?.fileCount || 0
-              ),
-              mode: 'ai'
-            };
-
-            localStorage.removeItem(
-              'nexora-active-generation-job'
-            );
-
-            setResult(generated);
-            setMessage(
-              `${generated.plan.businessName} is ready.`
-            );
-
-            await loadProjects(email, activeToken);
-            return;
-          }
-
-          await new Promise((resolve) =>
-            setTimeout(resolve, 1200)
-          );
-        }
-
-        setMessage(
-          'Your project is still running in the background.'
-        );
+        setResult(generated);
+        setMessage(`${generated.plan.businessName} is ready.`);
+        await loadProjects(email, activeToken);
+        setTab('preview');
       } finally {
         if (!cancelled) {
           generationInFlightRef.current = false;
@@ -1269,14 +1464,6 @@ async function loadProjects(activeEmail = email, activeToken = token) {
         resumeError instanceof Error
           ? resumeError.message
           : 'Could not restore the active task.';
-
-      if (
-        errorMessage.toLowerCase().includes('not found')
-      ) {
-        localStorage.removeItem(
-          'nexora-active-generation-job'
-        );
-      }
 
       setError(errorMessage);
       setLoading(false);
@@ -1361,8 +1548,10 @@ async function loadProjects(activeEmail = email, activeToken = token) {
         activeDevices: data.activeDevices
       });
       setApproved(true);
+      setForceUserLogin(false);
       setPassword('');
       setTab('chat');
+      replaceAppPath('/');
 
       await Promise.all([
         loadProjects(data.internalEmail, data.token),
@@ -1386,20 +1575,14 @@ async function loadProjects(activeEmail = email, activeToken = token) {
     }
   }
 
-  function openAdminLogin() {
-    setError('');
-    setMessage('');
-    setPassword('');
-    setShowLoginPassword(false);
-    setMode('admin-login');
-  }
-
   function handleAdminMode(nextMode: 'user' | 'admin-login' | 'admin-dashboard') {
     setError('');
     setMessage('');
     setPassword('');
     setShowLoginPassword(false);
+    setForceUserLogin(nextMode === 'user');
     setMode(nextMode);
+    replaceAppPath(nextMode === 'user' ? userLoginPath : adminLoginPath);
   }
 
   async function generateWebsite(
@@ -1464,6 +1647,13 @@ async function loadProjects(activeEmail = email, activeToken = token) {
       setActivity(next);
       activityListener?.(next);
     };
+    const launchPayload: GenerationLaunchPayload = {
+      email,
+      installationId,
+      prompt: activePrompt,
+      image: visionImage,
+      ...(thinkMaxEnabled ? { thinkMax: true } : {})
+    };
 
     try {
       const startResponse = await fetch(
@@ -1474,13 +1664,7 @@ async function loadProjects(activeEmail = email, activeToken = token) {
             'content-type': 'application/json',
             ...authHeaders()
           },
-          body: JSON.stringify({
-            email,
-            installationId,
-            prompt: activePrompt,
-            image: visionImage,
-            ...(thinkMaxEnabled ? { thinkMax: true } : {})
-          })
+          body: JSON.stringify(launchPayload)
         }
       );
 
@@ -1491,9 +1675,14 @@ async function loadProjects(activeEmail = email, activeToken = token) {
       };
 
       localStorage.setItem(
-        'nexora-active-generation-job',
+        activeGenerationJobKey,
         started.jobId
       );
+
+      await saveGenerationLaunch(
+        started.jobId,
+        launchPayload
+      ).catch(() => undefined);
 
       publishActivity({
         jobId: started.jobId,
@@ -1504,129 +1693,24 @@ async function loadProjects(activeEmail = email, activeToken = token) {
         events: []
       });
 
-      for (let attempt = 0; attempt < 240; attempt += 1) {
-        const statusResponse = await fetch(
-          `${config.apiBase}/generation-jobs/${started.jobId}` +
-            `?email=${encodeURIComponent(email)}`,
-          {
-            headers: authHeaders()
-          }
-        );
+      await ensureGenerationLaunched(started.jobId, token, launchPayload);
+      const generated = await pollGenerationJob({
+        jobId: started.jobId,
+        activeEmail: email,
+        activeToken: token,
+        publishActivity
+      });
 
-        const statusData = await readResponse(statusResponse) as {
-          job: {
-            id: string;
-            project_id?: string | null;
-            status: string;
-            current_step?: string | null;
-            current_agent?: string | null;
-            progress?: number | null;
-            error_message?: string | null;
-          };
-          events: LiveBuildActivity['events'];
-        };
-
-        publishActivity({
-          jobId: started.jobId,
-          status: statusData.job.status,
-          progress: Number(statusData.job.progress || 0),
-          currentAgent: statusData.job.current_agent,
-          currentStep: statusData.job.current_step,
-          events: statusData.events || []
-        });
-
-        if (statusData.job.status === 'failed') {
-          localStorage.removeItem(
-            'nexora-active-generation-job'
-          );
-
-          throw new Error(
-            statusData.job.error_message ||
-              'Website generation failed.'
-          );
-        }
-
-        if (
-          statusData.job.status === 'completed' &&
-          statusData.job.project_id
-        ) {
-          const projectResponse = await fetch(
-            `${config.apiBase}/projects/` +
-              `${statusData.job.project_id}` +
-              `?email=${encodeURIComponent(email)}`,
-            {
-              headers: authHeaders()
-            }
-          );
-
-          const projectData = await readResponse(
-            projectResponse
-          ) as {
-            project: {
-              id: string;
-              name: string;
-              framework: string;
-            };
-            version: {
-              version_number: number;
-              plan: WebsitePlan;
-              preview_html: string;
-            };
-          };
-
-          const eventsWithMetadata = statusData.events as Array<
-            LiveBuildActivity['events'][number] & {
-              metadata?: {
-                fileCount?: number;
-              };
-            }
-          >;
-
-          const fileEvent = [...eventsWithMetadata]
-            .reverse()
-            .find((event) =>
-              event.title === 'Project files created'
-            );
-
-          const generated: GenerateResponse = {
-            projectId: projectData.project.id,
-            jobId: started.jobId,
-            versionNumber: projectData.version.version_number,
-            plan: projectData.version.plan,
-            previewHtml: projectData.version.preview_html,
-            framework: 'vite-react',
-            fileCount: Number(
-              fileEvent?.metadata?.fileCount || 0
-            ),
-            mode: 'ai'
-          };
-
-          localStorage.removeItem(
-            'nexora-active-generation-job'
-          );
-
-          setResult(generated);
-          setMessage(
-            `${generated.plan.businessName} is ready.`
-          );
-
-          await loadProjects();
-
-          if (!returnResult) {
-            setTab('preview');
-          }
-
-          return generated;
-        }
-
-        await new Promise((resolve) =>
-          setTimeout(resolve, 1200)
-        );
+      if (!generated) {
+        throw new Error('Generation tracking ended before completion.');
       }
 
-      throw new Error(
-        'Generation is still running. Reopen the app to continue tracking it.'
-      );
+      setResult(generated);
+      setMessage(`${generated.plan.businessName} is ready.`);
+      await loadProjects();
+
+      if (!returnResult) setTab('preview');
+      return generated;
     } catch (generationError) {
       const generationMessage =
         generationError instanceof Error
@@ -1909,6 +1993,7 @@ async function openProject(projectId: string) {
     localStorage.removeItem(userSessionKey);
 
     setUserSession(null);
+    setForceUserLogin(false);
     setApproved(false);
     setAccess(null);
     setSession(null);
@@ -1934,7 +2019,7 @@ async function openProject(projectId: string) {
   if (showSetup) return <SetupScreen config={config} onSave={saveRuntimeConfig} onCancel={validConfig(config) ? () => setShowSetup(false) : undefined} error={error} />;
   if (mode === 'admin-login' || mode === 'admin-dashboard') return <AdminPanelV5 apiBase={config.apiBase} initialMode={mode} onMode={handleAdminMode} onSetup={runtimeConfigOverrideAllowed ? () => setShowSetup(true) : undefined} />;
 
-  if (!approved) {
+  if (!approved || forceUserLogin) {
     return (
       <main className="login-shell">
         <section className="login-card universal-login-card">
@@ -1991,17 +2076,6 @@ async function openProject(projectId: string) {
               {loginLoading ? 'Signing in…' : 'Log In'}
             </button>
           </form>
-
-          <div className="login-admin-access">
-            <span>Owner controls</span>
-            <button
-              type="button"
-              className="nx-button nx-button--secondary login-admin-access-button"
-              onClick={openAdminLogin}
-            >
-              Admin Access
-            </button>
-          </div>
 
           {message && <p className="success">{message}</p>}
           {error && <p className="error" role="alert">{error}</p>}
@@ -2070,7 +2144,7 @@ async function openProject(projectId: string) {
           void loadProjects();
         }}
       >
-        <span>My Webs</span>
+        <span>Projects</span>
         {projects.length > 0 && (
           <small className="my-webs-count">
             {projects.length}
@@ -2147,9 +2221,22 @@ async function openProject(projectId: string) {
                     attachment: attachment ? { name: attachment.name, dataUrl: attachment.dataUrl } : null
             })
           });
-          const data = await response.json() as { reply?: string; error?: string; providerErrors?: string[] };
+          const data = await response.json() as {
+            reply?: string;
+            error?: string;
+            providerErrors?: string[];
+            processingDurationMs?: number;
+            usage?: ChatAssistantReply['tokenUsage'];
+          };
           if (!response.ok || !data.reply) throw new Error(data.error || data.providerErrors?.join(' | ') || 'Assistant request failed.');
-          return data.reply;
+          return {
+            text: data.reply,
+            processingDurationMs:
+              typeof data.processingDurationMs === 'number'
+                ? data.processingDurationMs
+                : null,
+            tokenUsage: data.usage || null
+          };
         }}
         onGenerate={async (chatPrompt, chatImage, activityListener) => {
           const generated = await generateWebsite(
@@ -2949,10 +3036,6 @@ async function openProject(projectId: string) {
               </button>
             </form>
           </section>
-        )}
-
-        {!userSession && email === ownerEmail && (
-          <button onClick={openAdminLogin}>Open Admin</button>
         )}
 
         <section className="theme-setting">

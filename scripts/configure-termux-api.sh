@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="$ROOT/apps/api-node/.env"
 
-printf '\nWebsite Maker AI local backend setup\n'
+printf '\nNexora.Ai local backend setup\n'
 printf 'This keeps Gemini and the Supabase service-role key outside the APK.\n\n'
 read -r -p 'Supabase project URL (https://xxxxx.supabase.co): ' SUPABASE_URL
 read -r -s -p 'Supabase service-role key: ' SUPABASE_SERVICE_ROLE_KEY
@@ -14,7 +14,7 @@ read -r -p 'Gemini model [gemini-2.5-flash]: ' GEMINI_MODEL
 GEMINI_MODEL="${GEMINI_MODEL:-gemini-2.5-flash}"
 
 cat > "$ENV_FILE" <<ENV
-APP_NAME=Website Maker AI
+APP_NAME=Nexora.Ai
 PUBLIC_API_BASE_URL=http://127.0.0.1:8787
 SUPABASE_URL=$SUPABASE_URL
 SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_SERVICE_ROLE_KEY

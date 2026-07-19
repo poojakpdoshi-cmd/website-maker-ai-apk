@@ -1,4 +1,4 @@
--- WebForge V5: real multi-agent activity and Live Build Room.
+-- Nexora.Ai V5: real multi-agent activity and Live Build Room.
 
 alter table generation_jobs
   add column if not exists progress integer not null default 0

@@ -293,16 +293,31 @@ export default function AdminPanelV5({
 
   async function logout() {
     if (token) {
-      await fetch(`${apiBase}/admin/auth/logout`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      }).catch(() => undefined);
+      const controller = new AbortController();
+      const timeout = window.setTimeout(
+        () => controller.abort(),
+        5000
+      );
+
+      try {
+        await fetch(`${apiBase}/admin/auth/logout`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`
+          },
+          signal: controller.signal
+        });
+      } catch {
+        // The local admin session must still be removed when offline.
+      } finally {
+        window.clearTimeout(timeout);
+      }
     }
 
     localStorage.removeItem(adminSessionKey);
     setToken('');
+    setError('');
+    setMessage('');
     onMode('user');
   }
 
@@ -462,7 +477,7 @@ export default function AdminPanelV5({
           </span>
 
           <button onClick={() => void logout()}>
-            Exit Admin
+            Exit Admin Panel
           </button>
         </div>
       </aside>
@@ -481,12 +496,20 @@ export default function AdminPanelV5({
             </h1>
           </div>
 
-          <button
-            className="admin-refresh-v5"
-            onClick={() => void loadDashboard()}
-          >
-            Sync
-          </button>
+          <div className="admin-topbar-actions-v5">
+            <button
+              className="admin-refresh-v5"
+              onClick={() => void loadDashboard()}
+            >
+              Sync
+            </button>
+            <button
+              className="admin-exit-v5"
+              onClick={() => void logout()}
+            >
+              Exit Admin Panel
+            </button>
+          </div>
         </header>
 
         {message && (

@@ -61,7 +61,6 @@ import './cms-studio.css';
 const nexoraUiVersion = '4.3.0';
 
 if (localStorage.getItem('nexora-ui-version') !== nexoraUiVersion) {
-  localStorage.removeItem('nexora-active-generation-job');
   localStorage.setItem('nexora-ui-version', nexoraUiVersion);
 
   if ('caches' in window) {

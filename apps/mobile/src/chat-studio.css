@@ -9,7 +9,7 @@ body,
 }
 
 .app-shell.chat-page-active {
-  width: 100vw !important;
+  width: 100% !important;
   max-width: none !important;
   height: var(--nexora-viewport-height, 100dvh) !important;
   min-height: 0 !important;
@@ -20,7 +20,6 @@ body,
 }
 
 .chat-page-active > header,
-.chat-page-active > .nexora-app-nav,
 .chat-page-active > .notice-wide {
   display: none !important;
 }
@@ -548,6 +547,7 @@ html[data-nexora-theme='light'] .claude-drawer {
 }
 
 .claude-message.assistant .claude-message-body {
+  max-width: calc(100% - 47px);
   padding-top: 3px;
 }
 
@@ -577,6 +577,32 @@ html[data-nexora-theme='light'] .claude-drawer {
   letter-spacing: -.004em;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.claude-message-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 11px;
+  margin-top: 8px;
+  color: var(--nx-muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.claude-message-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.claude-message-meta span + span::before {
+  content: "•";
+  margin-right: 5px;
+  color: rgba(103, 220, 255, .52);
+}
+
+.claude-message.user .claude-message-meta {
+  justify-content: flex-end;
 }
 
 .claude-agent-working {
@@ -1145,7 +1171,16 @@ html[data-nexora-theme='light'] .claude-composer-area {
   }
 
   .claude-message-body {
-    max-width: 89%;
+    max-width: 88%;
+  }
+
+  .claude-message.assistant .claude-message-body {
+    max-width: calc(100% - 43px);
+  }
+
+  .claude-assistant-avatar {
+    width: 32px;
+    height: 32px;
   }
 
   .claude-message-body p {

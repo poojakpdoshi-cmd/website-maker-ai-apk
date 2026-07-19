@@ -16,7 +16,7 @@ export function requiresFullStack(
 }
 
 export const FULLSTACK_GENERATION_POLICY = `
-WEBFORGE FULL-STACK GENERATION POLICY
+NEXORA.AI FULL-STACK GENERATION POLICY
 
 When the user's request includes backend, database, authentication,
 accounts, admin features, forms that save data, orders, bookings,

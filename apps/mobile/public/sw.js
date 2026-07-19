@@ -1,4 +1,4 @@
-const CACHE = 'webforge-v42-pwa-v1';
+const CACHE = 'nexora-v43-pwa-v1';
 
 const APP_SHELL = [
   '/',

@@ -11,7 +11,7 @@ export type SecurityAuditResult = {
 };
 
 export const WEBFORGE_SECURITY_AUDIT_POLICY = `
-WEBFORGE FIVE-LAYER SECURITY AUDIT
+NEXORA.AI FIVE-LAYER SECURITY AUDIT
 
 LAYER 1 — SECRET LEAK PREVENTION
 - Never hardcode API keys, passwords, tokens, private keys,

@@ -86,7 +86,7 @@ async function callGroq(
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
       throw new Error(
-        'Groq agent timed out; WebForge used its safe local builder.'
+        'Groq agent timed out; Nexora.Ai used its safe local builder.'
       );
     }
 
@@ -121,7 +121,7 @@ export async function runCodingAgent(
     env,
     env.GROQ_CODER_MODEL,
     [
-      'You are WebForge Coder.',
+      'You are Nexora.Ai Coder.',
       'Return strict JSON using this schema:',
       '{"files":[{"path":"src/App.jsx","content":"..."}],"previewHtml":"optional","summary":"..."}.',
       'Allowed paths are src/App.jsx, src/styles.css, public/logo.svg and README.md.',
@@ -189,7 +189,7 @@ export async function runRepairAgent(
         {
           role: 'system',
           content: [
-            'You are WebForge Repair Agent.',
+            'You are Nexora.Ai Repair Agent.',
             'Repair only the reported problems.',
             'Preserve correct project behaviour.',
             'Return only the corrected structured output.'

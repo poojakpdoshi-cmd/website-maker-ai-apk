@@ -4,7 +4,7 @@ import app from '../../api/src/index';
 
 const port = Number(process.env.PORT || 8787);
 const env = {
-  APP_NAME: process.env.APP_NAME || 'Website Maker AI',
+  APP_NAME: process.env.APP_NAME || 'Nexora.Ai',
   PUBLIC_API_BASE_URL: process.env.PUBLIC_API_BASE_URL,
   ADMIN_USERNAME: process.env.ADMIN_USERNAME,
   ADMIN_PASSWORD_SALT: process.env.ADMIN_PASSWORD_SALT,
@@ -66,5 +66,5 @@ const server = createServer(async (incoming, outgoing) => {
 });
 
 server.listen(port, '0.0.0.0', () => {
-  console.log(`Website Maker AI API running at http://127.0.0.1:${port}`);
+  console.log(`Nexora.Ai API running at http://127.0.0.1:${port}`);
 });

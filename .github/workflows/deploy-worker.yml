@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy WebForge API
+    name: Deploy Nexora.Ai API
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -84,4 +84,4 @@ jobs:
             exit 1
           fi
 
-          echo "WebForge username authentication is live."
+          echo "Nexora.Ai username authentication is live."

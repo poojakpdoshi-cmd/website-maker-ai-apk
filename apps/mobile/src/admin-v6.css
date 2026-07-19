@@ -305,6 +305,20 @@ html[data-nexora-theme='light'] .admin-nav-v5 button.active {
   flex: 0 0 auto;
 }
 
+.admin-topbar-actions-v5 {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.admin-exit-v5 {
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 111, 133, .34) !important;
+  background: rgba(111, 24, 47, .28) !important;
+  color: #ffb4c0 !important;
+}
+
 .admin-message-v5,
 .admin-error-box-v5 {
   margin: 0 0 16px;
@@ -619,6 +633,20 @@ html[data-nexora-theme='light'] .admin-nav-v5 button.active {
 }
 
 @media (max-width: 620px) {
+  .admin-topbar-v5 {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admin-topbar-actions-v5 {
+    width: 100%;
+  }
+
+  .admin-topbar-actions-v5 button {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
   .admin-login-card-v5 {
     padding: 23px 18px;
     border-radius: 24px;
@@ -669,5 +697,51 @@ html[data-nexora-theme='light'] .admin-nav-v5 button.active {
 
   .admin-nav-v5 {
     grid-template-columns: repeat(3, 104px) !important;
+  }
+}
+
+@media (max-width: 480px) and (max-height: 700px) {
+  .admin-login-v5 {
+    padding: 10px 14px;
+  }
+
+  .admin-login-card-v5 {
+    padding: 14px;
+  }
+
+  .admin-logo-v5 {
+    width: min(92px, 28vw);
+    margin-bottom: 9px;
+    border-radius: 20px !important;
+  }
+
+  .admin-kicker-v5 {
+    margin-bottom: 5px;
+  }
+
+  .admin-login-card-v5 h1 {
+    font-size: 30px;
+  }
+
+  .admin-subtitle-v5 {
+    margin-top: 4px;
+    line-height: 1.35;
+  }
+
+  .admin-login-card-v5 form {
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .admin-login-card-v5 label {
+    gap: 4px;
+  }
+
+  .admin-login-card-v5 input {
+    padding-block: 11px;
+  }
+
+  .admin-login-links-v5 {
+    margin-top: 9px;
   }
 }

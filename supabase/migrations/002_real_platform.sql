@@ -1,4 +1,4 @@
--- Website Maker AI V2: real multi-file projects, OAuth states and deployments.
+-- Nexora.Ai V2: real multi-file projects, OAuth states and deployments.
 
 alter table projects add column if not exists framework text not null default 'vite-react';
 alter table projects add column if not exists vercel_deployment_id text;

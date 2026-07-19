@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build WebForge V4.2 APK
+    name: Build Nexora.Ai APK
     runs-on: ubuntu-latest
     timeout-minutes: 40
 
@@ -55,7 +55,7 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: Verify WebForge source
+      - name: Verify Nexora.Ai source
         run: |
           test -f apps/mobile/assets/launcher-brand/logo.png
 
@@ -121,11 +121,11 @@ jobs:
 
           cp \
             app/build/outputs/apk/debug/app-debug.apk \
-            "$GITHUB_WORKSPACE/WebForge-Ai-V4.2-${SHORT_SHA}.apk"
+            "$GITHUB_WORKSPACE/Nexora-AI-${SHORT_SHA}.apk"
 
       - name: Upload uniquely named APK
         uses: actions/upload-artifact@v4
         with:
-          name: WebForge-Ai-V4.2-${{ github.run_number }}
-          path: WebForge-Ai-V4.2-*.apk
+          name: Nexora-AI-${{ github.run_number }}
+          path: Nexora-AI-*.apk
           if-no-files-found: error

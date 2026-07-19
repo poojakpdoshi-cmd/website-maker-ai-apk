@@ -119,13 +119,14 @@ async function main() {
 
     const normalHandler = appSource.slice(
       appSource.indexOf('async function handleUsernameLogin'),
-      appSource.indexOf('function openAdminLogin')
+      appSource.indexOf('function handleAdminMode')
     );
     assert.match(normalHandler, /loginNormalUser\(config\.apiBase, loginPayload\)/);
     assert.doesNotMatch(normalHandler, /loginAdmin|admin\/auth\/login/);
 
-    assert.match(appSource, /function openAdminLogin\(\)[\s\S]*?setError\(''\)[\s\S]*?setMessage\(''\)[\s\S]*?setMode\('admin-login'\)/);
-    assert.match(appSource, /onClick=\{openAdminLogin\}[\s\S]*?>\s*Admin Access\s*<\/button>/);
+    assert.match(appSource, /const adminLoginPath = '\/admin\/auth\/login'/);
+    assert.match(appSource, /function initialAppMode\(\)[\s\S]*?adminLoginPath[\s\S]*?'admin-login'/);
+    assert.doesNotMatch(appSource, /openAdminLogin|Owner controls|Admin Access|Open Admin/);
     assert.match(appSource, /mode === 'admin-login' \|\| mode === 'admin-dashboard'/);
 
     const adminLoginHandler = adminSource.slice(
@@ -139,7 +140,10 @@ async function main() {
 
     assert.match(adminSource, /function returnToApp\(\)[\s\S]*?setError\(''\)[\s\S]*?setMessage\(''\)[\s\S]*?onMode\('user'\)/);
     assert.match(adminSource, /onClick=\{returnToApp\}[\s\S]*?>\s*Return to App\s*<\/button>/);
-    assert.match(adminSource, /localStorage\.removeItem\(adminSessionKey\);\s*setToken\(''\);[\s\S]*?onMode\('admin-login'\)/);
+    assert.match(adminSource, /async function logout\(\)[\s\S]*?admin\/auth\/logout[\s\S]*?localStorage\.removeItem\(adminSessionKey\);\s*setToken\(''\);[\s\S]*?onMode\('user'\)/);
+    assert.match(adminSource, /controller\.abort\(\)/);
+    assert.match(appSource, /setForceUserLogin\(nextMode === 'user'\)/);
+    assert.match(adminSource, />\s*Exit Admin Panel\s*<\/button>/);
   } finally {
     globalThis.fetch = originalFetch;
   }

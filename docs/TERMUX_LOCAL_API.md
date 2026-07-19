@@ -34,7 +34,7 @@ npm run dev:api
 Expected message:
 
 ```text
-Website Maker AI API running at http://127.0.0.1:8787
+Nexora.Ai API running at http://127.0.0.1:8787
 ```
 
 Open another Termux session for the mobile interface:

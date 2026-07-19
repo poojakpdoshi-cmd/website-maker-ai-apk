@@ -1,4 +1,4 @@
--- WebForge.Ai V4 username/password authentication.
+-- Nexora.Ai V4 username/password authentication.
 -- Sensitive passwords are never stored directly.
 
 create table if not exists user_accounts (

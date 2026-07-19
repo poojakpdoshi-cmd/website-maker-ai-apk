@@ -71,25 +71,29 @@ html[data-nexora-theme='light'] .app-shell > header {
 .nexora-app-nav {
   position: fixed !important;
   z-index: 50;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: calc(74px + env(safe-area-inset-bottom));
-  display: flex !important;
-  gap: 4px;
+  right: max(8px, env(safe-area-inset-right));
+  bottom: max(7px, env(safe-area-inset-bottom));
+  left: max(8px, env(safe-area-inset-left));
+  height: 66px;
+  display: grid !important;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(70px, 1fr);
+  gap: 3px;
   margin: 0 !important;
-  padding: 8px 9px max(8px, env(safe-area-inset-bottom)) !important;
+  padding: 7px !important;
   overflow-x: auto;
   overflow-y: hidden;
-  border: 0 !important;
-  border-top: 1px solid var(--nx-border) !important;
-  border-radius: 0 !important;
+  border: 1px solid var(--nx-border-strong) !important;
+  border-radius: 21px !important;
   background: rgba(3, 7, 24, .92) !important;
   box-shadow:
-    0 -12px 36px rgba(0, 0, 0, .32),
+    0 -8px 32px rgba(0, 0, 0, .32),
+    0 14px 38px rgba(0, 0, 0, .3),
     inset 0 1px 0 rgba(67, 220, 255, .035) !important;
   backdrop-filter: blur(22px) saturate(130%);
   overscroll-behavior-x: contain;
+  scroll-padding-inline: 7px;
+  scroll-snap-type: x proximity;
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
 }
@@ -103,14 +107,15 @@ html[data-nexora-theme='light'] .nexora-app-nav {
 }
 
 .nexora-app-nav button {
-  flex: 1 0 76px;
-  min-width: 76px;
+  min-width: 70px;
   height: 52px;
   min-height: 52px;
-  padding: 7px 8px !important;
-  border-radius: 15px !important;
+  padding: 7px 6px !important;
+  border-radius: 14px !important;
   color: var(--nx-muted) !important;
-  font-size: 11px;
+  font-size: 10px;
+  scroll-snap-align: start;
+  touch-action: manipulation;
   white-space: nowrap;
 }
 
@@ -163,7 +168,7 @@ html[data-nexora-theme='light'] .nexora-app-nav {
 
 .chat-page-active > .nexora-main-content {
   height: 100%;
-  padding: 0;
+  padding: 0 0 calc(82px + env(safe-area-inset-bottom));
   overflow: hidden;
 }
 
@@ -899,6 +904,23 @@ html[data-nexora-theme='light'] .cms-studio {
 }
 
 @media (max-width: 620px) {
+  .nexora-app-nav {
+    right: max(5px, env(safe-area-inset-right));
+    left: max(5px, env(safe-area-inset-left));
+    grid-auto-columns: minmax(66px, 1fr);
+    height: 63px;
+    padding: 6px !important;
+    border-radius: 19px !important;
+  }
+
+  .nexora-app-nav button {
+    min-width: 66px;
+    height: 49px;
+    min-height: 49px;
+    padding-inline: 5px !important;
+    font-size: 9px;
+  }
+
   .app-shell > header {
     min-height: 88px;
     padding-inline: 15px;

@@ -11,7 +11,22 @@ type ChatResult = {
   projectName: string;
 } | null;
 
-type ChatHistoryItem = { role: 'assistant' | 'user'; text: string };
+export type ChatHistoryItem = {
+  role: 'assistant' | 'user';
+  text: string;
+};
+
+export type ChatTokenUsage = {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+};
+
+export type ChatAssistantReply = {
+  text: string;
+  processingDurationMs: number | null;
+  tokenUsage: ChatTokenUsage | null;
+};
 
 type WorkspaceTab =
   | 'create'
@@ -51,7 +66,7 @@ type Props = {
     } | null,
     activityListener?: (activity: LiveBuildActivity) => void
   ) => Promise<ChatResult>;
-  onChat: (prompt: string, history: ChatHistoryItem[], attachment?: { name: string; dataUrl: string } | null) => Promise<string>;
+  onChat: (prompt: string, history: ChatHistoryItem[], attachment?: { name: string; dataUrl: string } | null) => Promise<ChatAssistantReply>;
   onOpenPreview: () => void;
   onNavigate: (tab: WorkspaceTab) => void;
 };
@@ -60,6 +75,9 @@ type Message = {
   id: string;
   role: 'assistant' | 'user';
   text: string;
+  createdAt?: string | null;
+  processingDurationMs?: number | null;
+  tokenUsage?: ChatTokenUsage | null;
 };
 
 type SavedChat = {
@@ -85,6 +103,134 @@ function isWebsiteBuildRequest(value: string): boolean {
 
 function makeId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function createMessage(
+  role: Message['role'],
+  text: string,
+  metadata: Pick<
+    Message,
+    'processingDurationMs' | 'tokenUsage'
+  > = {}
+): Message {
+  return {
+    id: makeId(),
+    role,
+    text,
+    createdAt: new Date().toISOString(),
+    ...metadata
+  };
+}
+
+function normalizeMessage(value: unknown): Message | null {
+  if (!value || typeof value !== 'object') return null;
+
+  const item = value as Partial<Message>;
+  if (
+    (item.role !== 'assistant' && item.role !== 'user') ||
+    typeof item.text !== 'string'
+  ) {
+    return null;
+  }
+
+  const createdAt = typeof item.createdAt === 'string' &&
+    Number.isFinite(Date.parse(item.createdAt))
+    ? item.createdAt
+    : null;
+  const processingDurationMs =
+    typeof item.processingDurationMs === 'number' &&
+    Number.isFinite(item.processingDurationMs) &&
+    item.processingDurationMs >= 0
+      ? item.processingDurationMs
+      : null;
+  const rawUsage = item.tokenUsage;
+  const normalizeTokenCount = (tokenValue: unknown): number | null =>
+    typeof tokenValue === 'number' &&
+    Number.isFinite(tokenValue) &&
+    tokenValue >= 0
+      ? Math.round(tokenValue)
+      : null;
+  const tokenUsage = rawUsage && typeof rawUsage === 'object'
+    ? {
+        inputTokens: normalizeTokenCount(rawUsage.inputTokens),
+        outputTokens: normalizeTokenCount(rawUsage.outputTokens),
+        totalTokens: normalizeTokenCount(rawUsage.totalTokens)
+      }
+    : null;
+
+  return {
+    id: typeof item.id === 'string' && item.id ? item.id : makeId(),
+    role: item.role,
+    text: item.text,
+    createdAt,
+    processingDurationMs,
+    tokenUsage
+  };
+}
+
+function normalizeSavedChats(value: unknown): SavedChat[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+
+    const chat = item as Partial<SavedChat>;
+    if (!Array.isArray(chat.messages)) return [];
+
+    const messages = chat.messages
+      .map(normalizeMessage)
+      .filter((message): message is Message => Boolean(message));
+
+    return [{
+      id: typeof chat.id === 'string' && chat.id ? chat.id : makeId(),
+      title: typeof chat.title === 'string' && chat.title
+        ? chat.title
+        : 'Saved chat',
+      updatedAt: typeof chat.updatedAt === 'number'
+        ? chat.updatedAt
+        : 0,
+      messages,
+      activity: chat.activity || null
+    }];
+  });
+}
+
+function formatMessageTimestamp(value: string | null | undefined): string {
+  if (!value) return 'Time unavailable';
+
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return 'Time unavailable';
+
+  const time = date.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+  const calendarDate = date.toLocaleDateString([], {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  });
+
+  return `${calendarDate}, ${time}`;
+}
+
+function formatProcessingDuration(value: number | null | undefined): string {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    return 'Processing time unavailable';
+  }
+
+  if (value < 1000) return `Processed in ${Math.round(value)} ms`;
+  if (value < 60000) return `Processed in ${(value / 1000).toFixed(1)} s`;
+
+  const minutes = Math.floor(value / 60000);
+  const seconds = Math.round((value % 60000) / 1000);
+  return `Processed in ${minutes}m ${seconds}s`;
+}
+
+function formatTokenUsage(usage: ChatTokenUsage | null | undefined): string {
+  return typeof usage?.totalTokens === 'number'
+    ? `${usage.totalTokens.toLocaleString()} tokens used`
+    : 'Token usage unavailable';
 }
 
 export default function ChatStudio({
@@ -135,7 +281,7 @@ export default function ChatStudio({
 
   const buildActive = Boolean(
     activeActivity &&
-      !['completed', 'failed', 'cancelled'].includes(
+      !['completed', 'failed', 'cancelled', 'canceled', 'unknown'].includes(
         activeActivity.status.toLowerCase()
       )
   );
@@ -144,8 +290,8 @@ export default function ChatStudio({
     try {
       const parsed = JSON.parse(
         localStorage.getItem(storageKey) || '[]'
-      ) as SavedChat[];
-      const chats = Array.isArray(parsed) ? parsed : [];
+      ) as unknown;
+      const chats = normalizeSavedChats(parsed);
       setSavedChats(chats);
 
       setChatActivities(
@@ -155,6 +301,18 @@ export default function ChatStudio({
             .map((chat) => [chat.id, chat.activity])
         ) as Record<string, LiveBuildActivity>
       );
+
+      const activeJobId = localStorage.getItem(
+        'nexora-active-generation-job'
+      );
+      const activeBuildChat = activeJobId
+        ? chats.find((chat) => chat.activity?.jobId === activeJobId)
+        : undefined;
+
+      if (activeBuildChat) {
+        setActiveChatId(activeBuildChat.id);
+        setMessages(activeBuildChat.messages);
+      }
     } catch {
       setSavedChats([]);
     }
@@ -213,6 +371,21 @@ export default function ChatStudio({
   }, [chatActivities, storageKey]);
 
   useEffect(() => {
+    if (!activity) return;
+
+    setChatActivities((current) => {
+      const matchingChatId = Object.entries(current)
+        .find(([, item]) => item.jobId === activity.jobId)?.[0];
+      const chatId = matchingChatId || activeChatIdRef.current;
+
+      return {
+        ...current,
+        [chatId]: activity
+      };
+    });
+  }, [activity]);
+
+  useEffect(() => {
     endRef.current?.scrollIntoView({
       behavior: 'smooth',
       block: 'end'
@@ -220,29 +393,51 @@ export default function ChatStudio({
   }, [messages, buildActive]);
 
   function newChat(): void {
-    const hadActiveBuild =
-      buildActive ||
-      Boolean(
-        localStorage.getItem(
-          'nexora-active-generation-job'
-        )
-      );
-
-    localStorage.removeItem(
-      'nexora-active-generation-job'
-    );
-
-    setActiveChatId(makeId());
+    const nextChatId = makeId();
+    activeChatIdRef.current = nextChatId;
+    setActiveChatId(nextChatId);
     setMessages([]);
     setDraft('');
     setImage(null);
     setMenuOpen(false);
     setAttachmentMenuOpen(false);
     setLiveRoomOpen(false);
+  }
 
-    if (hadActiveBuild) {
-      window.location.reload();
+  function appendMessageToChat(
+    chatId: string,
+    fallbackMessages: Message[],
+    message: Message
+  ): void {
+    if (activeChatIdRef.current === chatId) {
+      setMessages((current) => [...current, message]);
+      return;
     }
+
+    setSavedChats((current) => {
+      const existing = current.find((chat) => chat.id === chatId);
+      const messagesForChat = [
+        ...(existing?.messages || fallbackMessages),
+        message
+      ];
+      const title = messagesForChat
+        .find((item) => item.role === 'user')
+        ?.text.replace(/\s+/g, ' ')
+        .slice(0, 52) || 'New chat';
+      const next: SavedChat[] = [
+        {
+          id: chatId,
+          title,
+          updatedAt: Date.now(),
+          messages: messagesForChat,
+          activity: chatActivities[chatId] || existing?.activity || null
+        },
+        ...current.filter((chat) => chat.id !== chatId)
+      ].slice(0, 100);
+
+      localStorage.setItem(storageKey, JSON.stringify(next));
+      return next;
+    });
   }
 
   function selectAttachment(
@@ -255,11 +450,7 @@ export default function ChatStudio({
     if (file.size > 4 * 1024 * 1024) {
       setMessages((current) => [
         ...current,
-        {
-          id: makeId(),
-          role: 'assistant',
-          text: 'Attachments must be smaller than 4 MB.'
-        }
+        createMessage('assistant', 'Attachments must be smaller than 4 MB.')
       ]);
 
       event.target.value = '';
@@ -281,11 +472,7 @@ export default function ChatStudio({
     reader.onerror = () => {
       setMessages((current) => [
         ...current,
-        {
-          id: makeId(),
-          role: 'assistant',
-          text: 'The selected file could not be read.'
-        }
+        createMessage('assistant', 'The selected file could not be read.')
       ]);
 
       setAttachmentMenuOpen(false);
@@ -307,12 +494,10 @@ export default function ChatStudio({
     if (websiteBuildRequest && (busy || buildActive)) {
       setMessages((current) => [
         ...current,
-        {
-          id: makeId(),
-          role: 'assistant',
-          text:
-            'A website build is already running. You can keep chatting, but wait for it to finish before starting another build.'
-        }
+        createMessage(
+          'assistant',
+          'A website build is already running. You can keep chatting, but wait for it to finish before starting another build.'
+        )
       ]);
       return;
     }
@@ -320,16 +505,18 @@ export default function ChatStudio({
     const attachedImage = image;
     const chatHistory = messages;
     const requestChatId = activeChatId;
+    const requestStartedAt = Date.now();
+    const userMessage = createMessage(
+      'user',
+      image
+        ? `${request}\n\nAttached: ${image.name}`
+        : request
+    );
+    const pendingMessages = [...chatHistory, userMessage];
 
     setMessages((current) => [
       ...current,
-      {
-        id: makeId(),
-        role: 'user',
-        text: image
-          ? `${request}\n\nAttached: ${image.name}`
-          : request
-      }
+      userMessage
     ]);
 
     setDraft('');
@@ -338,16 +525,21 @@ export default function ChatStudio({
     if (!websiteBuildRequest) {
       try {
         const reply = await onChat(request, chatHistory, attachedImage);
-        setMessages((current) => [
-          ...current,
-          { id: makeId(), role: 'assistant', text: reply }
-        ]);
+        appendMessageToChat(
+          requestChatId,
+          pendingMessages,
+          createMessage('assistant', reply.text, {
+            processingDurationMs: reply.processingDurationMs,
+            tokenUsage: reply.tokenUsage
+          })
+        );
       } catch (chatError) {
         const text = chatError instanceof Error ? chatError.message : 'Assistant request failed.';
-        setMessages((current) => [
-          ...current,
-          { id: makeId(), role: 'assistant', text: `Assistant error: ${text}` }
-        ]);
+        appendMessageToChat(
+          requestChatId,
+          pendingMessages,
+          createMessage('assistant', `Assistant error: ${text}`)
+        );
       }
       return;
     }
@@ -372,32 +564,38 @@ export default function ChatStudio({
 
       setHasProject(true);
 
-      setMessages((current) => [
-        ...current,
-        {
-          id: makeId(),
-          role: 'assistant',
-          text:
+      appendMessageToChat(
+        requestChatId,
+        pendingMessages,
+        createMessage(
+          'assistant',
             `${generated.projectName} is ready. ` +
-            'The project was generated and validated.'
-        }
-      ]);
+            'The project was generated and validated.',
+          {
+            processingDurationMs: Date.now() - requestStartedAt,
+            tokenUsage: null
+          }
+        )
+      );
     } catch (buildError) {
       const buildMessage =
         buildError instanceof Error
           ? buildError.message
           : 'Website generation failed.';
 
-      setMessages((current) => [
-        ...current,
-        {
-          id: makeId(),
-          role: 'assistant',
-          text:
+      appendMessageToChat(
+        requestChatId,
+        pendingMessages,
+        createMessage(
+          'assistant',
             `Build failed: ${buildMessage}\n\n` +
-            'Check your connection and try again.'
-        }
-      ]);
+            'Check your connection and try again.',
+          {
+            processingDurationMs: Date.now() - requestStartedAt,
+            tokenUsage: null
+          }
+        )
+      );
     }
   }
 
@@ -420,7 +618,7 @@ export default function ChatStudio({
           </div>
 
           <div>
-            <strong>Nexora</strong>
+            <strong>Nexora.Ai</strong>
             <small>AI website builder</small>
           </div>
         </div>
@@ -628,7 +826,7 @@ export default function ChatStudio({
                 >
                   {message.role === 'assistant' && (
                     <div className="claude-assistant-avatar">
-                      W
+                      N
                     </div>
                   )}
 
@@ -638,6 +836,25 @@ export default function ChatStudio({
                     )}
 
                     <p>{message.text}</p>
+
+                    <div className="claude-message-meta">
+                      <span>
+                        {message.role === 'user' ? 'Sent' : 'Received'}{' '}
+                        <time dateTime={message.createdAt || undefined}>
+                          {formatMessageTimestamp(message.createdAt)}
+                        </time>
+                      </span>
+                      {message.role === 'assistant' && (
+                        <>
+                          <span>
+                            {formatProcessingDuration(
+                              message.processingDurationMs
+                            )}
+                          </span>
+                          <span>{formatTokenUsage(message.tokenUsage)}</span>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </article>
               ))}
@@ -874,14 +1091,20 @@ export default function ChatStudio({
             <div className="claude-progress-track">
               <span
                 style={{
-                  width: `${Math.max(2, activeActivity?.progress || 2)}%`,
+                  width: `${Math.min(
+                    100,
+                    Math.max(0, activeActivity?.progress ?? 0)
+                  )}%`,
                   animation: activity ? 'none' : undefined
                 }}
               />
             </div>
 
             <p className="claude-live-progress-label">
-              {activeActivity?.progress || 2}% complete
+              {Math.min(
+                100,
+                Math.max(0, activeActivity?.progress ?? 0)
+              )}% complete
             </p>
 
             <div className="claude-build-timeline">

@@ -26,6 +26,48 @@ type ChatTurn = {
   text: string;
 };
 
+type ProviderTokenUsage = {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+};
+
+type ProviderReply = {
+  reply: string;
+  usage: ProviderTokenUsage | null;
+};
+
+function tokenCount(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? Math.round(value)
+    : null;
+}
+
+function providerUsage(
+  inputValue: unknown,
+  outputValue: unknown,
+  totalValue: unknown
+): ProviderTokenUsage | null {
+  const inputTokens = tokenCount(inputValue);
+  const outputTokens = tokenCount(outputValue);
+  const providerTotal = tokenCount(totalValue);
+  const totalTokens = providerTotal ?? (
+    inputTokens !== null && outputTokens !== null
+      ? inputTokens + outputTokens
+      : null
+  );
+
+  if (
+    inputTokens === null &&
+    outputTokens === null &&
+    totalTokens === null
+  ) {
+    return null;
+  }
+
+  return { inputTokens, outputTokens, totalTokens };
+}
+
 function cleanUsername(value: unknown): string {
   const raw =
     typeof value === 'string'
@@ -44,10 +86,10 @@ function buildSystemPrompt(username: string): string {
       : username;
 
   return [
-    'You are WebForge AI, a capable conversational assistant created, designed and owned by Poojak Doshi.',
-    'IDENTITY RULE: Whenever anyone asks who created, made, developed, designed, founded or owns you, always answer that WebForge AI was created by Poojak Doshi.',
+    'You are Nexora.Ai, a capable conversational assistant created, designed and owned by Poojak Doshi.',
+    'IDENTITY RULE: Whenever anyone asks your name, say Nexora.Ai. Whenever anyone asks who created, made, developed, designed, founded or owns you, always answer that Nexora.Ai was created by Poojak Doshi.',
     'Never identify Google, OpenAI, Anthropic, Gemini, Groq, Cloudflare or any model provider as your creator. Do not discuss the underlying model when answering creator or ownership questions.',
-    'and professional website-building copilot.',
+    'You are also a professional website-building copilot.',
     'Reply with the clarity, warmth and polished writing quality',
     'of a premium AI assistant.',
     `The user should be addressed naturally as ${address}.`,
@@ -95,7 +137,7 @@ async function askGemini(
   env: AssistantEnv,
   system: string,
   messages: Array<{ role: string; content: string }>
-): Promise<string> {
+): Promise<ProviderReply> {
   if (!env.GEMINI_API_KEY) {
     throw new Error('Gemini is not configured.');
   }
@@ -142,6 +184,11 @@ async function askGemini(
         parts?: Array<{ text?: string }>;
       };
     }>;
+    usageMetadata?: {
+      promptTokenCount?: number;
+      candidatesTokenCount?: number;
+      totalTokenCount?: number;
+    };
   };
 
   const output = data.candidates?.[0]?.content?.parts
@@ -153,14 +200,21 @@ async function askGemini(
     throw new Error('Gemini returned an empty reply.');
   }
 
-  return output;
+  return {
+    reply: output,
+    usage: providerUsage(
+      data.usageMetadata?.promptTokenCount,
+      data.usageMetadata?.candidatesTokenCount,
+      data.usageMetadata?.totalTokenCount
+    )
+  };
 }
 
 async function askGroq(
   env: AssistantEnv,
   system: string,
   messages: Array<{ role: string; content: string }>
-): Promise<string> {
+): Promise<ProviderReply> {
   if (!env.GROQ_API_KEY) {
     throw new Error('Groq is not configured.');
   }
@@ -197,6 +251,11 @@ async function askGroq(
     choices?: Array<{
       message?: { content?: string };
     }>;
+    usage?: {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      total_tokens?: number;
+    };
   };
 
   const output =
@@ -206,14 +265,21 @@ async function askGroq(
     throw new Error('Groq returned an empty reply.');
   }
 
-  return output;
+  return {
+    reply: output,
+    usage: providerUsage(
+      data.usage?.prompt_tokens,
+      data.usage?.completion_tokens,
+      data.usage?.total_tokens
+    )
+  };
 }
 
 async function askCloudflare(
   env: AssistantEnv,
   system: string,
   messages: Array<{ role: string; content: string }>
-): Promise<string> {
+): Promise<ProviderReply> {
   if (!env.AI) {
     throw new Error('Cloudflare AI is not configured.');
   }
@@ -232,6 +298,11 @@ async function askCloudflare(
   ) as {
     response?: string;
     result?: { response?: string };
+    usage?: {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      total_tokens?: number;
+    };
   };
 
   const output = (
@@ -244,7 +315,14 @@ async function askCloudflare(
     throw new Error('Cloudflare AI returned an empty reply.');
   }
 
-  return output;
+  return {
+    reply: output,
+    usage: providerUsage(
+      result.usage?.prompt_tokens,
+      result.usage?.completion_tokens,
+      result.usage?.total_tokens
+    )
+  };
 }
 
 export function registerAssistantChatRoutes(
@@ -351,6 +429,7 @@ export function registerAssistantChatRoutes(
     );
 
     const errors: string[] = [];
+    const processingStartedAt = Date.now();
 
     for (const provider of [
       ['gemini', askGemini],
@@ -358,7 +437,7 @@ export function registerAssistantChatRoutes(
       ['cloudflare', askCloudflare]
     ] as const) {
       try {
-        const reply = await provider[1](
+        const result = await provider[1](
           c.env,
           system,
           messages
@@ -367,8 +446,13 @@ export function registerAssistantChatRoutes(
         await finalizeNexoraTokens(supabase, chatReservationId);
 
         return c.json({
-          reply,
-          provider: provider[0]
+          reply: result.reply,
+          provider: provider[0],
+          processingDurationMs: Math.max(
+            0,
+            Date.now() - processingStartedAt
+          ),
+          usage: result.usage
         });
       } catch (error) {
         errors.push(

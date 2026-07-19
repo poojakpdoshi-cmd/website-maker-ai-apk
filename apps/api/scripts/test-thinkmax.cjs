@@ -155,7 +155,11 @@ async function main() {
     (apiSource.match(/thinkMax: thinkMaxFlagSchema/g) || []).length >= 2,
     'Both generation request schemas must validate ThinkMax.'
   );
-  assert.ok(apiSource.includes('thinkMax: parsed.data.thinkMax'));
+  assert.ok(
+    apiSource.includes('const thinkMaxResult = await runOptionalThinkMax(') &&
+      apiSource.includes('parsed.data.thinkMax === true'),
+    'The claimed generation request must pass ThinkMax to the planning flow.'
+  );
   assert.ok(apiSource.includes('runThinkMaxPlanningAgent'));
   assert.ok(
     apiSource.includes(".eq('status', 'queued')"),

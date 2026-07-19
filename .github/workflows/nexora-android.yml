@@ -93,6 +93,11 @@ jobs:
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
           test -x "$APKSIGNER"
           "$APKSIGNER" verify --verbose --print-certs "$APK"
+          APK_SIZE_BYTES="$(stat -c%s "$APK")"
+          APK_SIZE_MIB="$(awk "BEGIN {printf \"%.2f\", $APK_SIZE_BYTES / 1048576}")"
+          echo "SIGNED_APK_SIZE_BYTES=$APK_SIZE_BYTES"
+          echo "SIGNED_APK_SIZE_MIB=$APK_SIZE_MIB"
+          printf 'Signed release APK: %s bytes (%s MiB)\n' "$APK_SIZE_BYTES" "$APK_SIZE_MIB" >> "$GITHUB_STEP_SUMMARY"
           SHORT_SHA="${GITHUB_SHA::7}"
           cp "$APK" "Nexora-AI-${{ steps.version.outputs.version_name }}-${SHORT_SHA}.apk"
 

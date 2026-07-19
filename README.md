@@ -1,4 +1,4 @@
-# Website Maker AI V3 — APK-first build
+# Nexora.Ai — APK-first build
 
 This version removes the localhost admin webpage. User login, owner login, subscriber approval, dashboard, website generation, editing, GitHub/Vercel connection, and settings are all inside the Android APK.
 
