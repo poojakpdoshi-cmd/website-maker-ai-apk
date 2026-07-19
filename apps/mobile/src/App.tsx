@@ -19,6 +19,7 @@ import TokenWalletPanel from './TokenWalletPanel';
 import ThinkMaxControl from './ThinkMaxControl';
 import { ApiRequestError, requestJson } from './api-errors';
 import {
+  loginAdmin,
   loginNormalUser,
   type UsernameSession
 } from './auth-routing';
@@ -1529,6 +1530,21 @@ async function loadProjects(activeEmail = email, activeToken = token) {
     };
 
     try {
+      if (username.trim().includes("@")) {
+        const admin = await loginAdmin(config.apiBase, {
+          username: username.trim(),
+          password
+        });
+
+        localStorage.removeItem(userSessionKey);
+        localStorage.setItem("wmai-admin-session", admin.token);
+        setPassword("");
+        setForceUserLogin(false);
+        setMode("admin-dashboard");
+        replaceAppPath(adminLoginPath);
+        return;
+      }
+
       const data = await loginNormalUser(config.apiBase, loginPayload);
 
       if (supabase) {
