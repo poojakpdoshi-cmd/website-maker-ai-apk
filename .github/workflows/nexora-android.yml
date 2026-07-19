@@ -1,4 +1,4 @@
-name: Nexora Android APK
+name: Nexora Android Release APK
 
 on:
   push:
@@ -29,6 +29,9 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Install dependencies
         run: |
@@ -175,16 +178,89 @@ jobs:
           grep -q 'android:roundIcon="@mipmap/ic_launcher_round"' \
             android/app/src/main/AndroidManifest.xml
 
-      - name: Build debug APK
-        working-directory: apps/mobile/android
+      - name: Configure release version and signing
+        working-directory: apps/mobile
         run: |
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          set -euo pipefail
 
-      - name: Upload Nexora APK
+          if [[ ! "$GITHUB_RUN_NUMBER" =~ ^[1-9][0-9]*$ ]]; then
+            echo 'GITHUB_RUN_NUMBER must be a positive integer.' >&2
+            exit 1
+          fi
+
+          if (( ${#GITHUB_RUN_NUMBER} > 10 )); then
+            echo 'GITHUB_RUN_NUMBER is too large for an Android versionCode.' >&2
+            exit 1
+          fi
+
+          run_number=$((10#$GITHUB_RUN_NUMBER))
+          max_run_number=2097000000
+          if (( run_number > max_run_number )); then
+            echo 'GITHUB_RUN_NUMBER is too large for an Android versionCode.' >&2
+            exit 1
+          fi
+
+          version_code=$((3000000 + run_number))
+          printf 'NEXORA_VERSION_CODE=%s\n' "$version_code" >> "$GITHUB_ENV"
+          printf 'NEXORA_VERSION_NAME=3.0.%s\n' "$run_number" >> "$GITHUB_ENV"
+
+          cp \
+            ../../.github/gradle/nexora-release.gradle \
+            android/app/nexora-release.gradle
+          printf "\napply from: 'nexora-release.gradle'\n" \
+            >> android/app/build.gradle
+
+          grep -Fq 'applicationId "com.poojak.webforgeai"' \
+            android/app/build.gradle
+
+      - name: Decode release keystore
+        env:
+          NEXORA_KEYSTORE_BASE64: ${{ secrets.NEXORA_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+
+          : "${NEXORA_KEYSTORE_BASE64:?NEXORA_KEYSTORE_BASE64 is required}"
+          umask 077
+          printf '%s' "$NEXORA_KEYSTORE_BASE64" \
+            | base64 --decode \
+            > "$RUNNER_TEMP/nexora-release.keystore"
+          test -s "$RUNNER_TEMP/nexora-release.keystore"
+
+      - name: Build signed release APK
+        working-directory: apps/mobile/android
+        env:
+          NEXORA_KEYSTORE_PATH: ${{ runner.temp }}/nexora-release.keystore
+          NEXORA_KEYSTORE_PASSWORD: ${{ secrets.NEXORA_KEYSTORE_PASSWORD }}
+          NEXORA_KEY_ALIAS: ${{ secrets.NEXORA_KEY_ALIAS }}
+          NEXORA_KEY_PASSWORD: ${{ secrets.NEXORA_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          chmod +x gradlew
+          ./gradlew clean assembleRelease --no-daemon
+
+      - name: Verify signed release APK
+        run: |
+          set -euo pipefail
+
+          apk='apps/mobile/android/app/build/outputs/apk/release/app-release.apk'
+          test -f "$apk"
+
+          apksigner="$(find "$ANDROID_SDK_ROOT/build-tools" \
+            -type f -name apksigner -print \
+            | sort -V \
+            | tail -n 1)"
+          test -n "$apksigner"
+          "$apksigner" verify --verbose --print-certs "$apk"
+
+      - name: Upload Nexora release APK
         uses: actions/upload-artifact@v4
         with:
-          name: Nexora-AI-APK
-          path: apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          name: Nexora-AI-Release-APK
+          path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Remove temporary keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/nexora-release.keystore"
