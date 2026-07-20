@@ -347,7 +347,6 @@ async function checkAccess(env: Bindings, rawEmail: string, device?: DeviceInput
   if (existing) {
     await supabase.from('devices').update({ last_seen_at: new Date().toISOString(), device_name: device.deviceName, android_version: device.androidVersion }).eq('id', existing.id);
   } else {
-    if (activeDevices >= maxDevices) return { ok: false, status: 409, error: `Device limit reached. This account allows ${maxDevices} active devices.` };
     const { error: insertError } = await supabase.from('devices').insert({
       email,
       installation_id: device.installationId,
