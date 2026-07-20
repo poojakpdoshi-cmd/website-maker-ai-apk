@@ -251,7 +251,7 @@ function normalisePlan(raw: unknown, fallback: WebsitePlan): WebsitePlan {
       title: cleanText(section.title, 'Website section', 90),
       body: cleanText(section.body, 'Add useful information about this business here.', 520)
     }))
-    .slice(0, 7);
+    .slice(0, 10);
 
   return {
     businessName: cleanText(candidate.businessName, fallback.businessName, 60),
@@ -266,7 +266,7 @@ function normalisePlan(raw: unknown, fallback: WebsitePlan): WebsitePlan {
       background: typeof rawTheme.background === 'string' && hexColour.test(rawTheme.background) ? rawTheme.background : fallback.theme.background,
       text: typeof rawTheme.text === 'string' && hexColour.test(rawTheme.text) ? rawTheme.text : fallback.theme.text
     },
-    sections: sections.length >= 4 ? sections : fallback.sections,
+    sections: sections.length >= 5 ? sections : fallback.sections,
     contact: {
       phone: cleanOptionalText(rawContact.phone, 40) || fallback.contact?.phone,
       email: cleanOptionalText(rawContact.email, 160) || fallback.contact?.email,
@@ -282,7 +282,7 @@ async function callGemini(instruction: string, options: Options): Promise<unknow
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       contents: [{ parts: [{ text: instruction }] }],
-      generationConfig: { responseMimeType: 'application/json', temperature: 0.58 }
+      generationConfig: { responseMimeType: 'application/json', temperature: 0.72 }
     })
   });
   if (!response.ok) throw new Error(`AI request failed: ${response.status}`);
@@ -293,14 +293,17 @@ async function callGemini(instruction: string, options: Options): Promise<unknow
 }
 
 const DESIGN_DIRECTOR_RULES = `
-Act as Nexora AI Design Director, not a generic template filler.
-Study the user's industry, audience, goals, personality, requested features and visual references before planning.
-Choose one coherent visual direction that genuinely fits the request: luxury cinematic, editorial statement, futuristic glass, conversion commerce, playful expressive, organic calm, minimal refined, or modern professional.
-Do not reuse the same page structure or generic copy for unrelated businesses.
-Create a memorable hero concept, category-specific information architecture and five to seven distinct sections.
-Section titles and bodies must sound written for this exact business, not like placeholders.
+Act as Nexora AI's senior product strategist, conversion copywriter and award-level digital design director.
+Study the user's industry, audience, business model, product maturity, requested features, tone and visual references before planning.
+Never produce a generic template plan. Every response must feel written for this exact business and this exact request.
+Create a real multi-page information architecture with five to eight useful pages. Pages must have distinct purposes, not duplicated content.
+Write six to ten substantial sections. Each section body must contain specific customer-facing copy, not instructions such as "showcase", "explain", "add" or "highlight".
+Create a memorable hero promise, one clear primary call to action, one secondary action, measurable trust signals, product proof, objections, testimonials, pricing or conversion content when relevant.
+Avoid empty claims such as innovative, cutting-edge, world-class or best-in-class unless the request provides evidence.
+Choose a coherent visual direction that fits the market: aurora intelligence, orbital product system, editorial technology, monolithic precision, immersive glass, conversion commerce, expressive launch or human technology.
+Vary the page structure, section rhythm, hierarchy and visual emphasis between unrelated requests.
 Use a deliberate four-colour palette with accessible contrast. All colours must be six-digit hex values.
-Only include features that are useful for the request. Prefer practical conversion actions such as booking, enquiry, WhatsApp, catalogue, gallery, testimonials, FAQ, map or pricing when relevant.
+Only include useful features. Prefer practical actions such as demo, trial, enquiry, WhatsApp, booking, catalogue, gallery, testimonials, FAQ, integrations, pricing or map when relevant.
 Pages must be concise slugs. contact may contain only phone, email and address explicitly supplied by the user.
 Return valid JSON only with exactly these top-level keys: businessName, websiteType, tagline, pages, features, theme, sections, contact.
 theme must contain style, primary, secondary, background and text.
