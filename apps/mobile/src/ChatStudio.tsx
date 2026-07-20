@@ -52,6 +52,29 @@ export type LiveBuildActivity = {
   }>;
 };
 
+
+function isTerminalActivityStatus(status: string): boolean {
+  return ['completed', 'failed', 'cancelled', 'canceled'].includes(
+    status.toLowerCase()
+  );
+}
+
+function mergeActivity(
+  current: LiveBuildActivity | undefined,
+  incoming: LiveBuildActivity
+): LiveBuildActivity {
+  if (!current || current.jobId !== incoming.jobId) return incoming;
+
+  const currentTerminal = isTerminalActivityStatus(current.status);
+  const incomingTerminal = isTerminalActivityStatus(incoming.status);
+
+  if (currentTerminal && !incomingTerminal) return current;
+  if (incomingTerminal && !currentTerminal) return incoming;
+
+  if ((incoming.progress ?? 0) < (current.progress ?? 0)) return current;
+  return incoming;
+}
+
 type Props = {
   busy: boolean;
   userKey: string;
@@ -380,7 +403,7 @@ export default function ChatStudio({
 
       return {
         ...current,
-        [chatId]: activity
+        [chatId]: mergeActivity(current[chatId], activity)
       };
     });
   }, [activity]);
@@ -551,7 +574,10 @@ export default function ChatStudio({
         (nextActivity) => {
           setChatActivities((current) => ({
             ...current,
-            [requestChatId]: nextActivity
+            [requestChatId]: mergeActivity(
+              current[requestChatId],
+              nextActivity
+            )
           }));
         }
       );
@@ -563,6 +589,21 @@ export default function ChatStudio({
       }
 
       setHasProject(true);
+      setChatActivities((current) => {
+        const existing = current[requestChatId];
+        if (!existing) return current;
+
+        return {
+          ...current,
+          [requestChatId]: {
+            ...existing,
+            status: 'completed',
+            progress: 100,
+            currentAgent: null,
+            currentStep: 'preview_ready'
+          }
+        };
+      });
 
       appendMessageToChat(
         requestChatId,

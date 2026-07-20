@@ -1254,8 +1254,41 @@ html[data-nexora-theme='light'] .claude-composer-area {
   }
 }
 
+
+/* Nexora mobile stability patch */
+.claude-live-room-backdrop {
+  overscroll-behavior: contain;
+}
+
 @media (max-width: 620px) {
+  .claude-live-room-backdrop {
+    place-items: end center;
+    padding: 10px;
+  }
+
+  .claude-live-room {
+    width: 100%;
+    max-height: min(76dvh, 720px);
+    padding: 16px;
+    border-radius: 24px;
+    overscroll-behavior: contain;
+  }
+
+  .claude-live-room h2 {
+    font-size: clamp(25px, 7vw, 34px);
+  }
+
+  .claude-live-status {
+    margin-top: 14px;
+    padding: 12px;
+  }
+
+  .claude-build-timeline {
+    padding-bottom: 4px;
+  }
+
   .claude-composer-area {
-    transform: translateY(14px);
+    transform: none;
+    padding-bottom: max(4px, env(safe-area-inset-bottom));
   }
 }
