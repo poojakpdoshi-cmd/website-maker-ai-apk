@@ -9,8 +9,14 @@ export type GenerationLaunchPayload = {
     data: string;
     name?: string;
   };
+  generationMode?: 'standard' | 'saas-motion';
+  motionBrief?: string;
+  motionFrameCount?: number;
+  motionDurationSeconds?: number;
   thinkMax?: true;
 };
+
+// NEXORA_SAAS_MOTION_MODE_V1
 
 export type GenerationJobState =
   | 'queued'

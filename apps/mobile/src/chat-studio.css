@@ -1292,3 +1292,26 @@ html[data-nexora-theme='light'] .claude-composer-area {
     padding-bottom: max(4px, env(safe-area-inset-bottom));
   }
 }
+
+
+/* NEXORA_SAAS_MOTION_MODE_V1 */
+.saas-motion-control{width:min(840px,100%);margin:0 auto 9px;padding:9px;border:1px solid rgba(124,77,255,.28);border-radius:18px;background:linear-gradient(135deg,rgba(54,134,255,.08),transparent 58%),var(--nx-surface-soft);box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+.saas-motion-tabs{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.saas-motion-tabs button{min-height:39px!important;padding:8px 12px!important;border:1px solid var(--nx-border)!important;border-radius:12px!important;background:transparent!important;color:var(--nx-muted)!important;box-shadow:none!important;transform:none!important;font-size:11px!important;font-weight:800!important}
+.saas-motion-tabs button.active{border-color:rgba(67,220,255,.44)!important;background:linear-gradient(135deg,rgba(54,134,255,.22),rgba(124,77,255,.16))!important;color:var(--nx-text)!important;box-shadow:0 0 20px rgba(54,134,255,.08)!important}
+.saas-motion-details{display:grid;gap:9px;padding:10px 3px 1px}
+.saas-motion-details>div:first-child{display:grid;gap:3px}
+.saas-motion-details strong{color:var(--nx-text);font-size:11px}
+.saas-motion-details small{color:var(--nx-muted);font-size:9px;line-height:1.45}
+.saas-motion-details textarea{width:100%;min-height:72px;padding:11px 12px!important;border:1px solid var(--nx-border)!important;border-radius:13px!important;outline:none;background:rgba(2,7,24,.46)!important;color:var(--nx-text)!important;box-shadow:none!important;font-size:12px!important;line-height:1.5;resize:vertical}
+.saas-motion-details textarea:focus{border-color:rgba(67,220,255,.52)!important;box-shadow:0 0 0 3px rgba(67,220,255,.07)!important}
+.saas-motion-upload{min-height:42px!important;padding:10px 12px!important;border-color:rgba(67,220,255,.32)!important;border-radius:13px!important;background:rgba(54,134,255,.11)!important;color:var(--nx-cyan)!important;box-shadow:none!important;transform:none!important;font-size:10px!important;font-weight:800!important;text-align:left}
+.saas-motion-cost{color:#b9a9ff!important}
+.saas-motion-preview{display:grid;grid-template-columns:94px minmax(0,1fr) 40px;gap:10px;align-items:center;margin-bottom:9px;padding:8px;border:1px solid rgba(124,77,255,.32);border-radius:15px;background:rgba(63,38,118,.12)}
+.saas-motion-preview img{width:94px;height:56px;display:block;object-fit:cover;border-radius:10px;background:#030617}
+.saas-motion-preview>div{min-width:0;display:grid;gap:3px}
+.saas-motion-preview strong,.saas-motion-preview small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.saas-motion-preview strong{font-size:10px}
+.saas-motion-preview small{color:var(--nx-muted);font-size:9px}
+.saas-motion-preview button{width:34px!important;min-width:34px!important;height:34px!important;min-height:34px!important;padding:0!important;border-radius:50%!important;background:rgba(124,77,255,.12)!important;box-shadow:none!important;transform:none!important}
+@media(max-width:620px){.saas-motion-control{border-radius:15px}.saas-motion-preview{grid-template-columns:76px minmax(0,1fr) 36px}.saas-motion-preview img{width:76px;height:48px}}

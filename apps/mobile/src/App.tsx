@@ -10,6 +10,7 @@ import { Browser } from '@capacitor/browser';
 import AdminPanelV5 from './AdminPanelV5';
 import ChatStudio, {
   type ChatAssistantReply,
+  type GenerationModeOptions,
   type LiveBuildActivity
 } from './ChatStudio';
 
@@ -1608,6 +1609,7 @@ async function loadProjects(activeEmail = email, activeToken = token) {
       name: string;
       dataUrl: string;
     } | null,
+    generationOptions?: GenerationModeOptions | null,
     activityListener?: (activity: LiveBuildActivity) => void
   ): Promise<GenerateResponse | null> {
     const basePrompt =
@@ -1623,11 +1625,27 @@ async function loadProjects(activeEmail = email, activeToken = token) {
         )
         .join('\n');
 
+    const motionInstruction =
+      generationOptions?.mode === 'saas-motion'
+        ? [
+            '\n\n[SAAS MOTION MODE — HIGH DETAIL]',
+            'The attached image is a chronological contact sheet extracted locally',
+            `from ${generationOptions.motionFrameCount || 6} keyframes of a`,
+            `${generationOptions.motionDurationSeconds?.toFixed(1) || 'short'} second animation reference.`,
+            'Study the visual rhythm, direction of movement, depth, easing,',
+            'layering, transitions, dashboard motion and camera-like movement.',
+            'Recreate the motion language with performant CSS and React.',
+            'Do not copy trademarks, logos, text or copyrighted brand assets.',
+            `User motion brief: ${generationOptions.motionBrief || 'Create an original SaaS experience using this motion language.'}`
+          ].join('\n')
+        : '';
+
     const activePrompt = [
       basePrompt,
       capabilityInstruction
         ? `\nEnabled capability packs:\n${capabilityInstruction}`
-        : ''
+        : '',
+      motionInstruction
     ]
       .join('')
       .slice(0, 6000);
@@ -1668,6 +1686,16 @@ async function loadProjects(activeEmail = email, activeToken = token) {
       installationId,
       prompt: activePrompt,
       image: visionImage,
+      generationMode: generationOptions?.mode || 'standard',
+      ...(generationOptions?.motionBrief
+        ? { motionBrief: generationOptions.motionBrief }
+        : {}),
+      ...(typeof generationOptions?.motionFrameCount === 'number'
+        ? { motionFrameCount: generationOptions.motionFrameCount }
+        : {}),
+      ...(typeof generationOptions?.motionDurationSeconds === 'number'
+        ? { motionDurationSeconds: generationOptions.motionDurationSeconds }
+        : {}),
       ...(thinkMaxEnabled ? { thinkMax: true } : {})
     };
 
@@ -2254,11 +2282,17 @@ async function openProject(projectId: string) {
             tokenUsage: data.usage || null
           };
         }}
-        onGenerate={async (chatPrompt, chatImage, activityListener) => {
+        onGenerate={async (
+          chatPrompt,
+          chatImage,
+          generationOptions,
+          activityListener
+        ) => {
           const generated = await generateWebsite(
             chatPrompt,
             true,
             chatImage,
+            generationOptions,
             activityListener
           );
 
@@ -3079,3 +3113,5 @@ function SetupScreen({ config, onSave, onCancel, error }: { config: RuntimeConfi
   return <main className="login-shell"><section className="login-card"><div className="brand-mark logo-shell"><img src="/nexora-logo.png" alt="Nexora.Ai" /></div><p className="eyebrow">ONE-TIME APP SETUP</p><h1>Connect the APK</h1><p className="muted">Paste the public backend URL and the two public Supabase values. These can be changed later without rebuilding the APK.</p><form onSubmit={(event) => { event.preventDefault(); onSave(draft); }}><label>Backend API URL<input value={draft.apiBase} onChange={(event) => setDraft({ ...draft, apiBase: event.target.value })} placeholder="https://your-api.workers.dev" /></label><label>Supabase Project URL<input value={draft.supabaseUrl} onChange={(event) => setDraft({ ...draft, supabaseUrl: event.target.value })} placeholder="https://xxxxx.supabase.co" /></label><label>Supabase anon/public key<input value={draft.supabaseAnonKey} onChange={(event) => setDraft({ ...draft, supabaseAnonKey: event.target.value })} placeholder="eyJ..." /></label><button className="nx-button nx-button--primary">Save and continue</button></form>{onCancel && <button className="nx-button nx-button--compact small-button" onClick={onCancel}>Cancel</button>}{error && <p className="error">{error}</p>}<p className="tiny">Never paste the Supabase service-role key or Gemini key here.</p></section></main>;
 }
 
+
+// NEXORA_SAAS_MOTION_MODE_V1

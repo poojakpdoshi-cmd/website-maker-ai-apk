@@ -994,11 +994,19 @@ app.post('/generation-jobs/start', async (c) => {
       data: z.string().min(20).max(12000000),
       name: z.string().max(180).optional()
     }).optional(),
+    generationMode: z.enum(['standard', 'saas-motion']).optional().default('standard'),
+    motionBrief: z.string().min(20).max(1800).optional(),
+    motionFrameCount: z.number().int().min(4).max(12).optional(),
+    motionDurationSeconds: z.number().min(0.1).max(21).optional(),
     thinkMax: thinkMaxFlagSchema
   }).safeParse(await c.req.json().catch(() => null));
 
   if (!parsed.success) {
     return c.json({ error: 'A valid website request is required.' }, 400);
+  }
+
+  if (parsed.data.generationMode === 'saas-motion' && (!parsed.data.image || !parsed.data.motionBrief)) {
+    return c.json({ error: 'SaaS Motion Mode requires extracted animation frames and a motion brief.' }, 400);
   }
 
   const email = parsed.data.email.toLowerCase();
@@ -1032,9 +1040,14 @@ app.post('/generation-jobs/start', async (c) => {
       current_step: 'request_received',
       current_agent: 'Orchestrator',
       progress: 2,
-      workflow_mode: parsed.data.thinkMax === true
-        ? 'thinkmax'
-        : 'auto',
+      workflow_mode:
+        parsed.data.generationMode === 'saas-motion'
+          ? parsed.data.thinkMax === true
+            ? 'saas-motion-thinkmax'
+            : 'saas-motion'
+          : parsed.data.thinkMax === true
+            ? 'thinkmax'
+            : 'auto',
       started_at: now,
       updated_at: now
     });
@@ -1181,9 +1194,18 @@ app.post('/generate', async (c) => {
       data: z.string().min(20).max(12000000),
       name: z.string().max(180).optional()
     }).optional(),
+    generationMode: z.enum(['standard', 'saas-motion']).optional().default('standard'),
+    motionBrief: z.string().min(20).max(1800).optional(),
+    motionFrameCount: z.number().int().min(4).max(12).optional(),
+    motionDurationSeconds: z.number().min(0.1).max(21).optional(),
     thinkMax: thinkMaxFlagSchema
   }).safeParse(await c.req.json().catch(() => null));
   if (!parsed.success) return c.json({ error: 'Email, device identifier and a detailed website prompt are required.' }, 400);
+
+  if (parsed.data.generationMode === 'saas-motion' && (!parsed.data.image || !parsed.data.motionBrief)) {
+    return c.json({ error: 'SaaS Motion Mode requires extracted animation frames and a motion brief.' }, 400);
+  }
+
   const email = parsed.data.email.toLowerCase();
   const access = await requireUser(c, email, parsed.data.installationId);
   if (!access) return c.json({ error: 'Your login session is missing or expired.' }, 401);
@@ -1241,9 +1263,14 @@ app.post('/generate', async (c) => {
         current_step: 'planning',
         current_agent: 'Planner',
         progress: 8,
-        workflow_mode: parsed.data.thinkMax === true
-          ? 'thinkmax'
-          : 'auto',
+        workflow_mode:
+          parsed.data.generationMode === 'saas-motion'
+            ? parsed.data.thinkMax === true
+              ? 'saas-motion-thinkmax'
+              : 'saas-motion'
+            : parsed.data.thinkMax === true
+              ? 'thinkmax'
+              : 'auto',
         started_at: new Date().toISOString()
       });
 
@@ -1261,6 +1288,9 @@ app.post('/generate', async (c) => {
       await getNexoraOperationCost(supabase, 'website_generation', 100) +
       (parsed.data.image
         ? await getNexoraOperationCost(supabase, 'image_analysis', 15)
+        : 0) +
+      (parsed.data.generationMode === 'saas-motion'
+        ? await getNexoraOperationCost(supabase, 'saas_motion_analysis', 45)
         : 0);
 
     const reservation = await reserveNexoraTokens(
@@ -1269,9 +1299,11 @@ app.post('/generate', async (c) => {
       generationCost,
       'website_generation',
       jobId,
-      parsed.data.image
-        ? 'Website generation with image analysis'
-        : 'Complete website generation'
+      parsed.data.generationMode === 'saas-motion'
+        ? 'SaaS Motion website generation with keyframe analysis'
+        : parsed.data.image
+          ? 'Website generation with image analysis'
+          : 'Complete website generation'
     );
 
     generationReservationId = reservation.reservationId;
@@ -1294,6 +1326,20 @@ app.post('/generate', async (c) => {
   }
 
   try {
+    if (parsed.data.generationMode === 'saas-motion') {
+      await recordGenerationEvent(supabase, {
+        jobId,
+        email,
+        eventType: 'motion_reference_ready',
+        agentName: 'Motion Director',
+        title: 'Animation reference prepared',
+        detail: `Analysing ${parsed.data.motionFrameCount || 6} keyframes from a ${parsed.data.motionDurationSeconds?.toFixed(1) || 'short'} second reference.`,
+        progress: 10,
+        jobStatus: 'running',
+        metadata: { frameCount: parsed.data.motionFrameCount || 6, durationSeconds: parsed.data.motionDurationSeconds || null, extraTokenCost: 45 }
+      });
+    }
+
     await recordGenerationEvent(supabase, {
       jobId,
       email,
@@ -3242,3 +3288,5 @@ export default {
     );
   }
 };
+
+// NEXORA_SAAS_MOTION_MODE_V1

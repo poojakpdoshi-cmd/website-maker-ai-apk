@@ -28,6 +28,13 @@ export type ChatAssistantReply = {
   tokenUsage: ChatTokenUsage | null;
 };
 
+export type GenerationModeOptions = {
+  mode: 'standard' | 'saas-motion';
+  motionBrief?: string;
+  motionFrameCount?: number;
+  motionDurationSeconds?: number;
+};
+
 type WorkspaceTab =
   | 'create'
   | 'preview'
@@ -87,6 +94,7 @@ type Props = {
       name: string;
       dataUrl: string;
     } | null,
+    generationOptions?: GenerationModeOptions,
     activityListener?: (activity: LiveBuildActivity) => void
   ) => Promise<ChatResult>;
   onChat: (prompt: string, history: ChatHistoryItem[], attachment?: { name: string; dataUrl: string } | null) => Promise<ChatAssistantReply>;
@@ -269,6 +277,7 @@ export default function ChatStudio({
 }: Props) {
   const imageRef = useRef<HTMLInputElement | null>(null);
   const documentRef = useRef<HTMLInputElement | null>(null);
+  const videoRef = useRef<HTMLInputElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
 
   const [draft, setDraft] = useState('');
@@ -281,6 +290,16 @@ export default function ChatStudio({
   const [image, setImage] = useState<{
     name: string;
     dataUrl: string;
+  } | null>(null);
+  const [generationMode, setGenerationMode] =
+    useState<'standard' | 'saas-motion'>('standard');
+  const [motionBrief, setMotionBrief] = useState('');
+  const [motionProcessing, setMotionProcessing] = useState(false);
+  const [motionReference, setMotionReference] = useState<{
+    name: string;
+    dataUrl: string;
+    frameCount: number;
+    durationSeconds: number;
   } | null>(null);
 
   const storageKey =
@@ -463,6 +482,127 @@ export default function ChatStudio({
     });
   }
 
+  async function selectMotionReference(
+    event: ChangeEvent<HTMLInputElement>
+  ): Promise<void> {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    if (!file.type.startsWith('video/')) {
+      setMessages((current) => [
+        ...current,
+        createMessage('assistant', 'Select an MP4, WebM or MOV animation reference.')
+      ]);
+      return;
+    }
+
+    if (file.size > 30 * 1024 * 1024) {
+      setMessages((current) => [
+        ...current,
+        createMessage('assistant', 'The motion reference must be smaller than 30 MB.')
+      ]);
+      return;
+    }
+
+    setMotionProcessing(true);
+    const objectUrl = URL.createObjectURL(file);
+    const video = document.createElement('video');
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'auto';
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        video.addEventListener('loadedmetadata', () => resolve(), { once: true });
+        video.addEventListener(
+          'error',
+          () => reject(new Error('The selected video could not be decoded.')),
+          { once: true }
+        );
+        video.src = objectUrl;
+      });
+
+      const duration = Number(video.duration);
+      if (!Number.isFinite(duration) || duration <= 0) {
+        throw new Error('The selected video has an invalid duration.');
+      }
+      if (duration > 20.5) {
+        throw new Error('Use a short 5–20 second animation reference.');
+      }
+
+      const frameCount = 6;
+      const frameWidth = 320;
+      const frameHeight = 180;
+      const canvas = document.createElement('canvas');
+      canvas.width = frameWidth * 3;
+      canvas.height = frameHeight * 2;
+      const context = canvas.getContext('2d');
+      if (!context) {
+        throw new Error('Your device could not create the motion contact sheet.');
+      }
+      context.fillStyle = '#050816';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+
+      async function seekTo(time: number): Promise<void> {
+        await new Promise<void>((resolve, reject) => {
+          const done = () => { cleanup(); resolve(); };
+          const fail = () => {
+            cleanup();
+            reject(new Error('A video frame could not be extracted.'));
+          };
+          const cleanup = () => {
+            video.removeEventListener('seeked', done);
+            video.removeEventListener('error', fail);
+          };
+          video.addEventListener('seeked', done, { once: true });
+          video.addEventListener('error', fail, { once: true });
+          video.currentTime = Math.min(
+            Math.max(0, time),
+            Math.max(0, duration - 0.05)
+          );
+        });
+      }
+
+      for (let index = 0; index < frameCount; index += 1) {
+        const time = duration * ((index + 0.5) / frameCount);
+        await seekTo(time);
+        const x = (index % 3) * frameWidth;
+        const y = Math.floor(index / 3) * frameHeight;
+        context.drawImage(video, x, y, frameWidth, frameHeight);
+        context.fillStyle = 'rgba(3,6,22,.78)';
+        context.fillRect(x + 8, y + 8, 62, 24);
+        context.fillStyle = '#fff';
+        context.font = '600 12px system-ui';
+        context.fillText(`${time.toFixed(1)}s`, x + 18, y + 25);
+      }
+
+      setMotionReference({
+        name: file.name,
+        dataUrl: canvas.toDataURL('image/jpeg', 0.82),
+        frameCount,
+        durationSeconds: duration
+      });
+      setGenerationMode('saas-motion');
+    } catch (error) {
+      setMotionReference(null);
+      setMessages((current) => [
+        ...current,
+        createMessage(
+          'assistant',
+          error instanceof Error
+            ? error.message
+            : 'The motion reference could not be processed.'
+        )
+      ]);
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+      video.removeAttribute('src');
+      video.load();
+      setMotionProcessing(false);
+    }
+  }
+
   function selectAttachment(
     event: ChangeEvent<HTMLInputElement>
   ): void {
@@ -514,6 +654,29 @@ export default function ChatStudio({
 
     const websiteBuildRequest = isWebsiteBuildRequest(request);
 
+    if (
+      websiteBuildRequest &&
+      generationMode === 'saas-motion' &&
+      (
+        motionProcessing ||
+        !motionReference ||
+        motionBrief.trim().length < 20
+      )
+    ) {
+      setMessages((current) => [
+        ...current,
+        createMessage(
+          'assistant',
+          motionProcessing
+            ? 'Wait while Nexora extracts the animation keyframes.'
+            : !motionReference
+              ? 'SaaS Motion Mode requires a 5–20 second reference video.'
+              : 'Describe the required motion in at least 20 characters.'
+        )
+      ]);
+      return;
+    }
+
     if (websiteBuildRequest && (busy || buildActive)) {
       setMessages((current) => [
         ...current,
@@ -525,14 +688,27 @@ export default function ChatStudio({
       return;
     }
 
-    const attachedImage = image;
+    const selectedGenerationMode = generationMode;
+    const selectedMotionReference = motionReference;
+    const selectedMotionBrief = motionBrief.trim();
+    const attachedImage =
+      selectedGenerationMode === 'saas-motion' && selectedMotionReference
+        ? {
+            name: `${selectedMotionReference.name}-motion-contact-sheet.jpg`,
+            dataUrl: selectedMotionReference.dataUrl
+          }
+        : image;
     const chatHistory = messages;
     const requestChatId = activeChatId;
     const requestStartedAt = Date.now();
     const userMessage = createMessage(
       'user',
-      image
-        ? `${request}\n\nAttached: ${image.name}`
+      attachedImage
+        ? `${request}\n\nAttached: ${
+            selectedGenerationMode === 'saas-motion'
+              ? `motion reference ${selectedMotionReference?.name || ''}`
+              : attachedImage.name
+          }`
         : request
     );
     const pendingMessages = [...chatHistory, userMessage];
@@ -544,6 +720,7 @@ export default function ChatStudio({
 
     setDraft('');
     setImage(null);
+    setMotionReference(null);
 
     if (!websiteBuildRequest) {
       try {
@@ -571,6 +748,15 @@ export default function ChatStudio({
       const generated = await onGenerate(
         request,
         attachedImage,
+        {
+          mode: selectedGenerationMode,
+          motionBrief:
+            selectedGenerationMode === 'saas-motion'
+              ? selectedMotionBrief
+              : undefined,
+          motionFrameCount: selectedMotionReference?.frameCount,
+          motionDurationSeconds: selectedMotionReference?.durationSeconds
+        },
         (nextActivity) => {
           setChatActivities((current) => ({
             ...current,
@@ -948,6 +1134,65 @@ export default function ChatStudio({
             </button>
           )}
 
+          <section className="saas-motion-control">
+            <div className="saas-motion-tabs" role="group" aria-label="Website generation mode">
+              <button
+                type="button"
+                className={generationMode === 'standard' ? 'active' : ''}
+                onClick={() => setGenerationMode('standard')}
+                disabled={busy || buildActive || motionProcessing}
+              >
+                Standard
+              </button>
+              <button
+                type="button"
+                className={generationMode === 'saas-motion' ? 'active' : ''}
+                onClick={() => setGenerationMode('saas-motion')}
+                disabled={busy || buildActive || motionProcessing}
+              >
+                ✦ SaaS Motion
+              </button>
+            </div>
+
+            {generationMode === 'saas-motion' && (
+              <div className="saas-motion-details">
+                <div>
+                  <strong>Animation reference required</strong>
+                  <small>
+                    Six keyframes are extracted on your phone. The original
+                    video is not uploaded.
+                  </small>
+                </div>
+
+                <textarea
+                  value={motionBrief}
+                  onChange={(event) => setMotionBrief(event.target.value)}
+                  maxLength={1800}
+                  rows={3}
+                  placeholder="Define scroll rhythm, card movement, transitions, dashboard animation, depth, easing and what must remain original..."
+                />
+
+                <button
+                  type="button"
+                  className="saas-motion-upload"
+                  onClick={() => videoRef.current?.click()}
+                  disabled={motionProcessing || busy || buildActive}
+                >
+                  {motionProcessing
+                    ? 'Extracting 6 keyframes…'
+                    : motionReference
+                      ? `✓ ${motionReference.name} · ${motionReference.durationSeconds.toFixed(1)}s`
+                      : 'Upload 5–20 sec animation video'}
+                </button>
+
+                <small className="saas-motion-cost">
+                  Uses 45 extra Nexora Tokens, in addition to normal website
+                  and image-analysis cost.
+                </small>
+              </div>
+            )}
+          </section>
+
           <ThinkMaxControl
             enabled={thinkMaxEnabled}
             onChange={onThinkMaxChange}
@@ -961,6 +1206,26 @@ export default function ChatStudio({
             className="claude-composer"
             onSubmit={submit}
           >
+            {motionReference && generationMode === 'saas-motion' && (
+              <div className="saas-motion-preview">
+                <img src={motionReference.dataUrl} alt="Extracted animation keyframes" />
+                <div>
+                  <strong>{motionReference.name}</strong>
+                  <small>
+                    {motionReference.frameCount} frames ·{' '}
+                    {motionReference.durationSeconds.toFixed(1)} seconds
+                  </small>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMotionReference(null)}
+                  aria-label="Remove motion reference"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+
             {image && (
               <div className="claude-image-preview">
                 {image.dataUrl.startsWith('data:image/') ? (
@@ -1067,6 +1332,16 @@ export default function ChatStudio({
                   onChange={selectAttachment}
                 />
 
+                <input
+                  ref={videoRef}
+                  className="chat-file-input"
+                  type="file"
+                  accept="video/mp4,video/webm,video/quicktime"
+                  onChange={(event) => {
+                    void selectMotionReference(event);
+                  }}
+                />
+
                 <span className="claude-tool-label">
                   {image ? image.name : 'Attach'}
                 </span>
@@ -1078,7 +1353,16 @@ export default function ChatStudio({
                 disabled={
                   draft.trim().length < 1 ||
                   ((busy || buildActive) &&
-                    isWebsiteBuildRequest(draft))
+                    isWebsiteBuildRequest(draft)) ||
+                  (
+                    isWebsiteBuildRequest(draft) &&
+                    generationMode === 'saas-motion' &&
+                    (
+                      motionProcessing ||
+                      !motionReference ||
+                      motionBrief.trim().length < 20
+                    )
+                  )
                 }
                 aria-label="Send message"
               >
@@ -1219,3 +1503,5 @@ export default function ChatStudio({
     </section>
   );
 }
+
+// NEXORA_SAAS_MOTION_MODE_V1
