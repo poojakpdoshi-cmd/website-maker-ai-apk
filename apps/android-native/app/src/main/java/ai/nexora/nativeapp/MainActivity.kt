@@ -4,317 +4,38 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import ai.nexora.nativeapp.data.NexoraApi
-import ai.nexora.nativeapp.data.SessionStore
+import ai.nexora.nativeapp.data.*
 import ai.nexora.nativeapp.ui.theme.NexoraTheme
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.DisableSelection
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.launch
 
-data class ChatMessage(
-    val role: String,
-    val text: String
-)
-
-class MainActivity : ComponentActivity() {
-    private lateinit var sessionStore: SessionStore
-    private lateinit var installationId: String
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
-
-        sessionStore = SessionStore(this)
-        installationId = sessionStore.installationId()
-
-        setContent {
-            NexoraTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    var loggedIn by remember {
-                        mutableStateOf(sessionStore.token() != null)
-                    }
-
-                    if (loggedIn) {
-                        NativeChatScreen(
-                            sessionStore = sessionStore,
-                            installationId = installationId,
-                            onLogout = {
-                                sessionStore.clear()
-                                loggedIn = false
-                            }
-                        )
-                    } else {
-                        NativeLoginScreen(
-                            installationId = installationId,
-                            onSuccess = { result ->
-                                sessionStore.save(
-                                    result.token,
-                                    result.username,
-                                    result.internalEmail
-                                )
-                                loggedIn = true
-                            }
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun NativeLoginScreen(
-    installationId: String,
-    onSuccess: (ai.nexora.nativeapp.data.LoginResult) -> Unit
-) {
-    var username by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var loading by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf("") }
-    val scope = rememberCoroutineScope()
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(22.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Image(
-                painter = painterResource(id = R.drawable.nexora_logo),
-                contentDescription = "Nexora.Ai logo",
-                modifier = Modifier.size(82.dp),
-                contentScale = ContentScale.Fit
-            )
-
-            Text(
-                text = "Nexora.Ai",
-                style = MaterialTheme.typography.displaySmall,
-                fontWeight = FontWeight.Black
-            )
-
-            Text(
-                text = "Build powerful AI websites natively",
-                color = MaterialTheme.colorScheme.secondary
-            )
-
-            OutlinedTextField(
-                modifier = Modifier.fillMaxWidth(),
-                value = username,
-                onValueChange = { username = it },
-                label = { Text("Username") },
-                singleLine = true
-            )
-
-            OutlinedTextField(
-                modifier = Modifier.fillMaxWidth(),
-                value = password,
-                onValueChange = { password = it },
-                label = { Text("Password") },
-                singleLine = true
-            )
-
-            AnimatedVisibility(error.isNotBlank()) {
-                Text(error, color = MaterialTheme.colorScheme.error)
-            }
-
-            Button(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(54.dp),
-                enabled = !loading &&
-                    username.isNotBlank() &&
-                    password.isNotBlank(),
-                onClick = {
-                    loading = true
-                    error = ""
-
-                    scope.launch {
-                        runCatching {
-                            NexoraApi.login(
-                                username.trim(),
-                                password,
-                                installationId
-                            )
-                        }.onSuccess(onSuccess)
-                            .onFailure {
-                                error = it.message ?: "Login failed."
-                            }
-
-                        loading = false
-                    }
-                }
-            ) {
-                Text(if (loading) "Signing in…" else "Sign in")
-            }
-
-            DisableSelection {
-                Text(
-                    text = "Made by Poojak Doshi",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun NativeChatScreen(
-    sessionStore: SessionStore,
-    installationId: String,
-    onLogout: () -> Unit
-) {
-    var input by remember { mutableStateOf("") }
-    var loading by remember { mutableStateOf(false) }
-    val messages = remember {
-        mutableStateListOf(
-            ChatMessage(
-                "assistant",
-                "Nexora native shell is ready. Chat is fully native—no WebView."
-            )
-        )
-    }
-    val scope = rememberCoroutineScope()
-
-    Column(modifier = Modifier.fillMaxSize()) {
-        Surface(
-            tonalElevation = 4.dp,
-            color = MaterialTheme.colorScheme.surface
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(
-                        start = 18.dp,
-                        end = 12.dp,
-                        top = 16.dp,
-                        bottom = 12.dp
-                    ),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        "Nexora.Ai",
-                        fontWeight = FontWeight.Black
-                    )
-                    Text(
-                        "Native Android · Phase 1",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.secondary
-                    )
-                }
-
-                TextButton(onClick = onLogout) {
-                    Text("Logout")
-                }
-            }
-        }
-
-        LazyColumn(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-            contentPadding = PaddingValues(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            items(messages) { message ->
-                DisableSelection {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(
-                            if (message.role == "user") .86f else .94f
-                        ),
-                        shape = RoundedCornerShape(18.dp),
-                        color = if (message.role == "user") {
-                            MaterialTheme.colorScheme.primaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        }
-                    ) {
-                        Text(
-                            modifier = Modifier.padding(14.dp),
-                            text = message.text
-                        )
-                    }
-                }
-            }
-        }
-
-        Surface(
-            tonalElevation = 8.dp,
-            color = MaterialTheme.colorScheme.surface
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    modifier = Modifier.weight(1f),
-                    value = input,
-                    onValueChange = { input = it },
-                    placeholder = { Text("Message Nexora…") },
-                    maxLines = 5
-                )
-
-                Button(
-                    enabled = input.isNotBlank() && !loading,
-                    onClick = {
-                        val request = input.trim()
-                        input = ""
-                        messages += ChatMessage("user", request)
-                        loading = true
-
-                        scope.launch {
-                            val reply = runCatching {
-                                NexoraApi.sendChat(
-                                    token = sessionStore.token()
-                                        ?: error("Session missing."),
-                                    installationId = installationId,
-                                    username = sessionStore.username()
-                                        ?: "Poojak",
-                                    email = sessionStore.email()
-                                        ?: error("Email missing."),
-                                    message = request
-                                )
-                            }.getOrElse {
-                                "Error: ${it.message ?: "Request failed."}"
-                            }
-
-                            messages += ChatMessage("assistant", reply)
-                            loading = false
-                        }
-                    }
-                ) {
-                    Text(if (loading) "…" else "↑")
-                }
-            }
-        }
-    }
-}
-
-// NEXORA_NATIVE_LOGIN_THEME_REPAIR_V1
+data class ChatMessage(val role:String,val text:String)
+private enum class NativeTab{CHAT,PROJECTS,ACCOUNT}
+class MainActivity:ComponentActivity(){private lateinit var sessionStore:SessionStore;private lateinit var installationId:String
+ override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);enableEdgeToEdge();sessionStore=SessionStore(this);installationId=sessionStore.installationId();setContent{NexoraTheme{Surface(Modifier.fillMaxSize(),color=MaterialTheme.colorScheme.background){var loggedIn by remember{mutableStateOf(sessionStore.token()!=null)};if(loggedIn) NativeHome(sessionStore,installationId){sessionStore.clear();loggedIn=false}else NativeLoginScreen(installationId){sessionStore.save(it.token,it.username,it.internalEmail);loggedIn=true}}}}}}
+@Composable private fun NativeLoginScreen(installationId:String,onSuccess:(LoginResult)->Unit){var username by remember{mutableStateOf("")};var password by remember{mutableStateOf("")};var loading by remember{mutableStateOf(false)};var error by remember{mutableStateOf("")};val scope=rememberCoroutineScope();Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(22.dp)){Column(Modifier.align(Alignment.Center).fillMaxWidth(),verticalArrangement=Arrangement.spacedBy(14.dp)){Image(painterResource(R.drawable.nexora_logo),"Nexora logo",Modifier.size(86.dp),contentScale=ContentScale.Fit);Text("Nexora.Ai",style=MaterialTheme.typography.displaySmall,fontWeight=FontWeight.Black);Text("Native Android experience",color=MaterialTheme.colorScheme.secondary);OutlinedTextField(username,{username=it},Modifier.fillMaxWidth(),label={Text("Username")},singleLine=true);OutlinedTextField(password,{password=it},Modifier.fillMaxWidth(),label={Text("Password")},singleLine=true,visualTransformation=PasswordVisualTransformation());AnimatedVisibility(error.isNotBlank()){Text(error,color=MaterialTheme.colorScheme.error)};Button({loading=true;error="";scope.launch{runCatching{NexoraApi.login(username.trim(),password,installationId)}.onSuccess(onSuccess).onFailure{error=it.message?:"Login failed."};loading=false}},Modifier.fillMaxWidth().height(54.dp),enabled=!loading&&username.isNotBlank()&&password.isNotBlank()){Text(if(loading)"Signing in…" else "Sign in")};DisableSelection{Text("Made by Poojak Doshi")}}}}
+@Composable private fun NativeHome(s:SessionStore,id:String,onLogout:()->Unit){var tab by remember{mutableStateOf(NativeTab.CHAT)};Scaffold(topBar={TopAppBar(title={Column{Text("Nexora.Ai",fontWeight=FontWeight.Black);Text("Native Android · Phase 2",style=MaterialTheme.typography.labelSmall)}})},bottomBar={NavigationBar{NavigationBarItem(tab==NativeTab.CHAT,{tab=NativeTab.CHAT},{Icon(Icons.Default.Chat,null)},{Text("Chat")});NavigationBarItem(tab==NativeTab.PROJECTS,{tab=NativeTab.PROJECTS},{Icon(Icons.Default.Folder,null)},{Text("Projects")});NavigationBarItem(tab==NativeTab.ACCOUNT,{tab=NativeTab.ACCOUNT},{Icon(Icons.Default.AccountCircle,null)},{Text("Account")})}}){p->Box(Modifier.padding(p).fillMaxSize()){when(tab){NativeTab.CHAT->ChatScreen(s,id);NativeTab.PROJECTS->ProjectsScreen(s,id);NativeTab.ACCOUNT->AccountScreen(s,id,onLogout)}}}}
+@Composable private fun ChatScreen(s:SessionStore,id:String){var input by remember{mutableStateOf("")};var loading by remember{mutableStateOf(false)};val messages=remember{mutableStateListOf(ChatMessage("assistant","Nexora native chat is ready."))};val scope=rememberCoroutineScope();Column(Modifier.fillMaxSize()){LazyColumn(Modifier.weight(1f).fillMaxWidth(),contentPadding=PaddingValues(14.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){items(messages){m->DisableSelection{Surface(shape=RoundedCornerShape(18.dp),color=if(m.role=="user")MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant){Text(m.text,Modifier.padding(14.dp))}}}};Row(Modifier.fillMaxWidth().padding(12.dp),verticalAlignment=Alignment.Bottom,horizontalArrangement=Arrangement.spacedBy(8.dp)){OutlinedTextField(input,{input=it},Modifier.weight(1f),placeholder={Text("Message Nexora…")},maxLines=5);Button(enabled=input.isNotBlank()&&!loading,onClick={val q=input.trim();input="";messages+=ChatMessage("user",q);loading=true;scope.launch{val r=runCatching{NexoraApi.sendChat(s.token()?:error("Session missing"),id,s.username()?:"Poojak",s.email()?:error("Email missing"),q)}.getOrElse{"Error: ${it.message}"};messages+=ChatMessage("assistant",r);loading=false}}){Text(if(loading)"…" else "↑")}}}}
+@Composable private fun ProjectsScreen(s:SessionStore,id:String){var projects by remember{mutableStateOf<List<NativeProject>>(emptyList())};var selected by remember{mutableStateOf<NativeProjectDetail?>(null)};var loading by remember{mutableStateOf(true)};var error by remember{mutableStateOf("")};val scope=rememberCoroutineScope();fun load(){loading=true;error="";scope.launch{runCatching{NexoraApi.listProjects(s.token()?:error("Session missing"),id,s.email()?:error("Email missing"))}.onSuccess{projects=it}.onFailure{error=it.message?:"Could not load projects"};loading=false}};LaunchedEffect(Unit){load()};selected?.let{d->Column(Modifier.fillMaxSize().padding(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){TextButton({selected=null}){Text("← Projects")};Text(d.project.name,style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold);Text("${d.project.websiteType} · ${d.project.framework}");Text("Status: ${d.project.status}");Text("Version: ${d.versionNumber}");ElevatedCard(Modifier.fillMaxWidth().weight(1f)){Column(Modifier.padding(16.dp)){Text("Preview source",fontWeight=FontWeight.Bold);Spacer(Modifier.height(8.dp));DisableSelection{Text(if(d.previewHtml.isBlank())"No preview available." else d.previewHtml.take(1600),style=MaterialTheme.typography.bodySmall)}}}};return};Column(Modifier.fillMaxSize().padding(14.dp)){Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Text("Your projects",style=MaterialTheme.typography.headlineSmall,modifier=Modifier.weight(1f));IconButton({load()}){Icon(Icons.Default.Refresh,"Refresh")}};if(loading)LinearProgressIndicator(Modifier.fillMaxWidth());if(error.isNotBlank())Text(error,color=MaterialTheme.colorScheme.error);LazyColumn(verticalArrangement=Arrangement.spacedBy(10.dp),contentPadding=PaddingValues(vertical=12.dp)){items(projects,key={it.id}){p->ElevatedCard(Modifier.fillMaxWidth().clickable{scope.launch{loading=true;runCatching{NexoraApi.getProject(s.token()?:error("Session missing"),id,s.email()?:error("Email missing"),p.id)}.onSuccess{selected=it}.onFailure{error=it.message?:"Could not open project"};loading=false}}){Column(Modifier.padding(16.dp)){Text(p.name,fontWeight=FontWeight.Bold);Text("${p.websiteType} · ${p.framework}",color=MaterialTheme.colorScheme.secondary);Text(p.status)}}}}}}
+@Composable private fun AccountScreen(s:SessionStore,id:String,onLogout:()->Unit){Column(Modifier.fillMaxSize().padding(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)){Text("Account",style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold);ElevatedCard(Modifier.fillMaxWidth()){Column(Modifier.padding(16.dp)){Text("Username: ${s.username().orEmpty()}");Text("Email: ${s.email().orEmpty()}");Text("Device ID: ${id.take(8)}…")}};Button(onLogout,Modifier.fillMaxWidth()){Text("Logout")};DisableSelection{Text("Nexora.Ai · Made by Poojak Doshi")}}}
