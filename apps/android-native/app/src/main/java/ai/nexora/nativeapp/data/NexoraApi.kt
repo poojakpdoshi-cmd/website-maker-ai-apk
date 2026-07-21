@@ -12,6 +12,8 @@ import java.net.URLEncoder
 data class LoginResult(val token:String,val username:String,val internalEmail:String)
 data class NativeProject(val id:String,val name:String,val websiteType:String,val status:String,val framework:String,val createdAt:String,val updatedAt:String)
 data class NativeProjectDetail(val project:NativeProject,val previewHtml:String,val versionNumber:Int)
+data class NativeGenerationStart(val jobId:String,val status:String,val progress:Int)
+data class NativeGenerationStatus(val jobId:String,val status:String,val progress:Int,val projectId:String?=null,val currentAgent:String?=null,val currentStep:String?=null,val errorMessage:String?=null)
 
 object NexoraApi {
  suspend fun login(username:String,password:String,installationId:String):LoginResult=withContext(Dispatchers.IO){
@@ -30,6 +32,22 @@ object NexoraApi {
   val v=r.optJSONObject("version"); NativeProjectDetail(r.getJSONObject("project").toProject(),v?.optString("preview_html").orEmpty(),v?.optInt("version_number",0)?:0)
  }
  private fun JSONObject.toProject()=NativeProject(optString("id"),optString("name","Untitled project"),optString("website_type","Website"),optString("status","Unknown"),optString("framework","Unknown"),optString("created_at"),optString("updated_at"))
+    suspend fun startGeneration(token:String,installationId:String,email:String,prompt:String,generationMode:String="standard",thinkMax:Boolean=false):NativeGenerationStart=withContext(Dispatchers.IO){
+        val body=JSONObject().put("email",email).put("installationId",installationId).put("prompt",prompt).put("generationMode",generationMode).put("thinkMax",thinkMax)
+        val r=requestJson("/generation-jobs/start","POST",body,token,installationId)
+        val id=r.optString("_jobId").ifBlank{r.optString("jobId").ifBlank{r.optString("id")}}
+        require(id.isNotBlank()){"Generation job ID missing"}
+        NativeGenerationStart(id,r.optString("status","queued"),r.optInt("progress",0))
+    }
+
+    suspend fun getGenerationStatus(token:String,installationId:String,email:String,jobId:String):NativeGenerationStatus=withContext(Dispatchers.IO){
+        val path="/generation-jobs/$jobId?email="+URLEncoder.encode(email,Charsets.UTF_8.name())
+        val r=requestJson(path,"GET",token=token,installationId=installationId)
+        val j=r.optJSONObject("job")?:r
+        fun value(a:String,b:String)=j.optString(a).ifBlank{j.optString(b)}.takeIf{it.isNotBlank()}
+        NativeGenerationStatus(jobId,j.optString("status","queued"),j.optInt("progress",0),value("projectId","project_id"),value("currentAgent","current_agent"),value("currentStep","current_step"),value("errorMessage","error_message"))
+    }
+
  private fun requestJson(path:String,method:String,body:JSONObject?=null,token:String?=null,installationId:String?=null):JSONObject{
   val c=URL(BuildConfig.API_BASE+path).openConnection() as HttpURLConnection
   try{c.requestMethod=method;c.connectTimeout=20000;c.readTimeout=90000;c.setRequestProperty("Accept","application/json");token?.let{c.setRequestProperty("Authorization","Bearer $it")};installationId?.let{c.setRequestProperty("X-Device-Id",it)}
