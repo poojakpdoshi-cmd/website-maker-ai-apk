@@ -1,6 +1,7 @@
 package ai.nexora.nativeapp.data
 
 import android.content.Context
+import java.util.UUID
 
 class SessionStore(context: Context) {
     private val preferences = context.getSharedPreferences(
@@ -19,6 +20,15 @@ class SessionStore(context: Context) {
     fun token(): String? = preferences.getString("token", null)
     fun username(): String? = preferences.getString("username", null)
     fun email(): String? = preferences.getString("email", null)
+
+    fun installationId(): String {
+        val existing = preferences.getString("installation_id", null)
+        if (!existing.isNullOrBlank()) return existing
+
+        val created = UUID.randomUUID().toString()
+        preferences.edit().putString("installation_id", created).apply()
+        return created
+    }
 
     fun clear() {
         preferences.edit().clear().apply()
