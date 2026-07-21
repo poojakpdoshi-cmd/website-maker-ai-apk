@@ -14,6 +14,9 @@ data class NativeProject(val id:String,val name:String,val websiteType:String,va
 data class NativeProjectDetail(val project:NativeProject,val previewHtml:String,val versionNumber:Int)
 data class NativeGenerationStart(val jobId:String,val status:String,val progress:Int)
 data class NativeGenerationStatus(val jobId:String,val status:String,val progress:Int,val projectId:String?=null,val currentAgent:String?=null,val currentStep:String?=null,val errorMessage:String?=null)
+data class AdminLoginResult(val token:String,val username:String,val expiresAt:String)
+data class AdminSummary(val activeSubscribers:Int=0,val pendingPayments:Int=0,val websitesGenerated:Int=0,val failedJobs:Int=0,val activeDevices:Int=0,val deployments:Int=0)
+data class AdminAccount(val id:String,val username:String,val internalEmail:String,val status:String,val planId:String,val planName:String,val tokenBalance:Int,val lifetimeUsed:Int)
 
 object NexoraApi {
  suspend fun login(username:String,password:String,installationId:String):LoginResult=withContext(Dispatchers.IO){
@@ -47,6 +50,15 @@ object NexoraApi {
         fun value(a:String,b:String)=j.optString(a).ifBlank{j.optString(b)}.takeIf{it.isNotBlank()}
         NativeGenerationStatus(jobId,j.optString("status","queued"),j.optInt("progress",0),value("projectId","project_id"),value("currentAgent","current_agent"),value("currentStep","current_step"),value("errorMessage","error_message"))
     }
+
+
+ suspend fun adminLogin(username:String,password:String):AdminLoginResult=withContext(Dispatchers.IO){val r=requestJson("/admin/auth/login","POST",JSONObject().put("username",username).put("password",password));AdminLoginResult(r.getString("token"),r.optString("username",username),r.optString("expiresAt"))}
+ suspend fun adminSummary(token:String):AdminSummary=withContext(Dispatchers.IO){val r=requestJson("/admin/summary","GET",token=token);AdminSummary(r.optInt("activeSubscribers"),r.optInt("pendingPayments"),r.optInt("websitesGenerated"),r.optInt("failedJobs"),r.optInt("activeDevices"),r.optInt("deployments"))}
+ suspend fun adminAccounts(token:String):List<AdminAccount> = withContext(Dispatchers.IO){val x=requestJson("/admin/accounts","GET",token=token).optJSONArray("accounts")?:JSONArray();buildList{for(i in 0 until x.length()){val j=x.getJSONObject(i);add(AdminAccount(j.optString("id"),j.optString("username"),j.optString("internal_email"),j.optString("status","unknown"),j.optString("plan_id"),j.optString("plan_name"),j.optInt("token_balance"),j.optInt("lifetime_used")))}}}
+ suspend fun adminCreateAccount(token:String,username:String,password:String)=withContext(Dispatchers.IO){requestJson("/admin/accounts/create","POST",JSONObject().put("username",username).put("password",password),token)}
+ suspend fun adminChangePassword(token:String,id:String,password:String)=withContext(Dispatchers.IO){requestJson("/admin/accounts/${URLEncoder.encode(id,Charsets.UTF_8.name())}/password","PATCH",JSONObject().put("password",password),token)}
+ suspend fun adminDeleteAccount(token:String,id:String)=withContext(Dispatchers.IO){requestJson("/admin/accounts/${URLEncoder.encode(id,Charsets.UTF_8.name())}","DELETE",token=token)}
+ suspend fun adminLogout(token:String)=withContext(Dispatchers.IO){requestJson("/admin/auth/logout","POST",token=token)}
 
  private fun requestJson(path:String,method:String,body:JSONObject?=null,token:String?=null,installationId:String?=null):JSONObject{
   val c=URL(BuildConfig.API_BASE+path).openConnection() as HttpURLConnection

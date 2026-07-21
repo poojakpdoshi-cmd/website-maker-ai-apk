@@ -21,6 +21,16 @@ class SessionStore(context: Context) {
     fun username(): String? = preferences.getString("username", null)
     fun email(): String? = preferences.getString("email", null)
 
+    fun saveAdminToken(token: String) {
+        preferences.edit().putString("admin_token", token).apply()
+    }
+
+    fun adminToken(): String? = preferences.getString("admin_token", null)
+
+    fun clearAdmin() {
+        preferences.edit().remove("admin_token").apply()
+    }
+
     fun installationId(): String {
         val existing = preferences.getString("installation_id", null)
         if (!existing.isNullOrBlank()) return existing
@@ -31,6 +41,6 @@ class SessionStore(context: Context) {
     }
 
     fun clear() {
-        preferences.edit().clear().apply()
+        preferences.edit().remove("token").remove("username").remove("email").apply()
     }
 }
