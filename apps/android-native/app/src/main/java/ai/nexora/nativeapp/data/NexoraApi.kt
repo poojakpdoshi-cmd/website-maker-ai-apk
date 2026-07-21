@@ -17,6 +17,10 @@ data class NativeGenerationStatus(val jobId:String,val status:String,val progres
 data class AdminLoginResult(val token:String,val username:String,val expiresAt:String)
 data class AdminSummary(val activeSubscribers:Int=0,val pendingPayments:Int=0,val websitesGenerated:Int=0,val failedJobs:Int=0,val activeDevices:Int=0,val deployments:Int=0)
 data class AdminAccount(val id:String,val username:String,val internalEmail:String,val status:String,val planId:String,val planName:String,val tokenBalance:Int,val lifetimeUsed:Int)
+data class NativeIntegrationAccount(val accountName:String?=null)
+data class NativeIntegrationStatus(val github:NativeIntegrationAccount?=null,val vercel:NativeIntegrationAccount?=null)
+data class NativeEditResult(val projectId:String,val versionNumber:Int,val previewHtml:String)
+data class NativePublishResult(val productionUrl:String,val state:String)
 
 object NexoraApi {
  suspend fun login(username:String,password:String,installationId:String):LoginResult=withContext(Dispatchers.IO){
@@ -59,6 +63,25 @@ object NexoraApi {
  suspend fun adminChangePassword(token:String,id:String,password:String)=withContext(Dispatchers.IO){requestJson("/admin/accounts/${URLEncoder.encode(id,Charsets.UTF_8.name())}/password","PATCH",JSONObject().put("password",password),token)}
  suspend fun adminDeleteAccount(token:String,id:String)=withContext(Dispatchers.IO){requestJson("/admin/accounts/${URLEncoder.encode(id,Charsets.UTF_8.name())}","DELETE",token=token)}
  suspend fun adminLogout(token:String)=withContext(Dispatchers.IO){requestJson("/admin/auth/logout","POST",token=token)}
+
+
+ suspend fun integrationStatus(token:String,installationId:String,email:String):NativeIntegrationStatus=withContext(Dispatchers.IO){
+  val r=requestJson("/integrations/status?email="+URLEncoder.encode(email,Charsets.UTF_8.name()),"GET",token=token,installationId=installationId)
+  fun account(name:String):NativeIntegrationAccount?=r.optJSONObject(name)?.let{NativeIntegrationAccount(it.optString("external_account_name").takeIf{v->v.isNotBlank()})}
+  NativeIntegrationStatus(account("github"),account("vercel"))
+ }
+ suspend fun connectIntegration(token:String,installationId:String,email:String,provider:String,rawToken:String)=withContext(Dispatchers.IO){
+  require(provider=="github"||provider=="vercel"){"Unsupported integration provider"}
+  requestJson("/integrations/$provider/token","POST",JSONObject().put("email",email).put("installationId",installationId).put("token",rawToken),token,installationId)
+ }
+ suspend fun editProject(token:String,installationId:String,email:String,projectId:String,instruction:String):NativeEditResult=withContext(Dispatchers.IO){
+  val r=requestJson("/projects/${URLEncoder.encode(projectId,Charsets.UTF_8.name())}/edit","POST",JSONObject().put("email",email).put("installationId",installationId).put("instruction",instruction),token,installationId)
+  NativeEditResult(r.optString("projectId",projectId),r.optInt("versionNumber",0),r.optString("previewHtml"))
+ }
+ suspend fun publishProject(token:String,installationId:String,email:String,projectId:String):NativePublishResult=withContext(Dispatchers.IO){
+  val r=requestJson("/projects/${URLEncoder.encode(projectId,Charsets.UTF_8.name())}/publish","POST",JSONObject().put("email",email).put("installationId",installationId),token,installationId)
+  NativePublishResult(r.optString("productionUrl"),r.optString("state","unknown"))
+ }
 
  private fun requestJson(path:String,method:String,body:JSONObject?=null,token:String?=null,installationId:String?=null):JSONObject{
   val c=URL(BuildConfig.API_BASE+path).openConnection() as HttpURLConnection
