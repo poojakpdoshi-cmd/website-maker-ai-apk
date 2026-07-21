@@ -21,11 +21,11 @@ object NexoraApi {
  suspend fun sendChat(token:String,installationId:String,username:String,email:String,message:String):String=withContext(Dispatchers.IO){
   requestJson("/assistant/chat","POST",JSONObject().put("message",message).put("username",username).put("email",email).put("installationId",installationId).put("history",JSONArray()),token,installationId).optString("reply","Nexora did not return a reply.")
  }
- suspend fun listProjects(token:String,installationId:String,email:String):List<NativeProject>=withContext(Dispatchers.IO){
+ suspend fun listProjects(token:String,installationId:String,email:String):List<NativeProject> = withContext(Dispatchers.IO){
   val a=requestJson("/projects?email="+URLEncoder.encode(email,Charsets.UTF_8.name()),"GET",token=token,installationId=installationId).optJSONArray("projects")?:JSONArray()
   buildList{for(i in 0 until a.length()) add(a.getJSONObject(i).toProject())}
  }
- suspend fun getProject(token:String,installationId:String,email:String,projectId:String):NativeProjectDetail=withContext(Dispatchers.IO){
+ suspend fun getProject(token:String,installationId:String,email:String,projectId:String):NativeProjectDetail = withContext(Dispatchers.IO){
   val r=requestJson("/projects/$projectId?email="+URLEncoder.encode(email,Charsets.UTF_8.name()),"GET",token=token,installationId=installationId)
   val v=r.optJSONObject("version"); NativeProjectDetail(r.getJSONObject("project").toProject(),v?.optString("preview_html").orEmpty(),v?.optInt("version_number",0)?:0)
  }
