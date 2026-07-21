@@ -1,3 +1,4 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 package ai.nexora.nativeapp
 
 import android.os.Bundle
