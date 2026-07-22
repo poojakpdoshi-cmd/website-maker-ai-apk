@@ -30,6 +30,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,6 +48,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.DisableSelection
@@ -671,7 +673,16 @@ private fun NativeHome(
     )
     val scope = rememberCoroutineScope()
     val chatMessages = remember {
-        mutableStateListOf(NexoraWelcomeMessage)
+        mutableStateListOf<ChatMessage>().apply {
+            addAll(
+                sessionStore.chatHistory().map {
+                    ChatMessage(it.first, it.second)
+                }
+            )
+            if (isEmpty()) {
+                add(NexoraWelcomeMessage)
+            }
+        }
     }
 
     fun openScreen(destination: NativeScreen) {
@@ -904,7 +915,7 @@ private fun NativeHome(
                             installationId
                         )
 
-                        NativeScreen.PROJECTS -> ProjectsScreen(
+                        NativeScreen.PROJECTS -> ProjectWorkspaceScreen(
                             sessionStore,
                             installationId
                         )
@@ -1134,10 +1145,16 @@ private fun ChatScreen(
         }
     }
 
+    val latestMessageText = messages.lastOrNull()?.text
+    LaunchedEffect(messages.size, latestMessageText) {
+        delay(300)
+        sessionStore.saveChatHistory(
+            messages.map { it.role to it.text }
+        )
+    }
+
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .imePadding()
+        modifier = Modifier.fillMaxSize()
     ) {
         LazyColumn(
             state = listState,
@@ -1285,6 +1302,7 @@ private fun ChatScreen(
         GlassPanel(
             modifier = Modifier
                 .fillMaxWidth()
+                .imePadding()
                 .navigationBarsPadding()
                 .padding(
                     horizontal = 12.dp,
@@ -2521,6 +2539,7 @@ private fun AdminScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
                 .padding(vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -2534,6 +2553,12 @@ private fun AdminScreen(
                 selected = section == "users",
                 onClick = { section = "users" },
                 label = { Text("Users") }
+            )
+
+            FilterChip(
+                selected = section == "billing",
+                onClick = { section = "billing" },
+                label = { Text("Billing") }
             )
 
             OutlinedButton(
@@ -2571,7 +2596,13 @@ private fun AdminScreen(
             )
         }
 
-        if (section == "overview") {
+        if (section == "billing") {
+            AdminBillingSection(
+                token = token,
+                accounts = accounts,
+                onReload = { load(token) }
+            )
+        } else if (section == "overview") {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(vertical = 12.dp),

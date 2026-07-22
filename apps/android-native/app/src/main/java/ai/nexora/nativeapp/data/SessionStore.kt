@@ -4,6 +4,8 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import org.json.JSONArray
+import org.json.JSONObject
 import java.security.KeyStore
 import java.util.UUID
 import javax.crypto.Cipher
@@ -139,6 +141,77 @@ class SessionStore(context: Context) {
 
     fun adminToken(): String? = readSecret("admin_token")
 
+    fun saveChatHistory(messages: List<Pair<String, String>>) {
+        val history = JSONArray()
+        val selected = mutableListOf<Pair<String, String>>()
+        var storedCharacters = 0
+
+        messages.asReversed().take(60).forEach { (role, rawText) ->
+            val safeRole = when (role) {
+                "user" -> "user"
+                "assistant" -> "assistant"
+                else -> return@forEach
+            }
+
+            if (storedCharacters >= 300_000) {
+                return@forEach
+            }
+
+            val text = rawText
+                .trim()
+                .take(16_000)
+                .take(300_000 - storedCharacters)
+
+            if (text.isBlank()) {
+                return@forEach
+            }
+
+            storedCharacters += text.length
+            selected += safeRole to text
+        }
+
+        selected.asReversed().forEach { (role, text) ->
+            history.put(
+                JSONObject()
+                    .put("role", role)
+                    .put("text", text)
+            )
+        }
+
+        saveSecret("chat_history_v1", history.toString())
+    }
+
+    fun chatHistory(): List<Pair<String, String>> {
+        val raw = readSecret("chat_history_v1")
+            ?: return emptyList()
+
+        return runCatching {
+            val history = JSONArray(raw)
+
+            buildList {
+                for (index in 0 until history.length()) {
+                    val item = history.optJSONObject(index)
+                        ?: continue
+                    val role = item.optString("role")
+                    val text = item.optString("text")
+
+                    if (
+                        (role == "user" || role == "assistant") &&
+                        text.isNotBlank()
+                    ) {
+                        add(role to text.take(16_000))
+                    }
+                }
+            }.takeLast(60)
+        }.getOrDefault(emptyList())
+    }
+
+    fun clearChatHistory() {
+        preferences.edit()
+            .remove("chat_history_v1")
+            .apply()
+    }
+
     fun clearAdmin() {
         preferences.edit().remove("admin_token").apply()
     }
@@ -165,6 +238,7 @@ class SessionStore(context: Context) {
             .remove("token")
             .remove("username")
             .remove("email")
+            .remove("chat_history_v1")
             .apply()
     }
 }

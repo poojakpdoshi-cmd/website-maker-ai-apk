@@ -29,7 +29,42 @@ data class NativeProject(
 data class NativeProjectDetail(
     val project: NativeProject,
     val previewHtml: String,
-    val versionNumber: Int
+    val versionNumber: Int,
+    val fileCount: Int = 0,
+    val filePaths: List<String> = emptyList()
+)
+
+data class NativeSourceFile(
+    val path: String,
+    val content: String
+)
+
+data class NativeProjectSource(
+    val projectId: String,
+    val projectName: String,
+    val versionNumber: Int,
+    val files: List<NativeSourceFile>
+)
+
+data class NativeCmsSettings(
+    val enabled: Boolean,
+    val publicSlug: String,
+    val contentVersion: Int
+)
+
+data class NativeCmsDocument(
+    val id: String,
+    val collection: String,
+    val slug: String,
+    val title: String,
+    val status: String,
+    val contentJson: String,
+    val updatedAt: String
+)
+
+data class NativeCmsWorkspace(
+    val settings: NativeCmsSettings?,
+    val documents: List<NativeCmsDocument>
 )
 
 data class NativeImageAttachment(
@@ -77,7 +112,14 @@ data class AdminAccount(
     val planId: String,
     val planName: String,
     val tokenBalance: Int,
-    val lifetimeUsed: Int
+    val lifetimeUsed: Int,
+    val planMonthlyTokens: Int = 0,
+    val subscriptionStatus: String = "active",
+    val cycleEnd: String = "",
+    val renewsAt: String = "",
+    val monthlyBalance: Int = 0,
+    val topupBalance: Int = 0,
+    val reservedBalance: Int = 0
 )
 
 data class NativeIntegrationAccount(
@@ -200,11 +242,294 @@ object NexoraApi {
         )
 
         val version = response.optJSONObject("version")
+        val rawPaths = version?.optJSONArray("file_paths")
+        val filePaths = buildList {
+            if (rawPaths != null) {
+                for (index in 0 until rawPaths.length()) {
+                    rawPaths.optString(index)
+                        .takeIf { it.isNotBlank() }
+                        ?.let(::add)
+                }
+            }
+        }
 
         NativeProjectDetail(
             response.getJSONObject("project").toProject(),
             version?.optString("preview_html").orEmpty(),
-            version?.optInt("version_number", 0) ?: 0
+            version?.optInt("version_number", 0) ?: 0,
+            version?.optInt("file_count", filePaths.size)
+                ?: filePaths.size,
+            filePaths
+        )
+    }
+
+    suspend fun getProjectSource(
+        token: String,
+        installationId: String,
+        email: String,
+        projectId: String
+    ): NativeProjectSource = withContext(Dispatchers.IO) {
+        val response = requestJson(
+            "/projects/" +
+                URLEncoder.encode(
+                    projectId,
+                    Charsets.UTF_8.name()
+                ) +
+                "/source?email=" +
+                URLEncoder.encode(
+                    email,
+                    Charsets.UTF_8.name()
+                ),
+            "GET",
+            token = token,
+            installationId = installationId
+        )
+
+        val values = response.optJSONArray("files")
+            ?: JSONArray()
+
+        NativeProjectSource(
+            projectId = response.optString(
+                "projectId",
+                projectId
+            ),
+            projectName = response.optString(
+                "projectName",
+                "nexora-project"
+            ),
+            versionNumber = response.optInt(
+                "versionNumber",
+                1
+            ),
+            files = buildList {
+                for (index in 0 until values.length()) {
+                    val file = values.optJSONObject(index)
+                        ?: continue
+                    val path = file.optString("path")
+                    if (path.isNotBlank()) {
+                        add(
+                            NativeSourceFile(
+                                path = path,
+                                content = file.optString(
+                                    "content"
+                                )
+                            )
+                        )
+                    }
+                }
+            }
+        )
+    }
+
+    suspend fun getCmsWorkspace(
+        token: String,
+        installationId: String,
+        email: String,
+        projectId: String
+    ): NativeCmsWorkspace = withContext(Dispatchers.IO) {
+        val response = requestJson(
+            "/cms/projects/" +
+                URLEncoder.encode(
+                    projectId,
+                    Charsets.UTF_8.name()
+                ) +
+                "?email=" +
+                URLEncoder.encode(
+                    email,
+                    Charsets.UTF_8.name()
+                ),
+            "GET",
+            token = token,
+            installationId = installationId
+        )
+
+        response.toCmsWorkspace()
+    }
+
+    suspend fun bootstrapCms(
+        token: String,
+        installationId: String,
+        email: String,
+        projectId: String
+    ): NativeCmsWorkspace = withContext(Dispatchers.IO) {
+        requestJson(
+            "/cms/projects/" +
+                URLEncoder.encode(
+                    projectId,
+                    Charsets.UTF_8.name()
+                ) +
+                "/bootstrap?email=" +
+                URLEncoder.encode(
+                    email,
+                    Charsets.UTF_8.name()
+                ),
+            "POST",
+            JSONObject(),
+            token,
+            installationId
+        )
+
+        getCmsWorkspace(
+            token,
+            installationId,
+            email,
+            projectId
+        )
+    }
+
+    suspend fun createCmsDocument(
+        token: String,
+        installationId: String,
+        email: String,
+        projectId: String,
+        collection: String,
+        slug: String,
+        title: String,
+        content: JSONObject
+    ): NativeCmsDocument = withContext(Dispatchers.IO) {
+        requestJson(
+            "/cms/projects/" +
+                URLEncoder.encode(
+                    projectId,
+                    Charsets.UTF_8.name()
+                ) +
+                "/documents?email=" +
+                URLEncoder.encode(
+                    email,
+                    Charsets.UTF_8.name()
+                ),
+            "POST",
+            JSONObject()
+                .put("collection", collection)
+                .put("slug", slug)
+                .put("title", title)
+                .put("status", "draft")
+                .put("content", content)
+                .put("seo", JSONObject())
+                .put("sortOrder", 0),
+            token,
+            installationId
+        ).getJSONObject("document").toCmsDocument()
+    }
+
+    suspend fun updateCmsDocument(
+        token: String,
+        installationId: String,
+        email: String,
+        documentId: String,
+        collection: String,
+        slug: String,
+        title: String,
+        content: JSONObject
+    ): NativeCmsDocument = withContext(Dispatchers.IO) {
+        requestJson(
+            "/cms/documents/" +
+                URLEncoder.encode(
+                    documentId,
+                    Charsets.UTF_8.name()
+                ) +
+                "?email=" +
+                URLEncoder.encode(
+                    email,
+                    Charsets.UTF_8.name()
+                ),
+            "PATCH",
+            JSONObject()
+                .put("collection", collection)
+                .put("slug", slug)
+                .put("title", title)
+                .put("content", content),
+            token,
+            installationId
+        ).getJSONObject("document").toCmsDocument()
+    }
+
+    suspend fun setCmsDocumentPublished(
+        token: String,
+        installationId: String,
+        email: String,
+        documentId: String,
+        published: Boolean
+    ): NativeCmsDocument = withContext(Dispatchers.IO) {
+        val action = if (published) "publish" else "draft"
+        requestJson(
+            "/cms/documents/" +
+                URLEncoder.encode(
+                    documentId,
+                    Charsets.UTF_8.name()
+                ) +
+                "/$action?email=" +
+                URLEncoder.encode(
+                    email,
+                    Charsets.UTF_8.name()
+                ),
+            "POST",
+            JSONObject(),
+            token,
+            installationId
+        ).getJSONObject("document").toCmsDocument()
+    }
+
+    suspend fun deleteCmsDocument(
+        token: String,
+        installationId: String,
+        email: String,
+        documentId: String
+    ) = withContext(Dispatchers.IO) {
+        requestJson(
+            "/cms/documents/" +
+                URLEncoder.encode(
+                    documentId,
+                    Charsets.UTF_8.name()
+                ) +
+                "?email=" +
+                URLEncoder.encode(
+                    email,
+                    Charsets.UTF_8.name()
+                ),
+            "DELETE",
+            token = token,
+            installationId = installationId
+        )
+    }
+
+    private fun JSONObject.toCmsWorkspace(): NativeCmsWorkspace {
+        val rawSettings = optJSONObject("settings")
+        val settings = rawSettings?.let {
+            NativeCmsSettings(
+                enabled = it.optBoolean("enabled", false),
+                publicSlug = it.optString("public_slug"),
+                contentVersion = it.optInt("content_version", 0)
+            )
+        }
+        val rawDocuments = optJSONArray("documents")
+            ?: JSONArray()
+
+        return NativeCmsWorkspace(
+            settings = settings,
+            documents = buildList {
+                for (index in 0 until rawDocuments.length()) {
+                    rawDocuments.optJSONObject(index)
+                        ?.let { add(it.toCmsDocument()) }
+                }
+            }
+        )
+    }
+
+    private fun JSONObject.toCmsDocument(): NativeCmsDocument {
+        val rawContent = optJSONObject("content")
+            ?: JSONObject()
+
+        return NativeCmsDocument(
+            id = optString("id"),
+            collection = optString("collection", "pages"),
+            slug = optString("slug"),
+            title = optString("title", "Untitled"),
+            status = optString("status", "draft"),
+            contentJson = runCatching {
+                rawContent.toString(2)
+            }.getOrElse { rawContent.toString() },
+            updatedAt = optString("updated_at")
         )
     }
 
@@ -495,12 +820,49 @@ object NexoraApi {
                             ),
                             account.optInt(
                                 "lifetime_used"
-                            )
+                            ),
+                            account.optInt(
+                                "plan_monthly_tokens"
+                            ),
+                            account.optString(
+                                "subscription_status",
+                                "active"
+                            ),
+                            account.optString("cycle_end"),
+                            account.optString("renews_at"),
+                            account.optInt("monthly_balance"),
+                            account.optInt("topup_balance"),
+                            account.optInt("reserved_balance")
                         )
                     )
                 }
             }
         }
+
+    suspend fun adminUpdateBilling(
+        token: String,
+        id: String,
+        planId: String,
+        status: String,
+        cycleEnd: String,
+        tokenAdjustment: Int
+    ) = withContext(Dispatchers.IO) {
+        requestJson(
+            "/admin/accounts/" +
+                URLEncoder.encode(
+                    id,
+                    Charsets.UTF_8.name()
+                ) +
+                "/billing",
+            "PATCH",
+            JSONObject()
+                .put("planId", planId)
+                .put("status", status)
+                .put("cycleEnd", cycleEnd)
+                .put("tokenAdjustment", tokenAdjustment),
+            token
+        )
+    }
 
     suspend fun adminCreateAccount(
         token: String,

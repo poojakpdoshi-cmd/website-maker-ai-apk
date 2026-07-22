@@ -1989,7 +1989,10 @@ app.post('/projects/:id/edit', async (c) => {
   const projectId = c.req.param('id');
   const { data: project } = await supabase.from('projects').select('id,email,plan').eq('id', projectId).eq('email', parsed.data.email.toLowerCase()).maybeSingle();
   if (!project) return c.json({ error: 'Project not found.' }, 404);
-  const { data: latest } = await supabase.from('project_versions').select('version_number,plan').eq('project_id', projectId).order('version_number', { ascending: false }).limit(1).maybeSingle();
+  const [{ data: latest }, { data: origin }] = await Promise.all([
+    supabase.from('project_versions').select('version_number,plan,prompt,generated_files').eq('project_id', projectId).order('version_number', { ascending: false }).limit(1).maybeSingle(),
+    supabase.from('project_versions').select('prompt').eq('project_id', projectId).order('version_number', { ascending: true }).limit(1).maybeSingle()
+  ]);
   if (!latest) return c.json({ error: 'Project version not found.' }, 404);
 
   let editReservationId: string | null = null;
@@ -2024,10 +2027,58 @@ app.post('/projects/:id/edit', async (c) => {
       form = created.data;
     }
     const generated = buildProjectFiles(revised.plan, { formApiBase: publicApiBase(c), formPublicKey: form?.public_key ? String(form.public_key) : undefined });
+    const previousFiles = Array.isArray(latest.generated_files)
+      ? latest.generated_files.filter((item): item is GeneratedProjectFile => {
+          if (!item || typeof item !== 'object') return false;
+          const file = item as Record<string, unknown>;
+          return (
+            typeof file.path === 'string' &&
+            typeof file.content === 'string' &&
+            file.path.length > 0 &&
+            !file.path.startsWith('/') &&
+            !file.path.includes('..') &&
+            !file.path.includes('\\')
+          );
+        })
+      : [];
+    const regeneratedPaths = new Set(
+      generated.files.map((file) => file.path)
+    );
+    generated.files = [
+      ...generated.files,
+      ...previousFiles.filter(
+        (file) => !regeneratedPaths.has(file.path)
+      )
+    ];
+    const validationRequest = [
+      String(origin?.prompt || latest.prompt || ''),
+      parsed.data.instruction
+    ].filter(Boolean).join('\n\n');
+    generated.files = ensureFullStackArtifacts(
+      validationRequest,
+      generated.files
+    );
+    const validation = validateGeneratedProject(
+      generated.files,
+      validationRequest
+    );
+    if (!validation.passed) {
+      throw new Error(
+        `Edited project failed validation: ${validation.errors.join('; ')}`
+      );
+    }
+    const securityAudit = auditGeneratedSecurity(
+      generated.files
+    );
+    if (!securityAudit.passed) {
+      throw new Error(
+        'Edited project failed the security verification gate.'
+      );
+    }
     const versionNumber = Number(latest.version_number) + 1;
     const { error } = await supabase.from('project_versions').insert({
       full_stack_report: createFullStackReport(
-        parsed.data.instruction,
+        validationRequest,
         generated.files
       ), project_id: projectId, version_number: versionNumber, prompt: parsed.data.instruction, plan: revised.plan, generated_files: generated.files, preview_html: generated.previewHtml });
     if (error) throw new Error('Could not save the edited version.');
@@ -2082,8 +2133,26 @@ app.get('/projects/:id', async (c) => {
   const supabase = requireSupabase(c.env);
   const { data: project } = await supabase.from('projects').select('*').eq('id', c.req.param('id')).eq('email', parsed.data.email.toLowerCase()).maybeSingle();
   if (!project) return c.json({ error: 'Project not found.' }, 404);
-  const { data: version } = await supabase.from('project_versions').select('version_number,plan,preview_html,created_at,full_stack_report').eq('project_id', project.id).order('version_number', { ascending: false }).limit(1).maybeSingle();
-  return c.json({ project, version });
+  const { data: version } = await supabase.from('project_versions').select('version_number,plan,preview_html,created_at,full_stack_report,generated_files').eq('project_id', project.id).order('version_number', { ascending: false }).limit(1).maybeSingle();
+  const generatedFiles = Array.isArray(version?.generated_files)
+    ? version.generated_files.filter((item): item is GeneratedProjectFile => {
+        if (!item || typeof item !== 'object') return false;
+        const file = item as Record<string, unknown>;
+        return typeof file.path === 'string' && typeof file.content === 'string';
+      })
+    : [];
+  const safeVersion = version
+    ? {
+        version_number: version.version_number,
+        plan: version.plan,
+        preview_html: version.preview_html,
+        created_at: version.created_at,
+        full_stack_report: version.full_stack_report,
+        file_count: generatedFiles.length,
+        file_paths: generatedFiles.map((file) => file.path).slice(0, 200)
+      }
+    : null;
+  return c.json({ project, version: safeVersion });
 });
 
 app.post('/projects/:id/publish', async (c) => {

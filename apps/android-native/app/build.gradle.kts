@@ -12,8 +12,8 @@ android {
         applicationId = "ai.nexora.nativeapp"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.9.0-omniroute-ui"
+        versionCode = 10
+        versionName = "0.10.0-full-repair"
 
         buildConfigField(
             "String",
