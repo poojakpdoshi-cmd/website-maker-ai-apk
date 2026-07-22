@@ -3,6 +3,8 @@
 
     <application
         android:allowBackup="false"
+        android:icon="@drawable/nexora_logo"
+        android:roundIcon="@drawable/nexora_logo"
         android:label="Nexora.Ai"
         android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@style/Theme.NexoraNative">

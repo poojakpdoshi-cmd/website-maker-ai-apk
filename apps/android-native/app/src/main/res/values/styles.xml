@@ -1,9 +1,13 @@
 <resources>
-    <style name="Theme.NexoraNative" parent="android:style/Theme.Material.Light.NoActionBar">
+    <style name="Theme.NexoraNative" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
+        <item name="android:windowBackground">#03050D</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:statusBarColor">#050816</item>
-        <item name="android:navigationBarColor">#050816</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:statusBarColor">#03050D</item>
+        <item name="android:navigationBarColor">#03050D</item>
+        <item name="android:navigationBarDividerColor">#03050D</item>
+        <item name="android:windowNoTitle">true</item>
         <item name="android:windowActionModeOverlay">true</item>
     </style>
 </resources>

@@ -22,6 +22,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -63,6 +67,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -72,11 +77,13 @@ import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
@@ -122,6 +129,14 @@ private data class SelectedAttachment(
             )
         }
 }
+
+private val NexoraWelcomeMessage = ChatMessage(
+    "assistant",
+    "OmniRoute is online. Choose X0 Ultra for deep work, " +
+        "Y1 for balanced intelligence, or N1 for speed. " +
+        "Ask anything, attach a text/code file, or describe " +
+        "the website you want to build."
+)
 
 private fun readSelectedAttachment(
     context: Context,
@@ -359,61 +374,134 @@ private fun NexoraBackground(content: @Composable () -> Unit) {
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        Color(0xFF01020A),
-                        Color(0xFF061936),
-                        Color(0xFF180A34),
-                        Color(0xFF040611)
+                        Color(0xFF02040C),
+                        Color(0xFF071329),
+                        Color(0xFF130A2D),
+                        Color(0xFF03050D)
                     )
                 )
             )
     ) {
         Box(
             modifier = Modifier
-                .fillMaxSize()
+                .align(Alignment.TopEnd)
+                .size(310.dp)
                 .background(
                     Brush.radialGradient(
                         listOf(
-                            Color(0x335DEBFF),
-                            Color.Transparent,
-                            Color(0x22A98BFF),
+                            Color(0xFF63E9FF).copy(
+                                alpha = 0.20f
+                            ),
                             Color.Transparent
                         )
                     )
+                ),
+            content = {}
+        )
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .size(330.dp)
+                .background(
+                    Brush.radialGradient(
+                        listOf(
+                            Color(0xFF9B7CFF).copy(
+                                alpha = 0.15f
+                            ),
+                            Color.Transparent
+                        )
+                    )
+                ),
+            content = {}
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            Color.Transparent,
+                            Color(0x2203050D)
+                        )
+                    )
                 )
-        ) {
-            content()
-        }
+        ) { content() }
     }
 }
 
 @Composable
-private fun GlassPanel(
+internal fun GlassPanel(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit
 ) {
     Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(30.dp),
-        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.24f),
+        modifier = modifier.animateContentSize(),
+        shape = RoundedCornerShape(28.dp),
+        color = Color.Transparent,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        shadowElevation = 28.dp,
-        tonalElevation = 12.dp
+        shadowElevation = 18.dp,
+        tonalElevation = 6.dp
     ) {
         Surface(
             modifier = Modifier.padding(1.dp),
-            shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+            shape = RoundedCornerShape(27.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
             contentColor = MaterialTheme.colorScheme.onSurface,
             border = BorderStroke(
                 1.dp,
-                MaterialTheme.colorScheme.primary.copy(alpha = 0.62f)
+                Brush.linearGradient(
+                    listOf(
+                        MaterialTheme.colorScheme.primary.copy(
+                            alpha = 0.72f
+                        ),
+                        MaterialTheme.colorScheme.secondary.copy(
+                            alpha = 0.46f
+                        ),
+                        MaterialTheme.colorScheme.tertiary.copy(
+                            alpha = 0.30f
+                        )
+                    )
+                )
             ),
-            shadowElevation = 8.dp,
-            tonalElevation = 10.dp,
+            shadowElevation = 5.dp,
+            tonalElevation = 6.dp,
             content = content
         )
     }
 }
+
+@Composable
+internal fun nexoraTextFieldColors() = TextFieldDefaults.colors(
+    focusedTextColor = MaterialTheme.colorScheme.onSurface,
+    unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+    disabledTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    cursorColor = MaterialTheme.colorScheme.primary,
+    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant
+        .copy(alpha = 0.82f),
+    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant
+        .copy(alpha = 0.66f),
+    focusedIndicatorColor = MaterialTheme.colorScheme.primary,
+    unfocusedIndicatorColor = MaterialTheme.colorScheme.outlineVariant,
+    focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant
+)
+
+@Composable
+internal fun nexoraOutlinedFieldColors() =
+    OutlinedTextFieldDefaults.colors(
+        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+        disabledTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        cursorColor = MaterialTheme.colorScheme.primary,
+        focusedBorderColor = MaterialTheme.colorScheme.primary,
+        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+        focusedLabelColor = MaterialTheme.colorScheme.primary,
+        unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        focusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        unfocusedPlaceholderColor = MaterialTheme.colorScheme.onSurfaceVariant
+    )
 
 @Composable
 private fun NativeLoginScreen(
@@ -449,6 +537,28 @@ private fun NativeLoginScreen(
                     contentScale = ContentScale.Fit
                 )
 
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer
+                        .copy(alpha = 0.74f),
+                    border = BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.primary.copy(
+                            alpha = 0.42f
+                        )
+                    )
+                ) {
+                    Text(
+                        "OMNIROUTE V1  •  NATIVE",
+                        modifier = Modifier.padding(
+                            horizontal = 12.dp,
+                            vertical = 6.dp
+                        ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+
                 Text(
                     "Nexora.Ai",
                     style = MaterialTheme.typography.displaySmall,
@@ -465,7 +575,8 @@ private fun NativeLoginScreen(
                     onValueChange = { username = it },
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Username") },
-                    singleLine = true
+                    singleLine = true,
+                    colors = nexoraOutlinedFieldColors()
                 )
 
                 OutlinedTextField(
@@ -474,7 +585,8 @@ private fun NativeLoginScreen(
                     modifier = Modifier.fillMaxWidth(),
                     label = { Text("Password") },
                     singleLine = true,
-                    visualTransformation = PasswordVisualTransformation()
+                    visualTransformation = PasswordVisualTransformation(),
+                    colors = nexoraOutlinedFieldColors()
                 )
 
                 AnimatedVisibility(errorText.isNotBlank()) {
@@ -558,6 +670,9 @@ private fun NativeHome(
         initialValue = DrawerValue.Closed
     )
     val scope = rememberCoroutineScope()
+    val chatMessages = remember {
+        mutableStateListOf(NexoraWelcomeMessage)
+    }
 
     fun openScreen(destination: NativeScreen) {
         screen = destination
@@ -719,6 +834,45 @@ private fun NativeHome(
                             )
                         }
                     },
+                    actions = {
+                        Surface(
+                            modifier = Modifier.padding(end = 12.dp),
+                            shape = RoundedCornerShape(999.dp),
+                            color = MaterialTheme.colorScheme
+                                .primaryContainer.copy(alpha = 0.72f),
+                            border = BorderStroke(
+                                1.dp,
+                                MaterialTheme.colorScheme.primary
+                                    .copy(alpha = 0.34f)
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(
+                                    horizontal = 10.dp,
+                                    vertical = 6.dp
+                                ),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement =
+                                    Arrangement.spacedBy(6.dp)
+                            ) {
+                                Box(
+                                    Modifier
+                                        .size(7.dp)
+                                        .background(
+                                            MaterialTheme.colorScheme.primary,
+                                            CircleShape
+                                        )
+                                )
+                                Text(
+                                    "OMNI",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Black,
+                                    color = MaterialTheme.colorScheme
+                                        .onPrimaryContainer
+                                )
+                            }
+                        }
+                    },
                     colors =
                         TopAppBarDefaults.topAppBarColors(
                             containerColor =
@@ -733,27 +887,34 @@ private fun NativeHome(
                     .padding(padding)
                     .fillMaxSize()
             ) {
-                when (screen) {
-                    NativeScreen.CHAT -> ChatScreen(
-                        sessionStore,
-                        installationId
-                    )
+                Crossfade(
+                    targetState = screen,
+                    animationSpec = tween(260),
+                    label = "Nexora screen transition"
+                ) { destination ->
+                    when (destination) {
+                        NativeScreen.CHAT -> ChatScreen(
+                            sessionStore,
+                            installationId,
+                            chatMessages
+                        )
 
-                    NativeScreen.STUDIO -> StudioScreen(
-                        sessionStore,
-                        installationId
-                    )
+                        NativeScreen.STUDIO -> StudioScreen(
+                            sessionStore,
+                            installationId
+                        )
 
-                    NativeScreen.PROJECTS -> ProjectsScreen(
-                        sessionStore,
-                        installationId
-                    )
+                        NativeScreen.PROJECTS -> ProjectsScreen(
+                            sessionStore,
+                            installationId
+                        )
 
-                    NativeScreen.ACCOUNT -> AccountScreen(
-                        sessionStore,
-                        installationId,
-                        onLogout
-                    )
+                        NativeScreen.ACCOUNT -> AccountScreen(
+                            sessionStore,
+                            installationId,
+                            onLogout
+                        )
+                    }
                 }
             }
         }
@@ -801,14 +962,15 @@ private suspend fun generateWebsiteFromChat(
     installationId: String,
     prompt: String,
     image: NativeImageAttachment? = null,
-    onProgress: (String) -> Unit
+    onProgress: (String, Int) -> Unit
 ): NativeProjectDetail {
     val token =
         sessionStore.token() ?: error("Session missing")
     val email =
         sessionStore.email() ?: error("Email missing")
 
-    onProgress("Starting the website generation engine…")
+    var lastProgress = 2
+    onProgress("Starting the website generation engine…", lastProgress)
 
     val started = NexoraApi.startGeneration(
         token = token,
@@ -820,8 +982,10 @@ private suspend fun generateWebsiteFromChat(
         image = image
     )
 
+    lastProgress = started.progress.coerceIn(2, 8)
     onProgress(
-        "Website job created. Connecting the generation worker…"
+        "Website job created. Connecting the generation worker…",
+        lastProgress
     )
 
     NexoraApi.launchGeneration(
@@ -833,6 +997,12 @@ private suspend fun generateWebsiteFromChat(
         generationMode = "standard",
         thinkMax = true,
         image = image
+    )
+
+    lastProgress = lastProgress.coerceAtLeast(10)
+    onProgress(
+        "OmniRoute is planning the architecture…",
+        lastProgress
     )
 
     var reconnectFailures = 0
@@ -856,7 +1026,8 @@ private suspend fun generateWebsiteFromChat(
 
             onProgress(
                 "Generation is still running. Reconnecting… " +
-                    "($reconnectFailures/8)"
+                    "($reconnectFailures/8)",
+                lastProgress
             )
             delay(
                 (1000L * reconnectFailures).coerceAtMost(8000L)
@@ -870,9 +1041,12 @@ private suspend fun generateWebsiteFromChat(
             ?: job.currentAgent
             ?: job.status
 
+        lastProgress = job.progress.coerceIn(0, 100)
+            .coerceAtLeast(lastProgress)
         onProgress(
             "Building your website — " +
-                "${job.progress.coerceIn(0, 100)}%\n$step"
+                "$lastProgress%\n$step",
+            lastProgress
         )
 
         when (job.status.lowercase()) {
@@ -915,7 +1089,8 @@ private suspend fun generateWebsiteFromChat(
 @Composable
 private fun ChatScreen(
     sessionStore: SessionStore,
-    installationId: String
+    installationId: String,
+    messages: MutableList<ChatMessage>
 ) {
     val context = LocalContext.current
     var input by remember { mutableStateOf("") }
@@ -947,19 +1122,6 @@ private fun ChatScreen(
                 }
             }
         }
-
-    val messages = remember {
-        mutableStateListOf(
-            ChatMessage(
-                "assistant",
-                "I am Nexora.Ai, created by Poojak Doshi. " +
-                    "Choose X0 Ultra for deep research and complex work, " +
-                    "Y1 for balanced intelligence, or N1 for speed. " +
-                    "I can answer questions, read text/code files, " +
-                    "and build real websites."
-            )
-        )
-    }
 
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
@@ -1003,7 +1165,9 @@ private fun ChatScreen(
                 ) {
                     Surface(
                         modifier =
-                            Modifier.widthIn(max = 330.dp),
+                            Modifier
+                                .widthIn(max = 330.dp)
+                                .animateContentSize(),
                         shape = RoundedCornerShape(
                             topStart = 22.dp,
                             topEnd = 22.dp,
@@ -1027,8 +1191,8 @@ private fun ChatScreen(
                                     .copy(alpha = 0.94f)
                             } else {
                                 MaterialTheme.colorScheme
-                                    .surfaceVariant
-                                    .copy(alpha = 0.92f)
+                                    .surface
+                                    .copy(alpha = 0.94f)
                             },
                         contentColor =
                             if (message.role == "user") {
@@ -1036,7 +1200,7 @@ private fun ChatScreen(
                                     .onPrimaryContainer
                             } else {
                                 MaterialTheme.colorScheme
-                                    .onSurfaceVariant
+                                    .onSurface
                             },
                         shadowElevation =
                             if (message.role == "user") 14.dp else 10.dp,
@@ -1060,7 +1224,57 @@ private fun ChatScreen(
                                 modifier = Modifier.padding(15.dp),
                                 style =
                                     MaterialTheme.typography
-                                        .bodyLarge
+                                        .bodyLarge,
+                                color = if (message.role == "user") {
+                                    MaterialTheme.colorScheme
+                                        .onPrimaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (
+                loading &&
+                messages.lastOrNull()?.role == "user"
+            ) {
+                item {
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.surface
+                            .copy(alpha = 0.90f),
+                        contentColor = MaterialTheme.colorScheme.onSurface,
+                        border = BorderStroke(
+                            1.dp,
+                            MaterialTheme.colorScheme.secondary
+                                .copy(alpha = 0.30f)
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(
+                                horizontal = 14.dp,
+                                vertical = 11.dp
+                            ),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement =
+                                Arrangement.spacedBy(10.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Text(
+                                when (selectedMode) {
+                                    "x0-ultra" -> "X0 Ultra is reasoning…"
+                                    "y1" -> "Y1 is working…"
+                                    else -> "N1 is responding…"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme
+                                    .onSurfaceVariant
                             )
                         }
                     }
@@ -1096,6 +1310,7 @@ private fun ChatScreen(
                         "n1" to "N1"
                     ).forEach { (value, label) ->
                         FilterChip(
+                            modifier = Modifier.weight(1f),
                             selected = selectedMode == value,
                             onClick = {
                                 if (!loading) {
@@ -1103,30 +1318,49 @@ private fun ChatScreen(
                                 }
                             },
                             label = { Text(label) },
-                            enabled = !loading
+                            enabled = !loading,
+                            colors = FilterChipDefaults.filterChipColors(
+                                containerColor = Color.Transparent,
+                                labelColor = MaterialTheme.colorScheme
+                                    .onSurfaceVariant,
+                                selectedContainerColor =
+                                    MaterialTheme.colorScheme
+                                        .primaryContainer,
+                                selectedLabelColor =
+                                    MaterialTheme.colorScheme
+                                        .onPrimaryContainer
+                            )
                         )
                     }
                 }
 
-                Text(
-                    when (selectedMode) {
-                        "x0-ultra" ->
-                            "Deep reasoning • research • critic • repair"
-                        "y1" ->
-                            "Balanced intelligence and speed"
-                        else ->
-                            "Fast answers and lightweight tasks"
-                    },
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.labelSmall
-                )
+                Crossfade(
+                    targetState = selectedMode,
+                    animationSpec = tween(180),
+                    label = "Mode description"
+                ) { mode ->
+                    Text(
+                        when (mode) {
+                            "x0-ultra" ->
+                                "Deep reasoning • research • critic • repair"
+                            "y1" ->
+                                "Balanced intelligence and speed"
+                            else ->
+                                "Fast answers and lightweight tasks"
+                        },
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
 
                 attachment?.let { selected ->
                     Surface(
                         shape = RoundedCornerShape(16.dp),
                         color = MaterialTheme.colorScheme
                             .secondaryContainer
-                            .copy(alpha = 0.78f)
+                            .copy(alpha = 0.78f),
+                        contentColor = MaterialTheme.colorScheme
+                            .onSecondaryContainer
                     ) {
                         Row(
                             modifier = Modifier
@@ -1203,7 +1437,8 @@ private fun ChatScreen(
                             Text("Message Nexora…")
                         },
                         maxLines = 5,
-                        shape = RoundedCornerShape(22.dp)
+                        shape = RoundedCornerShape(22.dp),
+                        colors = nexoraTextFieldColors()
                     )
 
                     Button(
@@ -1267,7 +1502,7 @@ private fun ChatScreen(
                                             promptWithFile,
                                             selectedAttachment
                                                 ?.asGenerationImage()
-                                        ) { status ->
+                                        ) { status, _ ->
                                             messages[
                                                 statusIndex
                                             ] = ChatMessage(
@@ -1335,7 +1570,13 @@ private fun ChatScreen(
                                                         "Email missing"
                                                     ),
                                                 promptWithFile,
-                                                selectedMode
+                                                selectedMode,
+                                                messages
+                                                    .dropLast(1)
+                                                    .takeLast(18)
+                                                    .map {
+                                                        it.role to it.text
+                                                    }
                                             )
                                         }.getOrElse {
                                             "Error: " +
@@ -1386,16 +1627,40 @@ fun GenerationScreen(
     sessionStore: SessionStore,
     installationId: String
 ) {
+    val context = LocalContext.current
     var prompt by remember { mutableStateOf("") }
     var thinkMax by remember { mutableStateOf(true) }
     var running by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf(0) }
     var status by remember { mutableStateOf("Ready") }
     var errorText by remember { mutableStateOf("") }
+    var attachment by remember {
+        mutableStateOf<SelectedAttachment?>(null)
+    }
     var result by remember {
         mutableStateOf<NativeProjectDetail?>(null)
     }
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress.coerceIn(0, 100) / 100f,
+        animationSpec = tween(480),
+        label = "Website generation progress"
+    )
     val scope = rememberCoroutineScope()
+    val attachmentLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                readSelectedAttachment(context, uri)
+            }.onSuccess {
+                attachment = it
+                errorText = ""
+            }.onFailure {
+                attachment = null
+                errorText = it.message ?: "Attachment failed."
+            }
+        }
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -1405,19 +1670,40 @@ fun GenerationScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         item {
-            Text(
-                "Create a website",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Black
-            )
-        }
-
-        item {
-            Text(
-                "Describe the business, pages, design, features " +
-                    "and content you need.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            GlassPanel(Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(999.dp),
+                        color = MaterialTheme.colorScheme
+                            .primaryContainer.copy(alpha = 0.74f)
+                    ) {
+                        Text(
+                            "OMNIROUTE WEBSITE ENGINE",
+                            modifier = Modifier.padding(
+                                horizontal = 11.dp,
+                                vertical = 6.dp
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme
+                                .onPrimaryContainer
+                        )
+                    }
+                    Text(
+                        "Create a production-ready website",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Black
+                    )
+                    Text(
+                        "Describe the business, pages, visual style, " +
+                            "features and content. Nexora will plan, " +
+                            "build and verify the result.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
         }
 
         item {
@@ -1435,8 +1721,86 @@ fun GenerationScreen(
                             Text("Describe your website")
                         },
                         minLines = 5,
-                        maxLines = 10
+                        maxLines = 10,
+                        colors = nexoraOutlinedFieldColors()
                     )
+
+                    attachment?.let { selected ->
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme
+                                .secondaryContainer.copy(alpha = 0.76f),
+                            contentColor = MaterialTheme.colorScheme
+                                .onSecondaryContainer
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.AttachFile,
+                                    contentDescription = null
+                                )
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(
+                                            horizontal = 9.dp,
+                                            vertical = 8.dp
+                                        )
+                                ) {
+                                    Text(
+                                        selected.name,
+                                        style = MaterialTheme
+                                            .typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1
+                                    )
+                                    Text(
+                                        if (selected.imageBase64 != null) {
+                                            "Visual reference"
+                                        } else {
+                                            "Text/code context"
+                                        },
+                                        style = MaterialTheme
+                                            .typography.labelSmall
+                                    )
+                                }
+                                IconButton(
+                                    enabled = !running,
+                                    onClick = { attachment = null }
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription =
+                                            "Remove attachment"
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    OutlinedButton(
+                        enabled = !running,
+                        onClick = {
+                            attachmentLauncher.launch(arrayOf("*/*"))
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            Icons.Default.AttachFile,
+                            contentDescription = null
+                        )
+                        Text(
+                            if (attachment == null) {
+                                "  Add photo or text/code file"
+                            } else {
+                                "  Replace attachment"
+                            }
+                        )
+                    }
 
                     Row(
                         verticalAlignment =
@@ -1465,7 +1829,17 @@ fun GenerationScreen(
                         enabled =
                             prompt.isNotBlank() && !running,
                         onClick = {
-                            val request = prompt.trim()
+                            val rawRequest = prompt.trim()
+                            val selectedAttachment = attachment
+                            val request = selectedAttachment
+                                ?.textContent
+                                ?.let { fileText ->
+                                    rawRequest +
+                                        "\n\nReference file: " +
+                                        selectedAttachment.name +
+                                        "\n---\n" + fileText
+                                }
+                                ?: rawRequest
                             running = true
                             progress = 0
                             status = "Starting"
@@ -1492,16 +1866,37 @@ fun GenerationScreen(
                                             email,
                                             request,
                                             "standard",
-                                            thinkMax
+                                            thinkMax,
+                                            selectedAttachment
+                                                ?.asGenerationImage()
                                         )
 
                                     status = started.status
                                     progress = started.progress
 
-                                    repeat(240) {
+                                    status =
+                                        "Connecting the generation worker"
+                                    NexoraApi.launchGeneration(
+                                        token = token,
+                                        installationId = installationId,
+                                        email = email,
+                                        prompt = request,
+                                        jobId = started.jobId,
+                                        generationMode = "standard",
+                                        thinkMax = thinkMax,
+                                        image = selectedAttachment
+                                            ?.asGenerationImage()
+                                    )
+                                    progress = progress.coerceAtLeast(10)
+                                    status =
+                                        "OmniRoute is planning the website"
+
+                                    var reconnectFailures = 0
+
+                                    repeat(400) {
                                         delay(1500)
 
-                                        val job =
+                                        val job = try {
                                             NexoraApi
                                                 .getGenerationStatus(
                                                     token,
@@ -1509,6 +1904,22 @@ fun GenerationScreen(
                                                     email,
                                                     started.jobId
                                                 )
+                                        } catch (statusError: Throwable) {
+                                            reconnectFailures += 1
+                                            if (reconnectFailures >= 8) {
+                                                throw statusError
+                                            }
+                                            status =
+                                                "Reconnecting to the job " +
+                                                    "($reconnectFailures/8)"
+                                            delay(
+                                                (1000L * reconnectFailures)
+                                                    .coerceAtMost(8000L)
+                                            )
+                                            return@repeat
+                                        }
+
+                                        reconnectFailures = 0
 
                                         status =
                                             job.currentStep
@@ -1518,7 +1929,7 @@ fun GenerationScreen(
                                             job.progress.coerceIn(
                                                 0,
                                                 100
-                                            )
+                                            ).coerceAtLeast(progress)
 
                                         when (
                                             job.status.lowercase()
@@ -1541,6 +1952,9 @@ fun GenerationScreen(
                                                         email,
                                                         projectId
                                                     )
+                                                attachment = null
+                                                progress = 100
+                                                status = "Website ready"
                                                 return@runCatching
                                             }
 
@@ -1594,15 +2008,57 @@ fun GenerationScreen(
                             Arrangement.spacedBy(10.dp)
                     ) {
                         LinearProgressIndicator(
-                            progress = {
-                                progress.coerceIn(
-                                    0,
-                                    100
-                                ) / 100f
-                            },
+                            progress = { animatedProgress },
                             modifier = Modifier.fillMaxWidth()
                         )
-                        Text("$status — $progress%")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement =
+                                Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(
+                                "Plan" to 10,
+                                "Design" to 30,
+                                "Build" to 55,
+                                "Verify" to 85
+                            ).forEach { (label, threshold) ->
+                                Surface(
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(999.dp),
+                                    color = if (progress >= threshold) {
+                                        MaterialTheme.colorScheme
+                                            .primaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme
+                                            .surfaceVariant
+                                    },
+                                    contentColor = if (
+                                        progress >= threshold
+                                    ) {
+                                        MaterialTheme.colorScheme
+                                            .onPrimaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme
+                                            .onSurfaceVariant
+                                    }
+                                ) {
+                                    Text(
+                                        label,
+                                        modifier = Modifier.padding(
+                                            horizontal = 6.dp,
+                                            vertical = 5.dp
+                                        ),
+                                        style = MaterialTheme
+                                            .typography.labelSmall
+                                    )
+                                }
+                            }
+                        }
+                        Text(
+                            "$status — $progress%",
+                            color = MaterialTheme.colorScheme
+                                .onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -1948,7 +2404,8 @@ private fun AdminScreen(
                         label = {
                             Text("Admin username")
                         },
-                        singleLine = true
+                        singleLine = true,
+                        colors = nexoraOutlinedFieldColors()
                     )
 
                     OutlinedTextField(
@@ -1960,7 +2417,8 @@ private fun AdminScreen(
                         },
                         singleLine = true,
                         visualTransformation =
-                            PasswordVisualTransformation()
+                            PasswordVisualTransformation(),
+                        colors = nexoraOutlinedFieldColors()
                     )
 
                     if (errorText.isNotBlank()) {
@@ -2184,7 +2642,8 @@ private fun AdminScreen(
                                 label = {
                                     Text("Username")
                                 },
-                                singleLine = true
+                                singleLine = true,
+                                colors = nexoraOutlinedFieldColors()
                             )
 
                             OutlinedTextField(
@@ -2199,7 +2658,8 @@ private fun AdminScreen(
                                 },
                                 singleLine = true,
                                 visualTransformation =
-                                    PasswordVisualTransformation()
+                                    PasswordVisualTransformation(),
+                                colors = nexoraOutlinedFieldColors()
                             )
 
                             Button(
@@ -2289,7 +2749,8 @@ private fun AdminScreen(
                                     },
                                     singleLine = true,
                                     visualTransformation =
-                                        PasswordVisualTransformation()
+                                        PasswordVisualTransformation(),
+                                    colors = nexoraOutlinedFieldColors()
                                 )
 
                                 Row(

@@ -128,8 +128,19 @@ object NexoraApi {
         username: String,
         email: String,
         message: String,
-        mode: String
+        mode: String,
+        history: List<Pair<String, String>> = emptyList()
     ): String = withContext(Dispatchers.IO) {
+        val historyJson = JSONArray().apply {
+            history.takeLast(18).forEach { (role, content) ->
+                put(
+                    JSONObject()
+                        .put("role", role)
+                        .put("content", content.take(12000))
+                )
+            }
+        }
+
         requestJson(
             "/assistant/chat",
             "POST",
@@ -139,7 +150,7 @@ object NexoraApi {
                 .put("email", email)
                 .put("installationId", installationId)
                 .put("mode", mode)
-                .put("history", JSONArray()),
+                .put("history", historyJson),
             token,
             installationId
         ).optString(

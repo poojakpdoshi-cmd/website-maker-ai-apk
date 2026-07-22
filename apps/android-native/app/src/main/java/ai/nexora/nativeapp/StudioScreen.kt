@@ -6,6 +6,8 @@ import ai.nexora.nativeapp.data.NativeProjectDetail
 import ai.nexora.nativeapp.data.NexoraApi
 import ai.nexora.nativeapp.data.SessionStore
 import androidx.compose.foundation.clickable
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +24,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -59,12 +62,24 @@ fun StudioScreen(
             FilterChip(
                 selected = section == "create",
                 onClick = { section = "create" },
-                label = { Text("Create") }
+                label = { Text("Create") },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor =
+                        MaterialTheme.colorScheme.primaryContainer,
+                    selectedLabelColor =
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                )
             )
             FilterChip(
                 selected = section == "manage",
                 onClick = { section = "manage" },
-                label = { Text("Edit & Publish") }
+                label = { Text("Edit & Publish") },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor =
+                        MaterialTheme.colorScheme.primaryContainer,
+                    selectedLabelColor =
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                )
             )
         }
 
@@ -73,10 +88,16 @@ fun StudioScreen(
                 .fillMaxWidth()
                 .weight(1f)
         ) {
-            if (section == "create") {
-                GenerationScreen(sessionStore, installationId)
-            } else {
-                ProjectStudioScreen(sessionStore, installationId)
+            Crossfade(
+                targetState = section,
+                animationSpec = tween(220),
+                label = "Studio section transition"
+            ) { destination ->
+                if (destination == "create") {
+                    GenerationScreen(sessionStore, installationId)
+                } else {
+                    ProjectStudioScreen(sessionStore, installationId)
+                }
             }
         }
     }
@@ -229,7 +250,8 @@ private fun ProjectStudioScreen(
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("GitHub access token") },
                         singleLine = true,
-                        visualTransformation = PasswordVisualTransformation()
+                        visualTransformation = PasswordVisualTransformation(),
+                        colors = nexoraOutlinedFieldColors()
                     )
                     OutlinedButton(
                         enabled = !busy && githubToken.trim().length >= 10,
@@ -277,7 +299,8 @@ private fun ProjectStudioScreen(
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Vercel access token") },
                         singleLine = true,
-                        visualTransformation = PasswordVisualTransformation()
+                        visualTransformation = PasswordVisualTransformation(),
+                        colors = nexoraOutlinedFieldColors()
                     )
                     OutlinedButton(
                         enabled = !busy && vercelToken.trim().length >= 10,
@@ -441,7 +464,8 @@ private fun ProjectStudioScreen(
                             modifier = Modifier.fillMaxWidth(),
                             label = { Text("Describe the changes") },
                             minLines = 4,
-                            maxLines = 8
+                            maxLines = 8,
+                            colors = nexoraOutlinedFieldColors()
                         )
                         Button(
                             enabled = !busy &&
