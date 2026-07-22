@@ -28,7 +28,10 @@ import { processCmsSchedules } from './cms-scheduler';
 import { buildFullStackInstruction } from "./fullstack-policy";
 import { ensureFullStackArtifacts } from "./fullstack-fallback";
 import { createFullStackReport } from './fullstack-report';
-import { auditGeneratedSecurity } from './security-audit-policy';
+import {
+  auditGeneratedSecurity,
+  securityAuditRepairGuidance
+} from './security-audit-policy';
 import {
   runOptionalThinkMax,
   thinkMaxFlagSchema
@@ -2187,10 +2190,22 @@ app.post('/projects/:id/publish', async (c) => {
       auditGeneratedSecurity(files);
 
     if (!securityAudit.passed) {
+      const repairGuidance =
+        securityAuditRepairGuidance(securityAudit);
+
+      await supabase.from('projects').update({
+        status: 'publish_failed',
+        deployment_state: 'AUDIT_BLOCKED'
+      }).eq('id', projectId);
+
       return c.json(
         {
           error:
-            'Security audit blocked publishing.',
+            'Publishing was blocked by the security audit. Fix the listed issues and retry.',
+          code: 'SECURITY_AUDIT_FAILED',
+          errors: securityAudit.errors,
+          warnings: securityAudit.warnings,
+          repairGuidance,
           securityAudit
         },
         422
@@ -2233,7 +2248,7 @@ app.post('/projects/:id/publish', async (c) => {
       await supabase.from('website_forms').update({ allowed_domain: hostname }).eq('project_id', projectId);
     }
     await finalizeNexoraTokens(supabase, publishReservationId);
-    return c.json({ projectId, githubRepository: repository.url, productionUrl: deployment.deploymentUrl, deploymentId: deployment.deploymentId, state: deployment.readyState });
+    return c.json({ projectId, githubRepository: repository.url, productionUrl: deployment.deploymentUrl, deploymentId: deployment.deploymentId, state: deployment.readyState, securityAudit });
   } catch (error) {
     await refundNexoraTokens(
       supabase,

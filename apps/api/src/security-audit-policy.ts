@@ -274,3 +274,72 @@ export function auditGeneratedSecurity(
     warnings
   };
 }
+
+export function securityAuditRepairGuidance(
+  result: SecurityAuditResult
+): string[] {
+  const guidance = new Set<string>();
+  const findings = [...result.errors, ...result.warnings];
+
+  for (const finding of findings) {
+    if (/credential|api key/i.test(finding)) {
+      guidance.add(
+        'Remove the credential from generated files, rotate it if it was real, and read it from a server-side environment secret.'
+      );
+    } else if (/written to logs/i.test(finding)) {
+      guidance.add(
+        'Remove or redact authentication and personal values from every log statement before publishing.'
+      );
+    } else if (/html rendering|xss/i.test(finding)) {
+      guidance.add(
+        'Escape untrusted content or pass it through a maintained HTML sanitizer before rendering it.'
+      );
+    } else if (/wildcard cors/i.test(finding)) {
+      guidance.add(
+        'Replace wildcard CORS with an explicit allowlist of the production frontend origins.'
+      );
+    } else if (/debug|backdoor/i.test(finding)) {
+      guidance.add(
+        'Remove debug, seed, test-admin and bypass routes from the production server.'
+      );
+    } else if (/client-side state/i.test(finding)) {
+      guidance.add(
+        'Enforce admin authorization on the server for every protected operation; UI state is not authorization.'
+      );
+    } else if (/sql injection/i.test(finding)) {
+      guidance.add(
+        'Replace interpolated SQL with parameterized queries and validate every query input.'
+      );
+    } else if (/file upload/i.test(finding)) {
+      guidance.add(
+        'Validate upload MIME type, size and filename on the server and reject files outside the allowlist.'
+      );
+    } else if (/rate limiting/i.test(finding)) {
+      guidance.add(
+        'Add server-side rate limiting to login, signup, OTP and password-reset routes.'
+      );
+    } else if (/ownership|authorization checks/i.test(finding)) {
+      guidance.add(
+        'Verify the authenticated owner or an explicit permission before every ID-based record read or write.'
+      );
+    } else if (/stack traces/i.test(finding)) {
+      guidance.add(
+        'Keep stack traces in protected server logs and return a generic error to clients.'
+      );
+    } else if (/redirect destination/i.test(finding)) {
+      guidance.add(
+        'Allow redirects only to validated HTTPS destinations from a fixed host allowlist.'
+      );
+    } else if (/security-header/i.test(finding)) {
+      guidance.add(
+        'Add production response headers including CSP, HSTS and X-Content-Type-Options.'
+      );
+    } else {
+      guidance.add(
+        `Repair this finding before retrying publication: ${finding}`
+      );
+    }
+  }
+
+  return [...guidance];
+}

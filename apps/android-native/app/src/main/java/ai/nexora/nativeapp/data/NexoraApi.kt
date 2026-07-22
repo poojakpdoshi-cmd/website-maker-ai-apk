@@ -123,7 +123,8 @@ data class AdminAccount(
 )
 
 data class NativeIntegrationAccount(
-    val accountName: String? = null
+    val accountName: String? = null,
+    val updatedAt: String? = null
 )
 
 data class NativeIntegrationStatus(
@@ -137,9 +138,14 @@ data class NativeEditResult(
     val previewHtml: String
 )
 
+data class NativeIntegrationStart(
+    val authorizationUrl: String
+)
+
 data class NativePublishResult(
     val productionUrl: String,
-    val state: String
+    val state: String,
+    val warnings: List<String> = emptyList()
 )
 
 object NexoraApi {
@@ -948,7 +954,11 @@ object NexoraApi {
                             "external_account_name"
                         ).takeIf { value ->
                             value.isNotBlank()
-                        }
+                        },
+                        it.optString("updated_at")
+                            .takeIf { value ->
+                                value.isNotBlank()
+                            }
                     )
                 }
 
@@ -957,6 +967,41 @@ object NexoraApi {
                 account("vercel")
             )
         }
+
+    suspend fun startIntegrationOAuth(
+        token: String,
+        installationId: String,
+        email: String,
+        provider: String
+    ): NativeIntegrationStart = withContext(Dispatchers.IO) {
+        require(
+            provider == "github" || provider == "vercel"
+        ) {
+            "Unsupported integration provider"
+        }
+
+        val response = requestJson(
+            "/integrations/$provider/start?email=" +
+                URLEncoder.encode(
+                    email,
+                    Charsets.UTF_8.name()
+                ),
+            "GET",
+            token = token,
+            installationId = installationId
+        )
+
+        val authorizationUrl =
+            response.optString("authorizationUrl")
+
+        require(
+            authorizationUrl.startsWith("https://")
+        ) {
+            "The backend did not return a secure connection URL."
+        }
+
+        NativeIntegrationStart(authorizationUrl)
+    }
 
     suspend fun connectIntegration(
         token: String,
@@ -1051,7 +1096,10 @@ object NexoraApi {
                 response.optString(
                     "state",
                     "unknown"
-                )
+                ),
+                response.optJSONObject("securityAudit")
+                    ?.optJSONArray("warnings")
+                    .toStringList()
             )
         }
 
@@ -1128,7 +1176,7 @@ object NexoraApi {
                 code !in 200..299 &&
                 !(allowConflict && code == 409)
             ) {
-                val message = sequenceOf(
+                val summary = sequenceOf(
                     response.optString("error"),
                     response.optString("message"),
                     response.optString("detail")
@@ -1136,12 +1184,75 @@ object NexoraApi {
                     it.isNotBlank()
                 } ?: "Request failed ($code)"
 
+                val audit = response.optJSONObject("securityAudit")
+                val errors = response.optJSONArray("errors")
+                    .toStringList()
+                    .ifEmpty {
+                        audit?.optJSONArray("errors")
+                            .toStringList()
+                    }
+                val warnings = response.optJSONArray("warnings")
+                    .toStringList()
+                    .ifEmpty {
+                        audit?.optJSONArray("warnings")
+                            .toStringList()
+                    }
+                val guidance = response
+                    .optJSONArray("repairGuidance")
+                    .toStringList()
+
+                val message = buildString {
+                    append(summary)
+
+                    if (errors.isNotEmpty()) {
+                        append("\n\nBlocking issues:\n")
+                        append(
+                            errors.joinToString("\n") {
+                                "• $it"
+                            }
+                        )
+                    }
+
+                    if (warnings.isNotEmpty()) {
+                        append("\n\nWarnings:\n")
+                        append(
+                            warnings.joinToString("\n") {
+                                "• $it"
+                            }
+                        )
+                    }
+
+                    if (guidance.isNotEmpty()) {
+                        append("\n\nRepair guidance:\n")
+                        append(
+                            guidance.joinToString("\n") {
+                                "• $it"
+                            }
+                        )
+                    }
+                }
+
                 error(message)
             }
 
             return response
         } finally {
             connection.disconnect()
+        }
+    }
+}
+
+private fun JSONArray?.toStringList(): List<String> {
+    if (this == null) {
+        return emptyList()
+    }
+
+    return buildList {
+        for (index in 0 until length()) {
+            optString(index)
+                .trim()
+                .takeIf { it.isNotBlank() }
+                ?.let(::add)
         }
     }
 }

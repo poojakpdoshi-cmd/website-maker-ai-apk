@@ -127,8 +127,13 @@ private fun ProjectStudioScreen(
     var editInstruction by remember { mutableStateOf("") }
     var githubToken by remember { mutableStateOf("") }
     var vercelToken by remember { mutableStateOf("") }
+    var githubAdvanced by remember { mutableStateOf(false) }
+    var vercelAdvanced by remember { mutableStateOf(false) }
     var publishedUrl by remember { mutableStateOf("") }
     var publishState by remember { mutableStateOf("") }
+    var publishWarnings by remember {
+        mutableStateOf<List<String>>(emptyList())
+    }
 
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
@@ -165,6 +170,23 @@ private fun ProjectStudioScreen(
             } finally {
                 busy = false
             }
+        }
+    }
+
+    fun startOAuth(provider: String) {
+        launchTask {
+            val start = NexoraApi.startIntegrationOAuth(
+                token(),
+                installationId,
+                email(),
+                provider
+            )
+
+            uriHandler.openUri(start.authorizationUrl)
+            message =
+                "Complete the ${if (provider == "github") "GitHub" else "Vercel"} " +
+                    "connection in your browser, return here, then refresh " +
+                    "the connection status."
         }
     }
 
@@ -233,6 +255,31 @@ private fun ProjectStudioScreen(
                     )
 
                     Text(
+                        "OAuth is the recommended connection method. " +
+                            "Access-token entry is available only as an " +
+                            "advanced fallback.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    OutlinedButton(
+                        enabled = !busy,
+                        onClick = {
+                            launchTask {
+                                connections =
+                                    NexoraApi.integrationStatus(
+                                        token(),
+                                        installationId,
+                                        email()
+                                    )
+                                message = "Connection status refreshed."
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Refresh connection status")
+                    }
+
+                    Text(
                         if (connections.github != null) {
                             "GitHub: ${connections.github?.accountName ?: "Connected"}"
                         } else {
@@ -244,39 +291,78 @@ private fun ProjectStudioScreen(
                             MaterialTheme.colorScheme.onSurfaceVariant
                         }
                     )
-                    OutlinedTextField(
-                        value = githubToken,
-                        onValueChange = { githubToken = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("GitHub access token") },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        colors = nexoraOutlinedFieldColors()
-                    )
-                    OutlinedButton(
-                        enabled = !busy && githubToken.trim().length >= 10,
-                        onClick = {
-                            val rawToken = githubToken.trim()
-                            launchTask {
-                                NexoraApi.connectIntegration(
-                                    token(),
-                                    installationId,
-                                    email(),
-                                    "github",
-                                    rawToken
-                                )
-                                githubToken = ""
-                                connections = NexoraApi.integrationStatus(
-                                    token(),
-                                    installationId,
-                                    email()
-                                )
-                                message = "GitHub connected."
-                            }
-                        },
+
+                    Button(
+                        enabled = !busy,
+                        onClick = { startOAuth("github") },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Connect GitHub")
+                        Text(
+                            if (connections.github == null) {
+                                "Connect GitHub with OAuth"
+                            } else {
+                                "Reconnect GitHub with OAuth"
+                            }
+                        )
+                    }
+
+                    if (connections.github == null) {
+                        TextButton(
+                            enabled = !busy,
+                            onClick = {
+                                githubAdvanced = !githubAdvanced
+                                githubToken = ""
+                            }
+                        ) {
+                            Text(
+                                if (githubAdvanced) {
+                                    "Hide advanced GitHub fallback"
+                                } else {
+                                    "Advanced: use GitHub access token"
+                                }
+                            )
+                        }
+
+                        if (githubAdvanced) {
+                            OutlinedTextField(
+                                value = githubToken,
+                                onValueChange = { githubToken = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("GitHub access token") },
+                                singleLine = true,
+                                visualTransformation =
+                                    PasswordVisualTransformation(),
+                                colors = nexoraOutlinedFieldColors()
+                            )
+                            OutlinedButton(
+                                enabled = !busy &&
+                                    githubToken.trim().length >= 10,
+                                onClick = {
+                                    val rawToken = githubToken.trim()
+                                    launchTask {
+                                        NexoraApi.connectIntegration(
+                                            token(),
+                                            installationId,
+                                            email(),
+                                            "github",
+                                            rawToken
+                                        )
+                                        githubToken = ""
+                                        githubAdvanced = false
+                                        connections =
+                                            NexoraApi.integrationStatus(
+                                                token(),
+                                                installationId,
+                                                email()
+                                            )
+                                        message = "GitHub connected."
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Connect using access token")
+                            }
+                        }
                     }
 
                     Spacer(Modifier.height(4.dp))
@@ -293,46 +379,91 @@ private fun ProjectStudioScreen(
                             MaterialTheme.colorScheme.onSurfaceVariant
                         }
                     )
-                    OutlinedTextField(
-                        value = vercelToken,
-                        onValueChange = { vercelToken = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = { Text("Vercel access token") },
-                        singleLine = true,
-                        visualTransformation = PasswordVisualTransformation(),
-                        colors = nexoraOutlinedFieldColors()
-                    )
-                    OutlinedButton(
-                        enabled = !busy && vercelToken.trim().length >= 10,
-                        onClick = {
-                            val rawToken = vercelToken.trim()
-                            launchTask {
-                                NexoraApi.connectIntegration(
-                                    token(),
-                                    installationId,
-                                    email(),
-                                    "vercel",
-                                    rawToken
-                                )
-                                vercelToken = ""
-                                connections = NexoraApi.integrationStatus(
-                                    token(),
-                                    installationId,
-                                    email()
-                                )
-                                message = "Vercel connected."
-                            }
-                        },
+
+                    Button(
+                        enabled = !busy,
+                        onClick = { startOAuth("vercel") },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Connect Vercel")
+                        Text(
+                            if (connections.vercel == null) {
+                                "Connect Vercel with OAuth"
+                            } else {
+                                "Reconnect Vercel with OAuth"
+                            }
+                        )
                     }
 
-                    Text(
-                        "Enter access tokens only inside Nexora. Never paste them into chat.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    if (connections.vercel == null) {
+                        TextButton(
+                            enabled = !busy,
+                            onClick = {
+                                vercelAdvanced = !vercelAdvanced
+                                vercelToken = ""
+                            }
+                        ) {
+                            Text(
+                                if (vercelAdvanced) {
+                                    "Hide advanced Vercel fallback"
+                                } else {
+                                    "Advanced: use Vercel access token"
+                                }
+                            )
+                        }
+
+                        if (vercelAdvanced) {
+                            OutlinedTextField(
+                                value = vercelToken,
+                                onValueChange = { vercelToken = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("Vercel access token") },
+                                singleLine = true,
+                                visualTransformation =
+                                    PasswordVisualTransformation(),
+                                colors = nexoraOutlinedFieldColors()
+                            )
+                            OutlinedButton(
+                                enabled = !busy &&
+                                    vercelToken.trim().length >= 10,
+                                onClick = {
+                                    val rawToken = vercelToken.trim()
+                                    launchTask {
+                                        NexoraApi.connectIntegration(
+                                            token(),
+                                            installationId,
+                                            email(),
+                                            "vercel",
+                                            rawToken
+                                        )
+                                        vercelToken = ""
+                                        vercelAdvanced = false
+                                        connections =
+                                            NexoraApi.integrationStatus(
+                                                token(),
+                                                installationId,
+                                                email()
+                                            )
+                                        message = "Vercel connected."
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Connect using access token")
+                            }
+                        }
+                    }
+
+                    if (
+                        connections.github == null ||
+                        connections.vercel == null
+                    ) {
+                        Text(
+                            "Nexora never displays or logs a saved provider " +
+                                "token.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
@@ -411,6 +542,7 @@ private fun ProjectStudioScreen(
                         editInstruction = ""
                         publishedUrl = ""
                         publishState = ""
+                        publishWarnings = emptyList()
                         message = ""
                         errorText = ""
                     }
@@ -526,17 +658,39 @@ private fun ProjectStudioScreen(
                                 connections.vercel != null,
                             onClick = {
                                 val project = selected ?: return@Button
+                                publishState = "Publishing"
+                                publishWarnings = emptyList()
                                 launchTask {
-                                    val published = NexoraApi.publishProject(
-                                        token(),
-                                        installationId,
-                                        email(),
-                                        project.id
-                                    )
-                                    publishedUrl = published.productionUrl
-                                    publishState = published.state
-                                    message = "Website published."
-                                    refreshAll()
+                                    try {
+                                        val published =
+                                            NexoraApi.publishProject(
+                                                token(),
+                                                installationId,
+                                                email(),
+                                                project.id
+                                            )
+                                        publishedUrl =
+                                            published.productionUrl
+                                        publishState = published.state
+                                            .ifBlank { "Unknown" }
+                                        publishWarnings =
+                                            published.warnings
+                                        message = if (
+                                            published.productionUrl
+                                                .isNotBlank()
+                                        ) {
+                                            "Publishing completed with " +
+                                                "state ${publishState}."
+                                        } else {
+                                            "Publish request completed " +
+                                                "with state ${publishState}."
+                                        }
+                                        refreshAll()
+                                    } catch (publishError: Throwable) {
+                                        publishState = "Failed"
+                                        publishedUrl = ""
+                                        throw publishError
+                                    }
                                 }
                             },
                             modifier = Modifier.fillMaxWidth()
@@ -557,6 +711,22 @@ private fun ProjectStudioScreen(
 
                         if (publishState.isNotBlank()) {
                             Text("Deployment state: $publishState")
+                        }
+                        if (publishWarnings.isNotEmpty()) {
+                            Text(
+                                "Security warnings",
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.tertiary
+                            )
+                            publishWarnings.forEach { warning ->
+                                Text(
+                                    "• $warning",
+                                    style =
+                                        MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme
+                                        .onSurfaceVariant
+                                )
+                            }
                         }
                         if (publishedUrl.isNotBlank()) {
                             OutlinedButton(

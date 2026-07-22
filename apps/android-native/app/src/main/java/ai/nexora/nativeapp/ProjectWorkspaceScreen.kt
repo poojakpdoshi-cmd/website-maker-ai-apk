@@ -8,7 +8,11 @@ import ai.nexora.nativeapp.data.NativeProjectSource
 import ai.nexora.nativeapp.data.NexoraApi
 import ai.nexora.nativeapp.data.SessionStore
 import android.annotation.SuppressLint
+import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
+import android.net.Uri
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -23,9 +27,9 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -33,6 +37,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -54,6 +60,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -62,6 +69,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 
@@ -268,6 +277,9 @@ private fun ProjectDetailPane(
     var section by remember(detail.project.id) {
         mutableStateOf("preview")
     }
+    var fullPreviewOpen by remember(detail.project.id) {
+        mutableStateOf(false)
+    }
 
     Column(
         modifier = Modifier
@@ -336,113 +348,413 @@ private fun ProjectDetailPane(
                     installationId
                 )
 
-                else -> ProjectPreviewPane(detail)
+                else -> ProjectPreviewPane(
+                    detail = detail,
+                    onOpenFullPreview = {
+                        fullPreviewOpen = true
+                    }
+                )
             }
         }
+    }
+
+    if (fullPreviewOpen) {
+        FullScreenProjectPreview(
+            detail = detail,
+            onClose = { fullPreviewOpen = false }
+        )
     }
 }
 
 @Composable
 private fun ProjectPreviewPane(
-    detail: NativeProjectDetail
+    detail: NativeProjectDetail,
+    onOpenFullPreview: () -> Unit
 ) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+    var reloadKey by remember(
+        detail.project.id,
+        detail.versionNumber
     ) {
-        item {
-            GlassPanel(Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(5.dp)
-                ) {
-                    Text(
-                        "Rendered website preview",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Black,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        "Version ${detail.versionNumber} · " +
-                            detail.fileCount
-                                .coerceAtLeast(detail.filePaths.size)
-                                .takeIf { it > 0 }
-                                ?.let { "$it source files" }
-                                .orEmpty()
-                                .ifBlank {
-                                    "Complete source available"
-                                },
-                        color = MaterialTheme.colorScheme.secondary
-                    )
-                    Text(
-                        "${detail.project.websiteType} · ${detail.project.framework} · " +
-                            detail.project.status.replace('_', ' '),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+        mutableStateOf(0)
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        GlassPanel(Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
+                Text(
+                    "Rendered website preview",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    "Version ${detail.versionNumber} · " +
+                        detail.fileCount
+                            .coerceAtLeast(detail.filePaths.size)
+                            .takeIf { it > 0 }
+                            ?.let { "$it source files" }
+                            .orEmpty()
+                            .ifBlank {
+                                "Complete source available"
+                            },
+                    color = MaterialTheme.colorScheme.secondary
+                )
+                Text(
+                    "${detail.project.websiteType} · " +
+                        "${detail.project.framework} · " +
+                        detail.project.status.replace('_', ' '),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 
-        item {
-            if (detail.previewHtml.isBlank()) {
-                GlassPanel(Modifier.fillMaxWidth()) {
+        if (detail.previewHtml.isBlank()) {
+            GlassPanel(Modifier.fillMaxWidth()) {
+                Text(
+                    "No visual preview is available for this version. " +
+                        "The complete project is still available under " +
+                        "Source files.",
+                    modifier = Modifier.padding(18.dp),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = onOpenFullPreview,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Icon(
+                        Icons.Default.OpenInFull,
+                        contentDescription = null
+                    )
                     Text(
-                        "No visual preview is available for this version. " +
-                            "The complete project is still available under Source files.",
-                        modifier = Modifier.padding(18.dp),
-                        color = MaterialTheme.colorScheme.onSurface
+                        "Open Full Preview",
+                        modifier = Modifier.padding(start = 7.dp)
                     )
                 }
-            } else {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(560.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    color = Color.White,
-                    border = BorderStroke(
-                        1.dp,
-                        MaterialTheme.colorScheme.outlineVariant
-                    ),
-                    shadowElevation = 10.dp
+                OutlinedButton(
+                    onClick = { reloadKey += 1 },
+                    shape = RoundedCornerShape(16.dp)
                 ) {
-                    ProjectWebPreview(detail.previewHtml)
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = "Reload preview"
+                    )
                 }
+            }
+
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                shape = RoundedCornerShape(24.dp),
+                color = Color.White,
+                border = BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.outlineVariant
+                ),
+                shadowElevation = 10.dp
+            ) {
+                ProjectWebPreview(
+                    html = detail.previewHtml,
+                    reloadKey = reloadKey
+                )
             }
         }
     }
 }
 
+@Composable
+private fun FullScreenProjectPreview(
+    detail: NativeProjectDetail,
+    onClose: () -> Unit
+) {
+    var reloadKey by remember(
+        detail.project.id,
+        detail.versionNumber
+    ) {
+        mutableStateOf(0)
+    }
+
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = false,
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxSize()
+                .safeDrawingPadding(),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            Column(Modifier.fillMaxSize()) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.surface,
+                    shadowElevation = 8.dp
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                horizontal = 8.dp,
+                                vertical = 6.dp
+                            ),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = onClose) {
+                            Icon(
+                                Icons.Default.ArrowBack,
+                                contentDescription = "Back to project"
+                            )
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                detail.project.name,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                fontWeight = FontWeight.Black,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                "Full website preview",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme
+                                    .onSurfaceVariant
+                            )
+                        }
+                        IconButton(onClick = { reloadKey += 1 }) {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "Reload website"
+                            )
+                        }
+                    }
+                }
+
+                ProjectWebPreview(
+                    html = detail.previewHtml,
+                    reloadKey = reloadKey,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                )
+            }
+        }
+    }
+}
+
+private const val PreviewBaseUrl =
+    "https://preview.nexora.invalid/"
+
+private fun preparePreviewHtml(rawHtml: String): String {
+    val html = rawHtml.trim()
+    val viewport =
+        "<meta name=\"viewport\" " +
+            "content=\"width=device-width, initial-scale=1, " +
+            "viewport-fit=cover\">"
+
+    if (
+        Regex(
+            "<meta[^>]+name=[\\\"']viewport[\\\"']",
+            RegexOption.IGNORE_CASE
+        ).containsMatchIn(html)
+    ) {
+        return html
+    }
+
+    val head = Regex(
+        "<head(?:\\s[^>]*)?>",
+        RegexOption.IGNORE_CASE
+    )
+
+    val headMatch = head.find(html)
+    if (headMatch != null) {
+        return html.replaceRange(
+            headMatch.range,
+            headMatch.value + viewport
+        )
+    }
+
+    val htmlElement = Regex(
+        "<html(?:\\s[^>]*)?>",
+        RegexOption.IGNORE_CASE
+    ).find(html)
+
+    return if (htmlElement != null) {
+        html.replaceRange(
+            htmlElement.range,
+            htmlElement.value + "<head>$viewport</head>"
+        )
+    } else {
+        "<!doctype html><html><head>$viewport</head>" +
+            "<body>$html</body></html>"
+    }
+}
+
+private fun previewNeedsJavaScript(html: String): Boolean =
+    Regex(
+        "<script\\b|\\son[a-z]+\\s*=|javascript:",
+        RegexOption.IGNORE_CASE
+    ).containsMatchIn(html)
+
+private fun previewNeedsDomStorage(html: String): Boolean =
+    Regex(
+        "\\b(?:localStorage|sessionStorage|indexedDB)\\b",
+        RegexOption.IGNORE_CASE
+    ).containsMatchIn(html)
+
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun ProjectWebPreview(html: String) {
+private fun ProjectWebPreview(
+    html: String,
+    reloadKey: Int,
+    modifier: Modifier = Modifier
+) {
     val context = LocalContext.current
+    var loading by remember(html, reloadKey) {
+        mutableStateOf(true)
+    }
+    var errorText by remember(html, reloadKey) {
+        mutableStateOf("")
+    }
+    val previewHost = remember {
+        Uri.parse(PreviewBaseUrl).host
+    }
+
+    fun openExternalLink(uri: Uri) {
+        runCatching {
+            context.startActivity(
+                Intent(
+                    Intent.ACTION_VIEW,
+                    uri
+                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        }.onFailure {
+            errorText = "No app can open this link."
+        }
+    }
+
     val webView = remember(context) {
         WebView(context).apply {
             setBackgroundColor(AndroidColor.WHITE)
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
             settings.allowFileAccess = false
             settings.allowContentAccess = false
             settings.databaseEnabled = false
+            settings.allowFileAccessFromFileURLs = false
+            settings.allowUniversalAccessFromFileURLs = false
             settings.setSupportMultipleWindows(false)
+            settings.javaScriptCanOpenWindowsAutomatically = false
             settings.mediaPlaybackRequiresUserGesture = true
+            settings.safeBrowsingEnabled = true
+            settings.cacheMode = WebSettings.LOAD_NO_CACHE
+            settings.useWideViewPort = true
+            settings.loadWithOverviewMode = false
             settings.mixedContentMode =
                 WebSettings.MIXED_CONTENT_NEVER_ALLOW
             webViewClient = object : WebViewClient() {
+                override fun onPageStarted(
+                    view: WebView?,
+                    url: String?,
+                    favicon: Bitmap?
+                ) {
+                    loading = true
+                    errorText = ""
+                }
+
+                override fun onPageFinished(
+                    view: WebView?,
+                    url: String?
+                ) {
+                    loading = false
+                }
+
                 override fun shouldOverrideUrlLoading(
                     view: WebView?,
                     request: WebResourceRequest?
-                ): Boolean = request?.isForMainFrame == true
+                ): Boolean {
+                    if (request?.isForMainFrame != true) {
+                        return false
+                    }
+
+                    val uri = request.url ?: return true
+                    return when (uri.scheme?.lowercase()) {
+                        "about" -> false
+                        "https" -> {
+                            if (
+                                uri.host?.equals(
+                                    previewHost,
+                                    ignoreCase = true
+                                ) == true
+                            ) {
+                                false
+                            } else {
+                                openExternalLink(uri)
+                                true
+                            }
+                        }
+                        "mailto", "tel" -> {
+                            openExternalLink(uri)
+                            true
+                        }
+                        else -> {
+                            errorText =
+                                "Blocked an unsafe preview link."
+                            true
+                        }
+                    }
+                }
+
+                override fun onReceivedError(
+                    view: WebView?,
+                    request: WebResourceRequest?,
+                    error: WebResourceError?
+                ) {
+                    if (request?.isForMainFrame == true) {
+                        loading = false
+                        errorText = error?.description
+                            ?.toString()
+                            ?.take(240)
+                            .orEmpty()
+                            .ifBlank {
+                                "The preview could not load this page."
+                            }
+                    }
+                }
             }
         }
     }
 
-    LaunchedEffect(html) {
+    LaunchedEffect(html, reloadKey) {
+        val prepared = preparePreviewHtml(html)
+        webView.settings.javaScriptEnabled =
+            previewNeedsJavaScript(prepared)
+        webView.settings.domStorageEnabled =
+            previewNeedsDomStorage(prepared)
+        webView.settings.databaseEnabled =
+            previewNeedsDomStorage(prepared)
+        loading = true
+        errorText = ""
         webView.loadDataWithBaseURL(
-            "https://preview.nexora.invalid/",
-            html,
+            PreviewBaseUrl,
+            prepared,
             "text/html",
             Charsets.UTF_8.name(),
             null
@@ -459,10 +771,62 @@ private fun ProjectWebPreview(html: String) {
         }
     }
 
-    AndroidView(
-        factory = { webView },
-        modifier = Modifier.fillMaxSize()
-    )
+    Box(modifier = modifier.fillMaxSize()) {
+        AndroidView(
+            factory = { webView },
+            modifier = Modifier.fillMaxSize()
+        )
+
+        if (loading) {
+            LinearProgressIndicator(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+            )
+        }
+
+        if (errorText.isNotBlank()) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(20.dp),
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.errorContainer,
+                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                shadowElevation = 10.dp
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        "Preview could not open this page",
+                        fontWeight = FontWeight.Black
+                    )
+                    Text(
+                        errorText,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            errorText = ""
+                            loading = true
+                            webView.loadDataWithBaseURL(
+                                PreviewBaseUrl,
+                                preparePreviewHtml(html),
+                                "text/html",
+                                Charsets.UTF_8.name(),
+                                null
+                            )
+                        }
+                    ) {
+                        Text("Reload preview")
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable

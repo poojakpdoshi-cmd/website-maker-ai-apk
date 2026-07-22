@@ -2,13 +2,18 @@
 
 package ai.nexora.nativeapp
 
+import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
+import android.speech.RecognizerIntent
+import android.text.format.DateUtils
 import android.util.Base64
 import ai.nexora.nativeapp.data.AdminAccount
 import ai.nexora.nativeapp.data.AdminSummary
+import ai.nexora.nativeapp.data.ChatThread
 import ai.nexora.nativeapp.data.LoginResult
 import ai.nexora.nativeapp.data.NativeImageAttachment
 import ai.nexora.nativeapp.data.NativeProject
@@ -60,8 +65,12 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -74,6 +83,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
@@ -89,6 +99,7 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -98,6 +109,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -107,9 +119,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 data class ChatMessage(
     val role: String,
@@ -134,11 +148,41 @@ private data class SelectedAttachment(
 
 private val NexoraWelcomeMessage = ChatMessage(
     "assistant",
-    "OmniRoute is online. Choose X0 Ultra for deep work, " +
-        "Y1 for balanced intelligence, or N1 for speed. " +
+    "Nexora is ready. Choose Nexora Apex for deep work, " +
+        "Nexora Core for balanced intelligence, or Nexora Swift " +
+        "for speed. " +
         "Ask anything, attach a text/code file, or describe " +
         "the website you want to build."
 )
+
+private data class NexoraMode(
+    val id: String,
+    val name: String,
+    val description: String
+)
+
+private val NexoraModes = listOf(
+    NexoraMode(
+        id = "x0-ultra",
+        name = "Nexora Apex",
+        description = "Deep reasoning, research, critique and repair"
+    ),
+    NexoraMode(
+        id = "y1",
+        name = "Nexora Core",
+        description = "Balanced intelligence for everyday work"
+    ),
+    NexoraMode(
+        id = "n1",
+        name = "Nexora Swift",
+        description = "Fast answers and lightweight tasks"
+    )
+)
+
+private enum class VoiceCaptureMode {
+    DICTATION,
+    VOICE_ASK
+}
 
 private fun readSelectedAttachment(
     context: Context,
@@ -672,21 +716,69 @@ private fun NativeHome(
         initialValue = DrawerValue.Closed
     )
     val scope = rememberCoroutineScope()
+    val initialThread = remember {
+        sessionStore.ensureChatThread()
+    }
+    var chatThreads by remember {
+        mutableStateOf(sessionStore.chatThreads())
+    }
+    var activeThreadId by rememberSaveable {
+        mutableStateOf(initialThread.id)
+    }
+    var chatSearch by rememberSaveable {
+        mutableStateOf("")
+    }
     val chatMessages = remember {
-        mutableStateListOf<ChatMessage>().apply {
-            addAll(
-                sessionStore.chatHistory().map {
-                    ChatMessage(it.first, it.second)
-                }
-            )
-            if (isEmpty()) {
-                add(NexoraWelcomeMessage)
+        mutableStateListOf<ChatMessage>()
+    }
+
+    LaunchedEffect(activeThreadId) {
+        sessionStore.selectChatThread(activeThreadId)
+        val stored = sessionStore.chatThread(activeThreadId)
+
+        chatMessages.clear()
+        chatMessages.addAll(
+            stored?.messages.orEmpty().map { (role, text) ->
+                ChatMessage(role, text)
             }
+        )
+
+        if (chatMessages.isEmpty()) {
+            chatMessages += NexoraWelcomeMessage
         }
+
+        chatThreads = sessionStore.chatThreads()
+    }
+
+    fun persistActiveThread() {
+        sessionStore.saveChatThread(
+            activeThreadId,
+            chatMessages.map { it.role to it.text }
+        )
+        chatThreads = sessionStore.chatThreads()
     }
 
     fun openScreen(destination: NativeScreen) {
+        persistActiveThread()
         screen = destination
+        scope.launch { drawerState.close() }
+    }
+
+    fun openThread(thread: ChatThread) {
+        if (thread.id != activeThreadId) {
+            persistActiveThread()
+            activeThreadId = thread.id
+        }
+        screen = NativeScreen.CHAT
+        scope.launch { drawerState.close() }
+    }
+
+    fun createThread() {
+        persistActiveThread()
+        val created = sessionStore.createChatThread()
+        chatThreads = sessionStore.chatThreads()
+        activeThreadId = created.id
+        screen = NativeScreen.CHAT
         scope.launch { drawerState.close() }
     }
 
@@ -735,22 +827,159 @@ private fun NativeHome(
                         }
                     }
 
-                    Spacer(Modifier.height(14.dp))
+                    Spacer(Modifier.height(10.dp))
 
-                    NavigationDrawerItem(
-                        selected = screen == NativeScreen.CHAT,
-                        onClick = {
-                            openScreen(NativeScreen.CHAT)
-                        },
-                        icon = {
+                    Button(
+                        onClick = ::createThread,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(54.dp),
+                        shape = RoundedCornerShape(18.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = null
+                        )
+                        Text(
+                            "+ New chat",
+                            modifier = Modifier.padding(start = 8.dp),
+                            fontWeight = FontWeight.Black
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = chatSearch,
+                        onValueChange = { chatSearch = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 10.dp),
+                        placeholder = { Text("Search chats") },
+                        leadingIcon = {
                             Icon(
-                                Icons.Default.Chat,
+                                Icons.Default.Search,
                                 contentDescription = null
                             )
                         },
-                        label = { Text("Chat") },
-                        shape = RoundedCornerShape(18.dp)
+                        singleLine = true,
+                        shape = RoundedCornerShape(18.dp),
+                        colors = nexoraOutlinedFieldColors()
                     )
+
+                    Text(
+                        "Recent chats",
+                        modifier = Modifier.padding(
+                            start = 8.dp,
+                            top = 14.dp,
+                            bottom = 6.dp
+                        ),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    val visibleThreads = chatThreads.filter { thread ->
+                        chatSearch.isBlank() ||
+                            thread.title.contains(
+                                chatSearch.trim(),
+                                ignoreCase = true
+                            )
+                    }
+
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement =
+                            Arrangement.spacedBy(5.dp)
+                    ) {
+                        if (visibleThreads.isEmpty()) {
+                            item {
+                                Text(
+                                    "No matching conversations.",
+                                    modifier = Modifier.padding(12.dp),
+                                    color = MaterialTheme.colorScheme
+                                        .onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        items(
+                            visibleThreads,
+                            key = { it.id }
+                        ) { thread ->
+                            val selected =
+                                thread.id == activeThreadId &&
+                                    screen == NativeScreen.CHAT
+
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        openThread(thread)
+                                    },
+                                shape = RoundedCornerShape(16.dp),
+                                color = if (selected) {
+                                    MaterialTheme.colorScheme
+                                        .primaryContainer
+                                        .copy(alpha = 0.72f)
+                                } else {
+                                    Color.Transparent
+                                },
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (selected) {
+                                        MaterialTheme.colorScheme.primary
+                                            .copy(alpha = 0.52f)
+                                    } else {
+                                        MaterialTheme.colorScheme
+                                            .outlineVariant
+                                            .copy(alpha = 0.24f)
+                                    }
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(
+                                        horizontal = 11.dp,
+                                        vertical = 10.dp
+                                    ),
+                                    verticalAlignment =
+                                        Alignment.CenterVertically,
+                                    horizontalArrangement =
+                                        Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Chat,
+                                        contentDescription = null,
+                                        tint = if (selected) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme
+                                                .onSurfaceVariant
+                                        }
+                                    )
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            thread.title,
+                                            maxLines = 1,
+                                            overflow =
+                                                TextOverflow.Ellipsis,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme
+                                                .onSurface
+                                        )
+                                        Text(
+                                            formatChatTimestamp(
+                                                thread.updatedAt
+                                            ),
+                                            style = MaterialTheme.typography
+                                                .labelSmall,
+                                            color = MaterialTheme.colorScheme
+                                                .onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
 
                     NavigationDrawerItem(
                         selected = screen == NativeScreen.STUDIO,
@@ -763,7 +992,7 @@ private fun NativeHome(
                                 contentDescription = null
                             )
                         },
-                        label = { Text("Create") },
+                        label = { Text("Create Studio") },
                         shape = RoundedCornerShape(18.dp)
                     )
 
@@ -778,7 +1007,7 @@ private fun NativeHome(
                                 contentDescription = null
                             )
                         },
-                        label = { Text("Projects") },
+                        label = { Text("My Projects") },
                         shape = RoundedCornerShape(18.dp)
                     )
 
@@ -796,8 +1025,6 @@ private fun NativeHome(
                         label = { Text("Account") },
                         shape = RoundedCornerShape(18.dp)
                     )
-
-                    Spacer(Modifier.weight(1f))
 
                     DisableSelection {
                         Text(
@@ -819,8 +1046,16 @@ private fun NativeHome(
                     title = {
                         Column {
                             Text(
-                                screenTitle(screen),
-                                fontWeight = FontWeight.Black
+                                if (screen == NativeScreen.CHAT) {
+                                    chatThreads.firstOrNull {
+                                        it.id == activeThreadId
+                                    }?.title ?: "Chat"
+                                } else {
+                                    screenTitle(screen)
+                                },
+                                fontWeight = FontWeight.Black,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Text(
                                 "Nexora.Ai",
@@ -904,11 +1139,18 @@ private fun NativeHome(
                     label = "Nexora screen transition"
                 ) { destination ->
                     when (destination) {
-                        NativeScreen.CHAT -> ChatScreen(
-                            sessionStore,
-                            installationId,
-                            chatMessages
-                        )
+                        NativeScreen.CHAT -> key(activeThreadId) {
+                            ChatScreen(
+                                sessionStore = sessionStore,
+                                installationId = installationId,
+                                threadId = activeThreadId,
+                                messages = chatMessages,
+                                onThreadChanged = {
+                                    chatThreads =
+                                        sessionStore.chatThreads()
+                                }
+                            )
+                        }
 
                         NativeScreen.STUDIO -> StudioScreen(
                             sessionStore,
@@ -931,6 +1173,14 @@ private fun NativeHome(
         }
     }
 }
+
+private fun formatChatTimestamp(timestamp: Long): String =
+    DateUtils.getRelativeTimeSpanString(
+        timestamp,
+        System.currentTimeMillis(),
+        DateUtils.MINUTE_IN_MILLIS,
+        DateUtils.FORMAT_ABBREV_RELATIVE
+    ).toString()
 
 private fun screenTitle(screen: NativeScreen): String =
     when (screen) {
@@ -1012,7 +1262,7 @@ private suspend fun generateWebsiteFromChat(
 
     lastProgress = lastProgress.coerceAtLeast(10)
     onProgress(
-        "OmniRoute is planning the architecture…",
+        "Nexora is planning the architecture…",
         lastProgress
     )
 
@@ -1101,7 +1351,9 @@ private suspend fun generateWebsiteFromChat(
 private fun ChatScreen(
     sessionStore: SessionStore,
     installationId: String,
-    messages: MutableList<ChatMessage>
+    threadId: String,
+    messages: MutableList<ChatMessage>,
+    onThreadChanged: () -> Unit
 ) {
     val context = LocalContext.current
     var input by remember { mutableStateOf("") }
@@ -1109,11 +1361,153 @@ private fun ChatScreen(
     var selectedMode by rememberSaveable {
         mutableStateOf("x0-ultra")
     }
+    var showModeSheet by remember {
+        mutableStateOf(false)
+    }
     var attachment by remember {
         mutableStateOf<SelectedAttachment?>(null)
     }
     var attachmentError by remember {
         mutableStateOf("")
+    }
+    var voiceError by remember {
+        mutableStateOf("")
+    }
+    var voiceCaptureMode by remember {
+        mutableStateOf(VoiceCaptureMode.DICTATION)
+    }
+
+    val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
+    val modeSheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true
+    )
+
+    fun persistConversation() {
+        sessionStore.saveChatThread(
+            threadId,
+            messages.map { it.role to it.text }
+        )
+        onThreadChanged()
+    }
+
+    fun submitMessage(rawRequest: String) {
+        val request = rawRequest.trim()
+        if (request.isBlank() || loading) {
+            return
+        }
+
+        val selectedAttachment = attachment
+
+        input = ""
+        attachment = null
+        attachmentError = ""
+        voiceError = ""
+
+        val visibleMessage = if (selectedAttachment != null) {
+            request +
+                "\n\nAttached: " +
+                selectedAttachment.name
+        } else {
+            request
+        }
+
+        val promptWithFile = selectedAttachment
+            ?.textContent
+            ?.let { fileText ->
+                request +
+                    "\n\nAttached file: " +
+                    selectedAttachment.name +
+                    "\n---\n" +
+                    fileText
+            }
+            ?: request
+
+        messages += ChatMessage(
+            "user",
+            visibleMessage
+        )
+        loading = true
+        persistConversation()
+
+        if (isWebsiteGenerationRequest(request)) {
+            messages += ChatMessage(
+                "assistant",
+                "Preparing your website…"
+            )
+            val statusIndex = messages.lastIndex
+
+            scope.launch {
+                runCatching {
+                    generateWebsiteFromChat(
+                        sessionStore,
+                        installationId,
+                        promptWithFile,
+                        selectedAttachment?.asGenerationImage()
+                    ) { status, _ ->
+                        messages[statusIndex] = ChatMessage(
+                            "assistant",
+                            status
+                        )
+                    }
+                }.onSuccess { project ->
+                    messages[statusIndex] = ChatMessage(
+                        "assistant",
+                        "Website generated successfully.\n\n" +
+                            "Project: ${project.project.name}\n" +
+                            "Version: ${project.versionNumber}\n\n" +
+                            "Saved in My Projects."
+                    )
+                }.onFailure {
+                    messages[statusIndex] = ChatMessage(
+                        "assistant",
+                        "Website generation failed:\n" +
+                            (it.message ?: "Unknown error")
+                    )
+                }
+                loading = false
+                persistConversation()
+            }
+        } else if (selectedAttachment?.imageBase64 != null) {
+            messages += ChatMessage(
+                "assistant",
+                "The photo is attached. Photo references are " +
+                    "currently sent to the website generator. " +
+                    "Ask me to build or redesign a website using " +
+                    "this photo."
+            )
+            loading = false
+            persistConversation()
+        } else {
+            scope.launch {
+                val response = runCatching {
+                    NexoraApi.sendChat(
+                        sessionStore.token()
+                            ?: error("Session missing"),
+                        installationId,
+                        sessionStore.username() ?: "Poojak",
+                        sessionStore.email()
+                            ?: error("Email missing"),
+                        promptWithFile,
+                        selectedMode,
+                        messages
+                            .dropLast(1)
+                            .takeLast(18)
+                            .map { it.role to it.text }
+                    )
+                }.getOrElse {
+                    "Error: " +
+                        (it.message ?: "Chat request failed")
+                }
+
+                messages += ChatMessage(
+                    "assistant",
+                    response
+                )
+                loading = false
+                persistConversation()
+            }
+        }
     }
 
     val attachmentLauncher =
@@ -1134,8 +1528,68 @@ private fun ChatScreen(
             }
         }
 
-    val scope = rememberCoroutineScope()
-    val listState = rememberLazyListState()
+    val speechLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode != Activity.RESULT_OK) {
+            return@rememberLauncherForActivityResult
+        }
+
+        val transcript = result.data
+            ?.getStringArrayListExtra(
+                RecognizerIntent.EXTRA_RESULTS
+            )
+            ?.firstOrNull()
+            ?.trim()
+            .orEmpty()
+
+        if (transcript.isBlank()) {
+            voiceError = "No speech was recognised. Please try again."
+        } else if (
+            voiceCaptureMode == VoiceCaptureMode.DICTATION
+        ) {
+            input = listOf(input.trim(), transcript)
+                .filter { it.isNotBlank() }
+                .joinToString(" ")
+            voiceError = ""
+        } else {
+            submitMessage(transcript)
+        }
+    }
+
+    fun startSpeechCapture(mode: VoiceCaptureMode) {
+        voiceCaptureMode = mode
+        voiceError = ""
+
+        val intent = Intent(
+            RecognizerIntent.ACTION_RECOGNIZE_SPEECH
+        ).apply {
+            putExtra(
+                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM
+            )
+            putExtra(
+                RecognizerIntent.EXTRA_LANGUAGE,
+                Locale.getDefault().toLanguageTag()
+            )
+            putExtra(
+                RecognizerIntent.EXTRA_PROMPT,
+                if (mode == VoiceCaptureMode.DICTATION) {
+                    "Dictate a message for Nexora"
+                } else {
+                    "Ask Nexora"
+                }
+            )
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        }
+
+        runCatching {
+            speechLauncher.launch(intent)
+        }.onFailure {
+            voiceError =
+                "Android speech recognition is not available on this device."
+        }
+    }
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
@@ -1146,11 +1600,109 @@ private fun ChatScreen(
     }
 
     val latestMessageText = messages.lastOrNull()?.text
-    LaunchedEffect(messages.size, latestMessageText) {
+    LaunchedEffect(
+        threadId,
+        messages.size,
+        latestMessageText
+    ) {
         delay(300)
-        sessionStore.saveChatHistory(
+        sessionStore.saveChatThread(
+            threadId,
             messages.map { it.role to it.text }
         )
+        onThreadChanged()
+    }
+
+    if (showModeSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showModeSheet = false },
+            sheetState = modeSheetState,
+            containerColor = MaterialTheme.colorScheme.surface,
+            contentColor = MaterialTheme.colorScheme.onSurface
+        ) {
+            Column(
+                modifier = Modifier.padding(
+                    start = 18.dp,
+                    end = 18.dp,
+                    bottom = 28.dp
+                ),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    "Choose a Nexora mode",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Black
+                )
+                Text(
+                    "The backend model IDs remain unchanged.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                NexoraModes.forEach { mode ->
+                    val selected = selectedMode == mode.id
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                if (!loading) {
+                                    selectedMode = mode.id
+                                    showModeSheet = false
+                                }
+                            },
+                        shape = RoundedCornerShape(20.dp),
+                        color = if (selected) {
+                            MaterialTheme.colorScheme.primaryContainer
+                                .copy(alpha = 0.78f)
+                        } else {
+                            MaterialTheme.colorScheme.surfaceVariant
+                                .copy(alpha = 0.52f)
+                        },
+                        border = BorderStroke(
+                            1.dp,
+                            if (selected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.outlineVariant
+                            }
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement =
+                                Arrangement.spacedBy(12.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .background(
+                                        if (selected) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme
+                                                .outline
+                                        },
+                                        CircleShape
+                                    )
+                            )
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    mode.name,
+                                    fontWeight = FontWeight.Black
+                                )
+                                Text(
+                                    mode.description,
+                                    style =
+                                        MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme
+                                        .onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     Column(
@@ -1285,9 +1837,12 @@ private fun ChatScreen(
                             )
                             Text(
                                 when (selectedMode) {
-                                    "x0-ultra" -> "X0 Ultra is reasoning…"
-                                    "y1" -> "Y1 is working…"
-                                    else -> "N1 is responding…"
+                                    "x0-ultra" ->
+                                        "Nexora Apex is reasoning…"
+                                    "y1" ->
+                                        "Nexora Core is working…"
+                                    else ->
+                                        "Nexora Swift is responding…"
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme
@@ -1317,57 +1872,21 @@ private fun ChatScreen(
                 verticalArrangement =
                     Arrangement.spacedBy(6.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement =
-                        Arrangement.spacedBy(6.dp)
+                OutlinedButton(
+                    enabled = !loading,
+                    onClick = { showModeSheet = true },
+                    shape = RoundedCornerShape(16.dp)
                 ) {
-                    listOf(
-                        "x0-ultra" to "X0 Ultra",
-                        "y1" to "Y1",
-                        "n1" to "N1"
-                    ).forEach { (value, label) ->
-                        FilterChip(
-                            modifier = Modifier.weight(1f),
-                            selected = selectedMode == value,
-                            onClick = {
-                                if (!loading) {
-                                    selectedMode = value
-                                }
-                            },
-                            label = { Text(label) },
-                            enabled = !loading,
-                            colors = FilterChipDefaults.filterChipColors(
-                                containerColor = Color.Transparent,
-                                labelColor = MaterialTheme.colorScheme
-                                    .onSurfaceVariant,
-                                selectedContainerColor =
-                                    MaterialTheme.colorScheme
-                                        .primaryContainer,
-                                selectedLabelColor =
-                                    MaterialTheme.colorScheme
-                                        .onPrimaryContainer
-                            )
-                        )
-                    }
-                }
-
-                Crossfade(
-                    targetState = selectedMode,
-                    animationSpec = tween(180),
-                    label = "Mode description"
-                ) { mode ->
                     Text(
-                        when (mode) {
-                            "x0-ultra" ->
-                                "Deep reasoning • research • critic • repair"
-                            "y1" ->
-                                "Balanced intelligence and speed"
-                            else ->
-                                "Fast answers and lightweight tasks"
-                        },
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.labelSmall
+                        NexoraModes.first {
+                            it.id == selectedMode
+                        }.name,
+                        fontWeight = FontWeight.Black
+                    )
+                    Icon(
+                        Icons.Default.KeyboardArrowDown,
+                        contentDescription = "Choose Nexora mode",
+                        modifier = Modifier.padding(start = 5.dp)
                     )
                 }
 
@@ -1427,6 +1946,14 @@ private fun ChatScreen(
                     )
                 }
 
+                if (voiceError.isNotBlank()) {
+                    Text(
+                        voiceError,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
                 Row(
                     verticalAlignment = Alignment.Bottom,
                     horizontalArrangement =
@@ -1456,161 +1983,34 @@ private fun ChatScreen(
                         },
                         maxLines = 5,
                         shape = RoundedCornerShape(22.dp),
-                        colors = nexoraTextFieldColors()
+                        colors = nexoraTextFieldColors(),
+                        trailingIcon = {
+                            IconButton(
+                                enabled = !loading,
+                                onClick = {
+                                    startSpeechCapture(
+                                        VoiceCaptureMode.DICTATION
+                                    )
+                                }
+                            ) {
+                                Icon(
+                                    Icons.Default.Mic,
+                                    contentDescription =
+                                        "Dictate into message"
+                                )
+                            }
+                        }
                     )
 
                     Button(
-                        enabled =
-                            input.isNotBlank() && !loading,
+                        enabled = !loading,
                         onClick = {
-                            val request = input.trim()
-                            val selectedAttachment =
-                                attachment
-
-                            input = ""
-                            attachment = null
-                            attachmentError = ""
-
-                            val visibleMessage =
-                                if (
-                                    selectedAttachment != null
-                                ) {
-                                    request +
-                                        "\n\nAttached: " +
-                                        selectedAttachment.name
-                                } else {
-                                    request
-                                }
-
-                            val promptWithFile =
-                                selectedAttachment
-                                    ?.textContent
-                                    ?.let { fileText ->
-                                        request +
-                                            "\n\nAttached file: " +
-                                            selectedAttachment.name +
-                                            "\n---\n" +
-                                            fileText
-                                    }
-                                    ?: request
-
-                            messages += ChatMessage(
-                                "user",
-                                visibleMessage
-                            )
-                            loading = true
-
-                            if (
-                                isWebsiteGenerationRequest(
-                                    request
-                                )
-                            ) {
-                                messages += ChatMessage(
-                                    "assistant",
-                                    "Preparing your website…"
-                                )
-                                val statusIndex =
-                                    messages.lastIndex
-
-                                scope.launch {
-                                    runCatching {
-                                        generateWebsiteFromChat(
-                                            sessionStore,
-                                            installationId,
-                                            promptWithFile,
-                                            selectedAttachment
-                                                ?.asGenerationImage()
-                                        ) { status, _ ->
-                                            messages[
-                                                statusIndex
-                                            ] = ChatMessage(
-                                                "assistant",
-                                                status
-                                            )
-                                        }
-                                    }.onSuccess { project ->
-                                        messages[
-                                            statusIndex
-                                        ] = ChatMessage(
-                                            "assistant",
-                                            "Website generated " +
-                                                "successfully.\n\n" +
-                                                "Project: " +
-                                                project.project.name +
-                                                "\nVersion: " +
-                                                project.versionNumber +
-                                                "\n\nSaved in " +
-                                                "My Projects."
-                                        )
-                                    }.onFailure {
-                                        messages[
-                                            statusIndex
-                                        ] = ChatMessage(
-                                            "assistant",
-                                            "Website generation " +
-                                                "failed:\n" +
-                                                (
-                                                    it.message
-                                                        ?: "Unknown error"
-                                                    )
-                                        )
-                                    }
-                                    loading = false
-                                }
-                            } else if (
-                                selectedAttachment
-                                    ?.imageBase64 != null
-                            ) {
-                                messages += ChatMessage(
-                                    "assistant",
-                                    "The photo is attached. " +
-                                        "Photo references are currently " +
-                                        "sent to the website generator. " +
-                                        "Ask me to build or redesign a " +
-                                        "website using this photo."
-                                )
-                                loading = false
+                            if (input.isNotBlank()) {
+                                submitMessage(input)
                             } else {
-                                scope.launch {
-                                    val response =
-                                        runCatching {
-                                            NexoraApi.sendChat(
-                                                sessionStore.token()
-                                                    ?: error(
-                                                        "Session missing"
-                                                    ),
-                                                installationId,
-                                                sessionStore
-                                                    .username()
-                                                    ?: "Poojak",
-                                                sessionStore.email()
-                                                    ?: error(
-                                                        "Email missing"
-                                                    ),
-                                                promptWithFile,
-                                                selectedMode,
-                                                messages
-                                                    .dropLast(1)
-                                                    .takeLast(18)
-                                                    .map {
-                                                        it.role to it.text
-                                                    }
-                                            )
-                                        }.getOrElse {
-                                            "Error: " +
-                                                (
-                                                    it.message
-                                                        ?: "Chat request " +
-                                                            "failed"
-                                                    )
-                                        }
-
-                                    messages += ChatMessage(
-                                        "assistant",
-                                        response
-                                    )
-                                    loading = false
-                                }
+                                startSpeechCapture(
+                                    VoiceCaptureMode.VOICE_ASK
+                                )
                             }
                         },
                         modifier = Modifier.size(50.dp),
@@ -1628,8 +2028,17 @@ private fun ChatScreen(
                             )
                         } else {
                             Icon(
-                                Icons.Default.Send,
-                                contentDescription = "Send"
+                                if (input.isNotBlank()) {
+                                    Icons.Default.Send
+                                } else {
+                                    Icons.Default.GraphicEq
+                                },
+                                contentDescription =
+                                    if (input.isNotBlank()) {
+                                        "Send message"
+                                    } else {
+                                        "Voice Ask"
+                                    }
                             )
                         }
                     }
@@ -1907,7 +2316,7 @@ fun GenerationScreen(
                                     )
                                     progress = progress.coerceAtLeast(10)
                                     status =
-                                        "OmniRoute is planning the website"
+                                        "Nexora is planning the website"
 
                                     var reconnectFailures = 0
 
