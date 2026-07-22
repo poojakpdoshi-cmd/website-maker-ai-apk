@@ -555,6 +555,82 @@ const accessSchema = z.object({
   androidVersion: z.string().max(160).optional()
 });
 
+const WEBSITE_PROMPT_MIN_LENGTH = 20;
+const WEBSITE_PROMPT_MAX_LENGTH = 30000;
+const GENERATION_IMAGE_MAX_LENGTH = 12000000;
+
+const generationRequestSchema = z.object({
+  email: z.string().trim().email(),
+  installationId: z.string().uuid(),
+  prompt: z.string()
+    .trim()
+    .min(WEBSITE_PROMPT_MIN_LENGTH)
+    .max(WEBSITE_PROMPT_MAX_LENGTH),
+  image: z.object({
+    mimeType: z.string().regex(/^image\//),
+    data: z.string().min(20).max(GENERATION_IMAGE_MAX_LENGTH),
+    name: z.string().max(180).optional()
+  }).optional(),
+  generationMode: z.enum(['standard', 'saas-motion'])
+    .optional()
+    .default('standard'),
+  motionBrief: z.string().min(20).max(1800).optional(),
+  motionFrameCount: z.number().int().min(4).max(12).optional(),
+  motionDurationSeconds: z.number().min(0.1).max(21).optional(),
+  thinkMax: thinkMaxFlagSchema
+});
+
+const generationLaunchRequestSchema = generationRequestSchema.extend({
+  jobId: z.string().uuid().optional()
+});
+
+function generationRequestIssueMessage(issue: z.ZodIssue): string {
+  const field = issue.path.map(String).join('.');
+
+  if (field === 'prompt') {
+    if (issue.code === z.ZodIssueCode.too_small) {
+      return `Describe the website in at least ${WEBSITE_PROMPT_MIN_LENGTH} characters.`;
+    }
+    if (issue.code === z.ZodIssueCode.too_big) {
+      return `Website prompt is too long. Maximum ${WEBSITE_PROMPT_MAX_LENGTH.toLocaleString('en-US')} characters.`;
+    }
+    return 'Website prompt must be text.';
+  }
+
+  if (field === 'image.data') {
+    if (issue.code === z.ZodIssueCode.too_big) {
+      return 'Attached image is too large. Choose a smaller image and try again.';
+    }
+    return 'Attached image data is invalid.';
+  }
+
+  if (field.startsWith('image.')) {
+    return 'Attached file must be a supported image.';
+  }
+
+  if (field === 'email') return 'A valid account email is required.';
+  if (field === 'installationId') return 'A valid device identifier is required.';
+  if (field === 'jobId') return 'The generation job identifier is invalid.';
+  if (field === 'generationMode') return 'The selected generation mode is invalid.';
+  if (field.startsWith('motion')) return 'The SaaS Motion settings are invalid.';
+  if (field === 'thinkMax') return 'The Think Max setting is invalid.';
+
+  return 'The website generation request is invalid.';
+}
+
+function invalidGenerationRequest(error: z.ZodError) {
+  const details = error.issues.slice(0, 5).map((issue) => ({
+    field: issue.path.map(String).join('.') || 'request',
+    message: generationRequestIssueMessage(issue)
+  }));
+
+  return {
+    error: details[0]?.message || 'The website generation request is invalid.',
+    code: 'INVALID_GENERATION_REQUEST',
+    details
+  };
+}
+
 app.get('/health', (c) => c.json({
   ok: true,
   app: c.env.APP_NAME,
@@ -988,24 +1064,12 @@ async function recordGenerationEvent(
 
 
 app.post('/generation-jobs/start', async (c) => {
-  const parsed = z.object({
-    email: z.string().email(),
-    installationId: z.string().uuid(),
-    prompt: z.string().min(20).max(6000),
-    image: z.object({
-      mimeType: z.string().regex(/^image\//),
-      data: z.string().min(20).max(12000000),
-      name: z.string().max(180).optional()
-    }).optional(),
-    generationMode: z.enum(['standard', 'saas-motion']).optional().default('standard'),
-    motionBrief: z.string().min(20).max(1800).optional(),
-    motionFrameCount: z.number().int().min(4).max(12).optional(),
-    motionDurationSeconds: z.number().min(0.1).max(21).optional(),
-    thinkMax: thinkMaxFlagSchema
-  }).safeParse(await c.req.json().catch(() => null));
+  const parsed = generationRequestSchema.safeParse(
+    await c.req.json().catch(() => null)
+  );
 
   if (!parsed.success) {
-    return c.json({ error: 'A valid website request is required.' }, 400);
+    return c.json(invalidGenerationRequest(parsed.error), 400);
   }
 
   if (parsed.data.generationMode === 'saas-motion' && (!parsed.data.image || !parsed.data.motionBrief)) {
@@ -1187,23 +1251,12 @@ app.get('/generation-jobs/:id', async (c) => {
 });
 
 app.post('/generate', async (c) => {
-  const parsed = z.object({
-    email: z.string().email(),
-    installationId: z.string().uuid(),
-    prompt: z.string().min(20).max(6000),
-    jobId: z.string().uuid().optional(),
-    image: z.object({
-      mimeType: z.string().regex(/^image\//),
-      data: z.string().min(20).max(12000000),
-      name: z.string().max(180).optional()
-    }).optional(),
-    generationMode: z.enum(['standard', 'saas-motion']).optional().default('standard'),
-    motionBrief: z.string().min(20).max(1800).optional(),
-    motionFrameCount: z.number().int().min(4).max(12).optional(),
-    motionDurationSeconds: z.number().min(0.1).max(21).optional(),
-    thinkMax: thinkMaxFlagSchema
-  }).safeParse(await c.req.json().catch(() => null));
-  if (!parsed.success) return c.json({ error: 'Email, device identifier and a detailed website prompt are required.' }, 400);
+  const parsed = generationLaunchRequestSchema.safeParse(
+    await c.req.json().catch(() => null)
+  );
+  if (!parsed.success) {
+    return c.json(invalidGenerationRequest(parsed.error), 400);
+  }
 
   if (parsed.data.generationMode === 'saas-motion' && (!parsed.data.image || !parsed.data.motionBrief)) {
     return c.json({ error: 'SaaS Motion Mode requires extracted animation frames and a motion brief.' }, 400);
