@@ -2,6 +2,7 @@ package ai.nexora.nativeapp.data
 
 import ai.nexora.nativeapp.BuildConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -126,7 +127,8 @@ object NexoraApi {
         installationId: String,
         username: String,
         email: String,
-        message: String
+        message: String,
+        mode: String
     ): String = withContext(Dispatchers.IO) {
         requestJson(
             "/assistant/chat",
@@ -136,6 +138,7 @@ object NexoraApi {
                 .put("username", username)
                 .put("email", email)
                 .put("installationId", installationId)
+                .put("mode", mode)
                 .put("history", JSONArray()),
             token,
             installationId
@@ -269,6 +272,60 @@ object NexoraApi {
                 )
             )
         }
+
+    suspend fun launchGeneration(
+        token: String,
+        installationId: String,
+        email: String,
+        prompt: String,
+        jobId: String,
+        generationMode: String = "standard",
+        thinkMax: Boolean = false,
+        image: NativeImageAttachment? = null
+    ) = withContext(Dispatchers.IO) {
+        val body = JSONObject()
+            .put("email", email)
+            .put("installationId", installationId)
+            .put("prompt", prompt)
+            .put("jobId", jobId)
+            .put("generationMode", generationMode)
+            .put("thinkMax", thinkMax)
+
+        image?.let {
+            body.put(
+                "image",
+                JSONObject()
+                    .put("name", it.name)
+                    .put("mimeType", it.mimeType)
+                    .put("data", it.data)
+            )
+        }
+
+        var lastError: Throwable? = null
+
+        repeat(3) { attempt ->
+            try {
+                requestJson(
+                    "/generate",
+                    "POST",
+                    body,
+                    token,
+                    installationId,
+                    allowConflict = true
+                )
+                return@withContext
+            } catch (error: Throwable) {
+                lastError = error
+                if (attempt < 2) {
+                    delay(1200L * (attempt + 1))
+                }
+            }
+        }
+
+        throw lastError ?: IllegalStateException(
+            "Could not connect the website generation worker."
+        )
+    }
 
     suspend fun getGenerationStatus(
         token: String,
@@ -630,7 +687,8 @@ object NexoraApi {
         method: String,
         body: JSONObject? = null,
         token: String? = null,
-        installationId: String? = null
+        installationId: String? = null,
+        allowConflict: Boolean = false
     ): JSONObject {
         val connection = URL(
             BuildConfig.API_BASE + path
@@ -693,7 +751,10 @@ object NexoraApi {
                 )
             }
 
-            if (code !in 200..299) {
+            if (
+                code !in 200..299 &&
+                !(allowConflict && code == 409)
+            ) {
                 val message = sequenceOf(
                     response.optString("error"),
                     response.optString("message"),

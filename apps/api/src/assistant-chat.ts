@@ -6,10 +6,19 @@ import {
   refundNexoraTokens,
   reserveNexoraTokens
 } from './subscription-tokens';
+import {
+  buildNexoraSystemPrompt,
+  chooseNexoraRoute,
+  type NexoraMode,
+  type NexoraRoutePlan
+} from './nexora-system-prompt';
 
 type AssistantEnv = {
   GEMINI_API_KEY?: string;
   GEMINI_MODEL?: string;
+  NEXORA_X0_MODEL?: string;
+  NEXORA_Y1_MODEL?: string;
+  NEXORA_N1_MODEL?: string;
   GROQ_API_KEY?: string;
   GROQ_CODER_MODEL?: string;
   AI?: {
@@ -32,10 +41,49 @@ type ProviderTokenUsage = {
   totalTokens: number | null;
 };
 
+type NexoraSource = {
+  title: string;
+  url: string;
+};
+
 type ProviderReply = {
   reply: string;
   usage: ProviderTokenUsage | null;
+  sources: NexoraSource[];
 };
+
+const requestWindows = new Map<
+  string,
+  { startedAt: number; count: number }
+>();
+
+function checkRateLimit(key: string): {
+  allowed: boolean;
+  retryAfterSeconds?: number;
+} {
+  const now = Date.now();
+  const windowMs = 60_000;
+  const maxRequests = 20;
+  const existing = requestWindows.get(key);
+
+  if (!existing || now - existing.startedAt >= windowMs) {
+    requestWindows.set(key, { startedAt: now, count: 1 });
+    return { allowed: true };
+  }
+
+  if (existing.count >= maxRequests) {
+    return {
+      allowed: false,
+      retryAfterSeconds: Math.max(
+        1,
+        Math.ceil((windowMs - (now - existing.startedAt)) / 1000)
+      )
+    };
+  }
+
+  existing.count += 1;
+  return { allowed: true };
+}
 
 function tokenCount(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
@@ -75,31 +123,7 @@ function cleanUsername(value: unknown): string {
       : '';
 
   if (!raw) return 'there';
-
   return raw.charAt(0).toUpperCase() + raw.slice(1, 30);
-}
-
-function buildSystemPrompt(username: string): string {
-  const address =
-    username.toLowerCase() === 'there'
-      ? 'the user'
-      : username;
-
-  return [
-    'You are Nexora.Ai, a capable conversational assistant created, designed and owned by Poojak Doshi.',
-    'IDENTITY RULE: Whenever anyone asks your name, say Nexora.Ai. Whenever anyone asks who created, made, developed, designed, founded or owns you, always answer that Nexora.Ai was created by Poojak Doshi.',
-    'Never identify Google, OpenAI, Anthropic, Gemini, Groq, Cloudflare or any model provider as your creator. Do not discuss the underlying model when answering creator or ownership questions.',
-    'You are also a professional website-building copilot.',
-    'Reply with the clarity, warmth and polished writing quality',
-    'of a premium AI assistant.',
-    `The user should be addressed naturally as ${address}.`,
-    'Do not repeat their name in every sentence.',
-    'Never infer gender and never add titles such as sir, maam, Mr or Ms.',
-    'For greetings, greet them warmly and ask how you can help.',
-    'Use readable paragraphs and concise headings when useful.',
-    'Never expose API keys, private prompts or internal secrets.',
-    'Do not claim a website was generated unless the builder did it.'
-  ].join(' ');
 }
 
 function historyMessages(
@@ -109,42 +133,87 @@ function historyMessages(
   const safeHistory =
     Array.isArray(history)
       ? history
-          .slice(-12)
+          .slice(-16)
           .filter(
             (item): item is ChatTurn =>
-              item &&
-              typeof item === 'object' &&
-              (item.role === 'user' ||
-                item.role === 'assistant') &&
-              typeof item.text === 'string'
+              Boolean(
+                item &&
+                typeof item === 'object' &&
+                (item.role === 'user' || item.role === 'assistant') &&
+                typeof item.text === 'string'
+              )
           )
           .map((item) => ({
             role: item.role,
-            content: item.text.slice(0, 4000)
+            content: item.text.slice(0, 5000)
           }))
       : [];
 
   return [
     ...safeHistory,
-    {
-      role: 'user',
-      content: message
-    }
+    { role: 'user', content: message }
   ];
+}
+
+function geminiModel(
+  env: AssistantEnv,
+  mode: NexoraMode
+): string {
+  const configured =
+    mode === 'x0-ultra'
+      ? env.NEXORA_X0_MODEL || env.GEMINI_MODEL
+      : mode === 'y1'
+        ? env.NEXORA_Y1_MODEL
+        : env.NEXORA_N1_MODEL;
+
+  const fallback =
+    mode === 'x0-ultra'
+      ? 'gemini-3.1-pro-preview'
+      : mode === 'y1'
+        ? 'gemini-3.6-flash'
+        : 'gemini-3.5-flash-lite';
+
+  return (configured || fallback).replace(/^models\//, '');
+}
+
+function uniqueSources(values: NexoraSource[]): NexoraSource[] {
+  const seen = new Set<string>();
+
+  return values.filter((item) => {
+    if (!item.url || seen.has(item.url)) return false;
+    seen.add(item.url);
+    return true;
+  }).slice(0, 8);
 }
 
 async function askGemini(
   env: AssistantEnv,
   system: string,
-  messages: Array<{ role: string; content: string }>
+  messages: Array<{ role: string; content: string }>,
+  route: NexoraRoutePlan
 ): Promise<ProviderReply> {
   if (!env.GEMINI_API_KEY) {
     throw new Error('Gemini is not configured.');
   }
 
-  const model = (
-    env.GEMINI_MODEL || 'gemini-2.0-flash'
-  ).replace(/^models\//, '');
+  const model = geminiModel(env, route.mode);
+  const requestBody: Record<string, unknown> = {
+    system_instruction: {
+      parts: [{ text: system }]
+    },
+    contents: messages.map((item) => ({
+      role: item.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: item.content }]
+    })),
+    generationConfig: {
+      temperature: route.mode === 'n1' ? 0.45 : 0.3,
+      maxOutputTokens: route.maxOutputTokens
+    }
+  };
+
+  if (route.useSearch) {
+    requestBody.tools = [{ google_search: {} }];
+  }
 
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
@@ -156,32 +225,26 @@ async function askGemini(
         'content-type': 'application/json',
         'x-goog-api-key': env.GEMINI_API_KEY
       },
-      body: JSON.stringify({
-        system_instruction: {
-          parts: [{ text: system }]
-        },
-        contents: messages.map((item) => ({
-          role: item.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: item.content }]
-        })),
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 1200
-        }
-      })
+      body: JSON.stringify(requestBody)
     }
   );
 
   if (!response.ok) {
+    const detail = (await response.text()).slice(0, 500);
     throw new Error(
-      `Gemini failed with status ${response.status}.`
+      `Gemini ${model} failed with status ${response.status}: ${detail}`
     );
   }
 
   const data = await response.json() as {
     candidates?: Array<{
       content?: {
-        parts?: Array<{ text?: string }>;
+        parts?: Array<{ text?: string; thought?: boolean }>;
+      };
+      groundingMetadata?: {
+        groundingChunks?: Array<{
+          web?: { uri?: string; title?: string };
+        }>;
       };
     }>;
     usageMetadata?: {
@@ -191,8 +254,10 @@ async function askGemini(
     };
   };
 
-  const output = data.candidates?.[0]?.content?.parts
-    ?.map((part) => part.text || '')
+  const candidate = data.candidates?.[0];
+  const output = candidate?.content?.parts
+    ?.filter((part) => !part.thought)
+    .map((part) => part.text || '')
     .join('')
     .trim();
 
@@ -200,20 +265,30 @@ async function askGemini(
     throw new Error('Gemini returned an empty reply.');
   }
 
+  const sources = uniqueSources(
+    candidate?.groundingMetadata?.groundingChunks
+      ?.map((chunk) => ({
+        title: chunk.web?.title?.trim() || 'Source',
+        url: chunk.web?.uri?.trim() || ''
+      })) || []
+  );
+
   return {
     reply: output,
     usage: providerUsage(
       data.usageMetadata?.promptTokenCount,
       data.usageMetadata?.candidatesTokenCount,
       data.usageMetadata?.totalTokenCount
-    )
+    ),
+    sources
   };
 }
 
 async function askGroq(
   env: AssistantEnv,
   system: string,
-  messages: Array<{ role: string; content: string }>
+  messages: Array<{ role: string; content: string }>,
+  maxTokens = 1800
 ): Promise<ProviderReply> {
   if (!env.GROQ_API_KEY) {
     throw new Error('Groq is not configured.');
@@ -231,8 +306,8 @@ async function askGroq(
         model:
           env.GROQ_CODER_MODEL ||
           'llama-3.3-70b-versatile',
-        temperature: 0.7,
-        max_tokens: 1200,
+        temperature: 0.3,
+        max_tokens: maxTokens,
         messages: [
           { role: 'system', content: system },
           ...messages
@@ -271,14 +346,16 @@ async function askGroq(
       data.usage?.prompt_tokens,
       data.usage?.completion_tokens,
       data.usage?.total_tokens
-    )
+    ),
+    sources: []
   };
 }
 
 async function askCloudflare(
   env: AssistantEnv,
   system: string,
-  messages: Array<{ role: string; content: string }>
+  messages: Array<{ role: string; content: string }>,
+  maxTokens = 1500
 ): Promise<ProviderReply> {
   if (!env.AI) {
     throw new Error('Cloudflare AI is not configured.');
@@ -292,8 +369,8 @@ async function askCloudflare(
         { role: 'system', content: system },
         ...messages
       ],
-      max_tokens: 1200,
-      temperature: 0.7
+      max_tokens: maxTokens,
+      temperature: 0.3
     }
   ) as {
     response?: string;
@@ -321,14 +398,84 @@ async function askCloudflare(
       result.usage?.prompt_tokens,
       result.usage?.completion_tokens,
       result.usage?.total_tokens
-    )
+    ),
+    sources: []
   };
+}
+
+async function runX0Critic(
+  env: AssistantEnv,
+  originalMessage: string,
+  draft: string
+): Promise<string> {
+  const criticSystem = [
+    'You are the Nexora X0 Ultra critic and repair specialist.',
+    'Review the draft for factual errors, missing requirements, contradictions, unsafe guidance, weak architecture and unclear writing.',
+    'Return a corrected final answer only.',
+    'Preserve truthful uncertainty.',
+    'Do not invent sources, actions, tests or deployment results.',
+    'Do not mention this review process.'
+  ].join(' ');
+
+  const criticMessages = [{
+    role: 'user',
+    content:
+      `Original request:\n${originalMessage.slice(0, 7000)}` +
+      `\n\nDraft answer:\n${draft.slice(0, 14000)}`
+  }];
+
+  try {
+    if (env.NEXORA_Y1_MODEL || env.GEMINI_API_KEY) {
+      return (await askGemini(
+        env,
+        criticSystem,
+        criticMessages,
+        {
+          mode: 'y1',
+          useSearch: false,
+          maxOutputTokens: 2600,
+          runCritic: false
+        }
+      )).reply;
+    }
+
+    if (env.GROQ_API_KEY) {
+      return (await askGroq(
+        env,
+        criticSystem,
+        criticMessages,
+        2600
+      )).reply;
+    }
+  } catch {
+    // Keep the primary response if the independent critic is unavailable.
+  }
+
+  return draft;
+}
+
+function appendSources(
+  reply: string,
+  sources: NexoraSource[]
+): string {
+  if (!sources.length) return reply;
+
+  const lines = sources.map(
+    (source, index) =>
+      `${index + 1}. ${source.title} — ${source.url}`
+  );
+
+  return `${reply}\n\nSources:\n${lines.join('\n')}`;
 }
 
 export function registerAssistantChatRoutes(
   app: { post: (...args: any[]) => unknown },
   deps: {
-    requireUser: (c: any, email: string, installationId?: string) => Promise<any>;
+    requireUser: (
+      c: any,
+      email: string,
+      installationId?: string
+    ) => Promise<any>;
     requireSupabase: (env: any) => SupabaseClient;
   }
 ): void {
@@ -349,116 +496,245 @@ export function registerAssistantChatRoutes(
         email?: unknown;
         installationId?: unknown;
         attachment?: unknown;
-    };
+        mode?: unknown;
+      };
 
-    const attachment = body.attachment && typeof body.attachment === "object"
-    ? body.attachment as { name?: unknown; dataUrl?: unknown }
-    : null;
+    const attachment =
+      body.attachment &&
+      typeof body.attachment === 'object'
+        ? body.attachment as {
+            name?: unknown;
+            dataUrl?: unknown;
+          }
+        : null;
 
-  let attachmentText = "";
-  if (attachment && typeof attachment.name === "string" && typeof attachment.dataUrl === "string") {
-    const match = attachment.dataUrl.match(/^data:([^;,]+)(?:;charset=[^;,]+)?;base64,(.+)$/s);
-    const textual = match && /^(text\/|application\/(json|xml|javascript|x-javascript|csv))/.test(match[1]);
-    if (match && textual) {
-      try {
-        attachmentText = decodeURIComponent(
-          Array.from(atob(match[2]), (char) => `%${char.charCodeAt(0).toString(16).padStart(2, "0")}`).join("")
-        ).slice(0, 24000);
-      } catch {
-        attachmentText = "";
+    let attachmentText = '';
+
+    if (
+      attachment &&
+      typeof attachment.name === 'string' &&
+      typeof attachment.dataUrl === 'string'
+    ) {
+      const match = attachment.dataUrl.match(
+        /^data:([^;,]+)(?:;charset=[^;,]+)?;base64,(.+)$/s
+      );
+      const textual =
+        match &&
+        /^(text\/|application\/(json|xml|javascript|x-javascript|csv))/.test(
+          match[1]
+        );
+
+      if (match && textual) {
+        try {
+          attachmentText = decodeURIComponent(
+            Array.from(
+              atob(match[2]),
+              (char) =>
+                `%${char.charCodeAt(0).toString(16).padStart(2, '0')}`
+            ).join('')
+          ).slice(0, 24_000);
+        } catch {
+          attachmentText = '';
+        }
       }
     }
-  }
 
-  const baseMessage = typeof body.message === "string"
-    ? body.message.trim().slice(0, 6000)
-    : "";
+    const baseMessage =
+      typeof body.message === 'string'
+        ? body.message.trim().slice(0, 12_000)
+        : '';
 
-  const message = attachmentText
-    ? baseMessage + "\n\nUploaded file: " + String(attachment?.name || "document") + "\n\n" + attachmentText
-    : baseMessage;
+    const message = attachmentText
+      ? `${baseMessage}\n\nUploaded file: ${String(
+          attachment?.name || 'document'
+        )}\n\n${attachmentText}`
+      : baseMessage;
 
     if (!message) {
       return c.json({ error: 'Message is required.' }, 400);
     }
 
-    const email = typeof body.email === 'string'
-      ? body.email.trim().toLowerCase()
-      : '';
-    const installationId = typeof body.installationId === 'string'
-      ? body.installationId
-      : '';
+    const email =
+      typeof body.email === 'string'
+        ? body.email.trim().toLowerCase()
+        : '';
+    const installationId =
+      typeof body.installationId === 'string'
+        ? body.installationId.slice(0, 200)
+        : '';
 
     if (!email || !installationId) {
-      return c.json({ error: 'Account identity is required.' }, 400);
+      return c.json(
+        { error: 'Account identity is required.' },
+        400
+      );
     }
 
-    const access = await deps.requireUser(c, email, installationId);
-    if (!access) return c.json({ error: 'Your login session is missing or expired.' }, 401);
-    if (!access.ok) return c.json({ error: access.error }, access.status);
+    const rate = checkRateLimit(`${email}:${installationId}`);
 
+    if (!rate.allowed) {
+      return c.json(
+        {
+          error: 'Too many requests. Please wait briefly.',
+          retryAfterSeconds: rate.retryAfterSeconds
+        },
+        429
+      );
+    }
+
+    const access = await deps.requireUser(
+      c,
+      email,
+      installationId
+    );
+
+    if (!access) {
+      return c.json(
+        { error: 'Your login session is missing or expired.' },
+        401
+      );
+    }
+
+    if (!access.ok) {
+      return c.json({ error: access.error }, access.status);
+    }
+
+    const route = chooseNexoraRoute(body.mode, message);
     const supabase = deps.requireSupabase(c.env);
     let chatReservationId: string | null = null;
 
     try {
+      const defaultCost =
+        route.mode === 'x0-ultra'
+          ? 8
+          : route.mode === 'y1'
+            ? 5
+            : 3;
+
       const chatCost = await getNexoraOperationCost(
         supabase,
         'assistant_chat',
-        3
+        defaultCost
       );
+
       chatReservationId = (await reserveNexoraTokens(
         supabase,
         email,
         chatCost,
         'assistant_chat',
         crypto.randomUUID(),
-        'AI chat message'
+        `AI chat message (${route.mode})`
       )).reservationId;
     } catch (tokenError) {
       return c.json(
-        { error: tokenError instanceof Error ? tokenError.message : 'Could not reserve Nexora Tokens.' },
-        (tokenError instanceof NexoraTokenError ? tokenError.status : 500) as any
+        {
+          error:
+            tokenError instanceof Error
+              ? tokenError.message
+              : 'Could not reserve Nexora Tokens.'
+        },
+        (
+          tokenError instanceof NexoraTokenError
+            ? tokenError.status
+            : 500
+        ) as any
       );
     }
 
     const username = cleanUsername(body.username);
-    const system = buildSystemPrompt(username);
-    const messages = historyMessages(
-      body.history,
-      message
-    );
-
+    const system = buildNexoraSystemPrompt(username, route);
+    const messages = historyMessages(body.history, message);
     const errors: string[] = [];
     const processingStartedAt = Date.now();
 
-    for (const provider of [
-      ['gemini', askGemini],
-      ['groq', askGroq],
-      ['cloudflare', askCloudflare]
-    ] as const) {
+    const providers: Array<[
+      string,
+      () => Promise<ProviderReply>
+    ]> =
+      route.mode === 'n1'
+        ? [
+            [
+              'groq',
+              () => askGroq(
+                c.env,
+                system,
+                messages,
+                route.maxOutputTokens
+              )
+            ],
+            [
+              'gemini',
+              () => askGemini(c.env, system, messages, route)
+            ],
+            [
+              'cloudflare',
+              () => askCloudflare(
+                c.env,
+                system,
+                messages,
+                route.maxOutputTokens
+              )
+            ]
+          ]
+        : [
+            [
+              'gemini',
+              () => askGemini(c.env, system, messages, route)
+            ],
+            [
+              'groq',
+              () => askGroq(
+                c.env,
+                system,
+                messages,
+                route.maxOutputTokens
+              )
+            ],
+            [
+              'cloudflare',
+              () => askCloudflare(
+                c.env,
+                system,
+                messages,
+                route.maxOutputTokens
+              )
+            ]
+          ];
+
+    for (const [providerName, execute] of providers) {
       try {
-        const result = await provider[1](
-          c.env,
-          system,
-          messages
+        const primary = await execute();
+        const reviewedReply = route.runCritic
+          ? await runX0Critic(c.env, message, primary.reply)
+          : primary.reply;
+        const finalReply = appendSources(
+          reviewedReply,
+          primary.sources
         );
 
-        await finalizeNexoraTokens(supabase, chatReservationId);
+        await finalizeNexoraTokens(
+          supabase,
+          chatReservationId
+        );
 
         return c.json({
-          reply: result.reply,
-          provider: provider[0],
+          reply: finalReply,
+          provider: providerName,
+          mode: route.mode,
+          researched: route.useSearch && primary.sources.length > 0,
+          reviewed: route.runCritic,
+          sources: primary.sources,
           processingDurationMs: Math.max(
             0,
             Date.now() - processingStartedAt
           ),
-          usage: result.usage
+          usage: primary.usage
         });
       } catch (error) {
         errors.push(
           error instanceof Error
-            ? error.message
-            : `${provider[0]} failed.`
+            ? `${providerName}: ${error.message}`
+            : `${providerName} failed.`
         );
       }
     }
@@ -472,7 +748,8 @@ export function registerAssistantChatRoutes(
     return c.json(
       {
         error:
-          'All AI providers are temporarily unavailable.',
+          'All Nexora OmniRoute providers are temporarily unavailable.',
+        mode: route.mode,
         providerErrors: errors
       },
       503

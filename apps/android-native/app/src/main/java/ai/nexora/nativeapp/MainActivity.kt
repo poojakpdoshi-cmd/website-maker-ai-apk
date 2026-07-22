@@ -359,15 +359,30 @@ private fun NexoraBackground(content: @Composable () -> Unit) {
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        Color(0xFF02030A),
-                        Color(0xFF071127),
-                        Color(0xFF120824),
-                        Color(0xFF03050D)
+                        Color(0xFF01020A),
+                        Color(0xFF061936),
+                        Color(0xFF180A34),
+                        Color(0xFF040611)
                     )
                 )
             )
     ) {
-        content()
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.radialGradient(
+                        listOf(
+                            Color(0x335DEBFF),
+                            Color.Transparent,
+                            Color(0x22A98BFF),
+                            Color.Transparent
+                        )
+                    )
+                )
+        ) {
+            content()
+        }
     }
 }
 
@@ -378,15 +393,26 @@ private fun GlassPanel(
 ) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(26.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
-        border = BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
-        ),
-        shadowElevation = 14.dp,
-        content = content
-    )
+        shape = RoundedCornerShape(30.dp),
+        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.24f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shadowElevation = 28.dp,
+        tonalElevation = 12.dp
+    ) {
+        Surface(
+            modifier = Modifier.padding(1.dp),
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            border = BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.primary.copy(alpha = 0.62f)
+            ),
+            shadowElevation = 8.dp,
+            tonalElevation = 10.dp,
+            content = content
+        )
+    }
 }
 
 @Composable
@@ -795,18 +821,50 @@ private suspend fun generateWebsiteFromChat(
     )
 
     onProgress(
-        "Website job started: ${started.progress}%"
+        "Website job created. Connecting the generation worker…"
     )
 
-    repeat(240) {
+    NexoraApi.launchGeneration(
+        token = token,
+        installationId = installationId,
+        email = email,
+        prompt = prompt,
+        jobId = started.jobId,
+        generationMode = "standard",
+        thinkMax = true,
+        image = image
+    )
+
+    var reconnectFailures = 0
+
+    repeat(400) {
         delay(1500)
 
-        val job = NexoraApi.getGenerationStatus(
-            token = token,
-            installationId = installationId,
-            email = email,
-            jobId = started.jobId
-        )
+        val job = try {
+            NexoraApi.getGenerationStatus(
+                token = token,
+                installationId = installationId,
+                email = email,
+                jobId = started.jobId
+            )
+        } catch (statusError: Throwable) {
+            reconnectFailures += 1
+
+            if (reconnectFailures >= 8) {
+                throw statusError
+            }
+
+            onProgress(
+                "Generation is still running. Reconnecting… " +
+                    "($reconnectFailures/8)"
+            )
+            delay(
+                (1000L * reconnectFailures).coerceAtMost(8000L)
+            )
+            return@repeat
+        }
+
+        reconnectFailures = 0
 
         val step = job.currentStep
             ?: job.currentAgent
@@ -862,6 +920,9 @@ private fun ChatScreen(
     val context = LocalContext.current
     var input by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
+    var selectedMode by rememberSaveable {
+        mutableStateOf("x0-ultra")
+    }
     var attachment by remember {
         mutableStateOf<SelectedAttachment?>(null)
     }
@@ -891,9 +952,11 @@ private fun ChatScreen(
         mutableStateListOf(
             ChatMessage(
                 "assistant",
-                "Tell me what you need. I can answer questions, " +
-                    "read text/code files, or build a real website " +
-                    "using an attached photo as a visual reference."
+                "I am Nexora.Ai, created by Poojak Doshi. " +
+                    "Choose X0 Ultra for deep research and complex work, " +
+                    "Y1 for balanced intelligence, or N1 for speed. " +
+                    "I can answer questions, read text/code files, " +
+                    "and build real websites."
             )
         )
     }
@@ -965,8 +1028,19 @@ private fun ChatScreen(
                             } else {
                                 MaterialTheme.colorScheme
                                     .surfaceVariant
-                                    .copy(alpha = 0.82f)
+                                    .copy(alpha = 0.92f)
                             },
+                        contentColor =
+                            if (message.role == "user") {
+                                MaterialTheme.colorScheme
+                                    .onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme
+                                    .onSurfaceVariant
+                            },
+                        shadowElevation =
+                            if (message.role == "user") 14.dp else 10.dp,
+                        tonalElevation = 8.dp,
                         border = BorderStroke(
                             1.dp,
                             if (message.role == "user") {
@@ -1011,6 +1085,42 @@ private fun ChatScreen(
                 verticalArrangement =
                     Arrangement.spacedBy(6.dp)
             ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement =
+                        Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(
+                        "x0-ultra" to "X0 Ultra",
+                        "y1" to "Y1",
+                        "n1" to "N1"
+                    ).forEach { (value, label) ->
+                        FilterChip(
+                            selected = selectedMode == value,
+                            onClick = {
+                                if (!loading) {
+                                    selectedMode = value
+                                }
+                            },
+                            label = { Text(label) },
+                            enabled = !loading
+                        )
+                    }
+                }
+
+                Text(
+                    when (selectedMode) {
+                        "x0-ultra" ->
+                            "Deep reasoning • research • critic • repair"
+                        "y1" ->
+                            "Balanced intelligence and speed"
+                        else ->
+                            "Fast answers and lightweight tasks"
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelSmall
+                )
+
                 attachment?.let { selected ->
                     Surface(
                         shape = RoundedCornerShape(16.dp),
@@ -1224,7 +1334,8 @@ private fun ChatScreen(
                                                     ?: error(
                                                         "Email missing"
                                                     ),
-                                                promptWithFile
+                                                promptWithFile,
+                                                selectedMode
                                             )
                                         }.getOrElse {
                                             "Error: " +
