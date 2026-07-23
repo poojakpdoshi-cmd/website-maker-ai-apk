@@ -277,19 +277,59 @@ function normalisePlan(raw: unknown, fallback: WebsitePlan): WebsitePlan {
 
 async function callGemini(instruction: string, options: Options): Promise<unknown> {
   if (!options.apiKey || !options.model) throw new Error('AI API is not configured.');
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(options.model)}:generateContent?key=${encodeURIComponent(options.apiKey)}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: instruction }] }],
-      generationConfig: { responseMimeType: 'application/json', temperature: 0.72 }
-    })
-  });
-  if (!response.ok) throw new Error(`AI request failed: ${response.status}`);
-  const data = await response.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error('Empty AI response.');
-  return extractJson(text);
+
+  const parts: Array<Record<string, unknown>> = [{ text: instruction }];
+
+  if (options.image?.data && options.image.mimeType) {
+    parts.unshift({
+      inline_data: {
+        mime_type: options.image.mimeType,
+        data: options.image.data
+      }
+    });
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 35_000);
+
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(options.model)}:generateContent?key=${encodeURIComponent(options.apiKey)}`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          contents: [{ parts }],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            temperature: 0.72
+          }
+        })
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`AI request failed: ${response.status}`);
+    }
+
+    const data = await response.json() as {
+      candidates?: Array<{
+        content?: { parts?: Array<{ text?: string }> };
+      }>;
+    };
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (!text) throw new Error('Empty AI response.');
+    return extractJson(text);
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('AI planning timed out after 35 seconds.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 const DESIGN_DIRECTOR_RULES = `
