@@ -273,7 +273,7 @@ export function auditGeneratedSecurity(
       !authFeature || rateLimitEvidence,
 
     uploadProtection:
-      !uploadEvidence || uploadProtection
+      !serverUploadEvidence || uploadProtection
   };
 
   return {
