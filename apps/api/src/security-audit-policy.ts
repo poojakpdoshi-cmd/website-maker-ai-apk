@@ -120,9 +120,14 @@ export function auditGeneratedSecurity(
   const unsafeRedirectPattern =
     /\b(?:redirect|location\.href|window\.open)\s*\(\s*(?:req\.|request\.|params\.|query\.)/i;
 
-  const uploadEvidence =
-    /(?:<input[^>]+type\s*=\s*['"]file['"]|new\s+FormData\s*\(|multipart\/form-data|\bFileReader\b|\b(?:multer|busboy|formidable)\b|\b(?:uploadFile|uploadImage|handleFileUpload)\b)/i.test(
-      allContent
+  const clientFileSelectionEvidence =
+    /(?:<input[^>]+type\s*=\s*['"]file['"]|\bFileReader\b|\b(?:uploadFile|uploadImage|handleFileUpload)\b)/i.test(
+      frontendContent
+    );
+
+  const serverUploadEvidence =
+    /(?:multipart\/form-data|\b(?:multer|busboy|formidable)\b|\b(?:uploadFile|uploadImage|handleFileUpload)\b)/i.test(
+      serverContent
     );
 
   const uploadProtection =
@@ -207,9 +212,13 @@ export function auditGeneratedSecurity(
     );
   }
 
-  if (uploadEvidence && !uploadProtection) {
+  if (serverUploadEvidence && !uploadProtection) {
     errors.push(
-      'File upload exists without clear server-side type and size validation.'
+      'Server-side file upload exists without clear type and size validation.'
+    );
+  } else if (clientFileSelectionEvidence && !serverUploadEvidence) {
+    warnings.push(
+      'Client-side file selection detected. Verify any remote upload target validates type, size and filename.'
     );
   }
 
