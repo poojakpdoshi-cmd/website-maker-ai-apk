@@ -1113,7 +1113,7 @@ object NexoraApi {
     ): JSONObject {
         var lastError: Throwable? = null
 
-        repeat(4) { attempt ->
+        repeat(6) { attempt ->
             try {
                 return requestJsonOnce(
                     path,
@@ -1130,9 +1130,10 @@ object NexoraApi {
                     error is java.net.UnknownHostException ||
                         error is java.net.SocketTimeoutException ||
                         error is java.net.ConnectException ||
+                        error is java.net.SocketException ||
                         error is java.io.InterruptedIOException
 
-                if (!retryable || attempt == 3) {
+                if (!retryable || attempt == 5) {
                     throw error
                 }
 
@@ -1159,8 +1160,12 @@ object NexoraApi {
 
         try {
             connection.requestMethod = method
-            connection.connectTimeout = 20000
-            connection.readTimeout = 90000
+            connection.connectTimeout = 45000
+            connection.readTimeout = 180000
+            connection.setRequestProperty(
+                "Connection",
+                "close"
+            )
             connection.setRequestProperty(
                 "Accept",
                 "application/json"

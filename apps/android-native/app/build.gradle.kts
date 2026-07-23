@@ -12,8 +12,8 @@ android {
         applicationId = "ai.nexora.nativeapp"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "0.12.0-identity-network-repair"
+        versionCode = 13
+        versionName = "0.12.1-socket-repair"
 
         buildConfigField(
             "String",
