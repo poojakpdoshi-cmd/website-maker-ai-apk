@@ -1111,6 +1111,48 @@ object NexoraApi {
         installationId: String? = null,
         allowConflict: Boolean = false
     ): JSONObject {
+        var lastError: Throwable? = null
+
+        repeat(4) { attempt ->
+            try {
+                return requestJsonOnce(
+                    path,
+                    method,
+                    body,
+                    token,
+                    installationId,
+                    allowConflict
+                )
+            } catch (error: Throwable) {
+                lastError = error
+
+                val retryable =
+                    error is java.net.UnknownHostException ||
+                        error is java.net.SocketTimeoutException ||
+                        error is java.net.ConnectException ||
+                        error is java.io.InterruptedIOException
+
+                if (!retryable || attempt == 3) {
+                    throw error
+                }
+
+                Thread.sleep(1000L * (attempt + 1))
+            }
+        }
+
+        throw lastError ?: IllegalStateException(
+            "Network request failed after retries."
+        )
+    }
+
+    private fun requestJsonOnce(
+        path: String,
+        method: String,
+        body: JSONObject? = null,
+        token: String? = null,
+        installationId: String? = null,
+        allowConflict: Boolean = false
+    ): JSONObject {
         val connection = URL(
             BuildConfig.API_BASE + path
         ).openConnection() as HttpURLConnection

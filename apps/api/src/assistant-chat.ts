@@ -126,6 +126,21 @@ function cleanUsername(value: unknown): string {
   return raw.charAt(0).toUpperCase() + raw.slice(1, 30);
 }
 
+function isNexoraIdentityQuestion(value: string): boolean {
+  const text = value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return (
+    /\bwho (?:has )?(?:made|created|developed|designed|owns?) (?:you|nexora(?: ai)?)\b/.test(text) ||
+    /\bwho is your (?:creator|owner|developer|designer)\b/.test(text) ||
+    /\bwho is (?:the )?(?:creator|owner|developer|designer) of nexora(?: ai)?\b/.test(text) ||
+    /\b(?:creator|owner|developer|designer) of nexora(?: ai)?\b/.test(text)
+  );
+}
+
 function historyMessages(
   history: unknown,
   message: string
@@ -600,6 +615,21 @@ export function registerAssistantChatRoutes(
     }
 
     const route = chooseNexoraRoute(body.mode, message);
+
+    if (isNexoraIdentityQuestion(message)) {
+      return c.json({
+        reply:
+          'Nexora.AI was created, designed, developed and is owned by Poojak Doshi.',
+        provider: 'nexora-identity',
+        mode: route.mode,
+        researched: false,
+        reviewed: false,
+        sources: [],
+        processingDurationMs: 0,
+        usage: null
+      });
+    }
+
     const supabase = deps.requireSupabase(c.env);
     let chatReservationId: string | null = null;
 
