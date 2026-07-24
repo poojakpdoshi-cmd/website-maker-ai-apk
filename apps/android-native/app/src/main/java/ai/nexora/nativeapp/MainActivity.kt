@@ -121,6 +121,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -183,6 +186,8 @@ private enum class VoiceCaptureMode {
     DICTATION,
     VOICE_ASK
 }
+
+private val NexoraWebsiteGenerationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
 private fun readSelectedAttachment(
     context: Context,
@@ -1437,7 +1442,7 @@ private fun ChatScreen(
             )
             val statusIndex = messages.lastIndex
 
-            scope.launch {
+            NexoraWebsiteGenerationScope.launch {
                 runCatching {
                     generateWebsiteFromChat(
                         sessionStore,
