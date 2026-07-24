@@ -1161,7 +1161,7 @@ object NexoraApi {
         try {
             connection.requestMethod = method
             connection.connectTimeout = 45000
-            connection.readTimeout = 180000
+            connection.readTimeout = if (path == "/generate") 1800000 else 180000
             connection.setRequestProperty(
                 "Connection",
                 "close"
