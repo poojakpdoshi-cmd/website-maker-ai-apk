@@ -536,7 +536,13 @@ export async function buildWebsitePlan(prompt: string, options: Options): Promis
   if (!options.apiKey || !options.model) return { plan: fallback, mode: 'built-in' };
   try {
     const instruction = `${DESIGN_DIRECTOR_RULES}\nUser request:\n${prompt}`;
-    return { plan: normalisePlan(await callGemini(instruction, options), fallback), mode: 'ai' };
+    const rawPlan = await Promise.race([
+      callGemini(instruction, options),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("AI planner hard timeout.")), 20_000)
+      )
+    ]);
+    return { plan: normalisePlan(rawPlan, fallback), mode: 'ai' };
   } catch (error) {
     console.error('Nexora built-in Design Director used:', error);
     return { plan: fallback, mode: 'built-in' };
