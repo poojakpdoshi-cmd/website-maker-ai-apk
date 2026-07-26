@@ -1,4 +1,4 @@
-import type { WebsitePlan } from '../../shared/src/index';
+import type { ApplicationSpec, ProjectKind, WebsitePlan } from '../../shared/src/index';
 
 type Options = { apiKey?: string; model?: string; image?: { mimeType: string; data: string } };
 export type BrainMode = 'ai' | 'built-in';
@@ -49,6 +49,16 @@ function extractContact(prompt: string) {
   const phone = phoneMatch?.[0]?.replace(/\s+/g, ' ').trim();
   const addressMatch = prompt.match(/(?:address|location)\s*[:\-]?\s*([^.;\n]{5,160})/i);
   return { email, phone, address: addressMatch?.[1]?.trim() };
+}
+
+function detectProjectKind(lower: string): ProjectKind {
+  if (/(calculator|calculation|settlement|formula|ownership percentage|tax calculation)/.test(lower)) return "calculator";
+  if (/(admin panel|admin dashboard|back office)/.test(lower)) return "admin-panel";
+  if (/(dashboard|erp|crm|management system|analytics platform)/.test(lower)) return "dashboard";
+  if (/(ecommerce|e-commerce|online store|shopping cart|checkout)/.test(lower)) return "ecommerce";
+  if (/(web application|web app|crud|database|login|authentication|user accounts)/.test(lower)) return "web-application";
+  if (/(personal portfolio|developer portfolio|designer portfolio)/.test(lower)) return "portfolio";
+  return "marketing-site";
 }
 
 function detectType(lower: string): string {
@@ -180,6 +190,140 @@ function sectionLibrary(type: string, businessName: string): Array<{ title: stri
   return libraries[type] || libraries.business;
 }
 
+function buildFallbackAppSpec(prompt: string, kind: ProjectKind): ApplicationSpec | undefined {
+  if (kind === "marketing-site" || kind === "portfolio") return undefined;
+
+  const lower = prompt.toLowerCase();
+  const discoveredTitles = Array.from(
+    prompt.matchAll(/(?:BOX\s*\d+\s*[–-]\s*([^\n=]+)|^#{1,3}\s+([^\n#]+))/gmi)
+  )
+    .map((match) => (match[1] || match[2] || "").trim())
+    .filter(Boolean);
+
+  const moduleTitles = discoveredTitles.length
+    ? [...new Set(discoveredTitles)].slice(0, 12)
+    : [kind.replace(/-/g, " ")];
+
+  const modules = moduleTitles.map((title, index) => ({
+    id: `module-${index + 1}`,
+    title,
+    kind: /(calculator|settlement|ownership|tax)/i.test(title)
+      ? "calculation-table"
+      : /(dashboard|summary|analytics|report)/i.test(title)
+        ? "dashboard"
+        : "application-module",
+    actions: [
+      "create",
+      "edit",
+      "delete",
+      "search",
+      "sort",
+      "filter",
+      "export"
+    ].filter((action) => lower.includes(action) || ["create", "edit", "delete"].includes(action))
+  }));
+
+  const entities = [];
+
+  if (/(investor|investment)/.test(lower)) {
+    entities.push(
+      {
+        name: "Investor",
+        fields: [
+          { name: "id", type: "string", required: true },
+          { name: "name", type: "string", required: true },
+          { name: "createdAt", type: "datetime", required: true },
+          { name: "updatedAt", type: "datetime", required: true }
+        ]
+      },
+      {
+        name: "Investment",
+        fields: [
+          { name: "id", type: "string", required: true },
+          { name: "investorId", type: "string", required: true, relation: "Investor.id" },
+          { name: "amount", type: "number", required: true },
+          { name: "date", type: "date", required: true },
+          { name: "notes", type: "string", required: false }
+        ]
+      }
+    );
+  }
+
+  if (/(login|authentication|user account|users)/.test(lower)) {
+    entities.push({
+      name: "User",
+      fields: [
+        { name: "id", type: "string", required: true },
+        { name: "email", type: "email", required: true },
+        { name: "createdAt", type: "datetime", required: true }
+      ]
+    });
+  }
+
+  const calculations = [];
+
+  if (lower.includes("percentage ownership")) {
+    calculations.push({
+      id: "ownership-percentage",
+      label: "Percentage Ownership",
+      formula: "investorTotalInvestment / totalInvestments * 100",
+      inputs: ["investorTotalInvestment", "totalInvestments"],
+      output: "ownershipPercentage"
+    });
+  }
+
+  if (lower.includes("current value")) {
+    calculations.push({
+      id: "current-value",
+      label: "Current Value",
+      formula: "currentMarketPrice * ownershipPercentage",
+      inputs: ["currentMarketPrice", "ownershipPercentage"],
+      output: "currentValue"
+    });
+  }
+
+  if (lower.includes("government tax")) {
+    calculations.push({
+      id: "government-tax",
+      label: "Government Tax",
+      formula: "currentValue * governmentTaxPercent / 100",
+      inputs: ["currentValue", "governmentTaxPercent"],
+      output: "governmentTaxAmount"
+    });
+  }
+
+  if (lower.includes("commission")) {
+    calculations.push({
+      id: "commission",
+      label: "Commission",
+      formula: "portfolioAfterTax * commissionPercent / 100",
+      inputs: ["portfolioAfterTax", "commissionPercent"],
+      output: "commissionAmount"
+    });
+  }
+
+  return {
+    goal: prompt.replace(/\s+/g, " ").trim().slice(0, 500),
+    audience: "Users of this application",
+    entities,
+    modules,
+    calculations,
+    validations: [
+      "Validate every required field",
+      "Reject invalid and negative numeric values",
+      "Show exact user-readable errors",
+      "Recalculate derived values immediately"
+    ],
+    acceptanceCriteria: [
+      "Every requested module must exist",
+      "Every requested interaction must work",
+      "All calculations must use the specified formulas",
+      "Data changes must update every dependent view",
+      "The result must be a functional application, not a marketing landing page"
+    ]
+  };
+}
+
 function builtInPlan(prompt: string): WebsitePlan {
   const lower = prompt.toLowerCase();
   const type = detectType(lower);
@@ -189,6 +333,8 @@ function builtInPlan(prompt: string): WebsitePlan {
   const rawName = calledMatch?.[1] || forMatch?.[1];
   const businessName = rawName?.replace(/\s+(with|and|that|which|who)\b.*$/i, '').trim() || `${type[0].toUpperCase()}${type.slice(1)} Studio`;
   const style = detectStyle(lower, type);
+  const projectKind = detectProjectKind(lower);
+  const appSpec = buildFallbackAppSpec(prompt, projectKind);
 
   const features = ['responsive-design', 'seo', 'custom-branding', 'smooth-animations'];
   if (lower.includes('whatsapp')) features.push('whatsapp');
@@ -228,6 +374,8 @@ function builtInPlan(prompt: string): WebsitePlan {
     features: [...new Set(features)],
     theme: { style, primary, secondary, background, text },
     sections: sectionLibrary(type, businessName).slice(0, 7),
+    projectKind,
+    appSpec,
     contact: extractContact(prompt)
   };
 }
@@ -267,6 +415,15 @@ function normalisePlan(raw: unknown, fallback: WebsitePlan): WebsitePlan {
       text: typeof rawTheme.text === 'string' && hexColour.test(rawTheme.text) ? rawTheme.text : fallback.theme.text
     },
     sections: sections.length >= 5 ? sections : fallback.sections,
+    projectKind:
+      typeof candidate.projectKind === "string" &&
+      ["marketing-site", "web-application", "dashboard", "calculator", "ecommerce", "admin-panel", "portfolio", "other"].includes(candidate.projectKind)
+        ? candidate.projectKind as ProjectKind
+        : fallback.projectKind,
+    appSpec:
+      candidate.appSpec && typeof candidate.appSpec === "object"
+        ? candidate.appSpec as ApplicationSpec
+        : fallback.appSpec,
     contact: {
       phone: cleanOptionalText(rawContact.phone, 40) || fallback.contact?.phone,
       email: cleanOptionalText(rawContact.email, 160) || fallback.contact?.email,
@@ -345,9 +502,33 @@ Vary the page structure, section rhythm, hierarchy and visual emphasis between u
 Use a deliberate four-colour palette with accessible contrast. All colours must be six-digit hex values.
 Only include useful features. Prefer practical actions such as demo, trial, enquiry, WhatsApp, booking, catalogue, gallery, testimonials, FAQ, integrations, pricing or map when relevant.
 Pages must be concise slugs. contact may contain only phone, email and address explicitly supplied by the user.
-Return valid JSON only with exactly these top-level keys: businessName, websiteType, tagline, pages, features, theme, sections, contact.
+First classify the request into projectKind: marketing-site, web-application, dashboard, calculator, ecommerce, admin-panel, portfolio or other.
+
+For a functional product, dashboard, calculator, ecommerce system or admin panel, do not plan it as a marketing landing page. Study and preserve every requested table, column, form field, formula, entity, relationship, action, validation, workflow and acceptance requirement.
+
+Create appSpec for every non-marketing project.
+
+appSpec must contain:
+- goal: exact product purpose
+- audience: intended users
+- entities: database or state entities with fields, types, required status, derived status and relations
+- modules: every requested screen, box, table, dashboard, form or workflow
+- calculations: exact formulas with inputs and outputs
+- validations: exact validation rules
+- acceptanceCriteria: objective checks proving the requested product was built
+
+For each table module, preserve the exact requested column names and actions. Never replace tables with feature cards. Never replace a functional dashboard or calculator with a hero-led SaaS landing page.
+
+For calculation projects, formulas must remain mathematically explicit and derived values must never be manually stored when they can be calculated.
+
+For marketing sites and portfolios, appSpec may be null. For every other projectKind, appSpec is mandatory and must be detailed.
+
+Return valid JSON only with exactly these top-level keys:
+businessName, websiteType, tagline, pages, features, theme, sections, projectKind, appSpec, contact.
+
 theme must contain style, primary, secondary, background and text.
 sections must contain title and body.
+Do not omit requested functionality because it is complex.
 `;
 
 export async function buildWebsitePlan(prompt: string, options: Options): Promise<{ plan: WebsitePlan; mode: BrainMode }> {

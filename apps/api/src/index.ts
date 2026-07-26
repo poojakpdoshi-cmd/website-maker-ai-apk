@@ -1516,11 +1516,15 @@ app.post('/generate', async (c) => {
           c.env,
           JSON.stringify({
             task: [
-              'Create improved project files as strict JSON.',
-              'Return only files that need replacing.',
-              'Use only allowed paths.',
-              'Match the plan, screenshot reference, mobile layout,',
-              'accessibility and requested interactions.'
+              'Implement the complete requested product as strict JSON project files.',
+              'Treat plan.projectKind and plan.appSpec as binding requirements.',
+              'For every non-marketing project, replace the generic landing-page interface with the actual functional application.',
+              'Implement every requested module, table, exact column, form, CRUD action, formula, validation, relationship and dependent real-time update.',
+              'Return complete replacement contents for every required allowed file, including App and styles.',
+              'Do not preserve generic hero, pricing, testimonials, feature cards or FAQ unless the user explicitly requested them.',
+              'Never substitute a dashboard, calculator, admin panel, store or web application with a marketing website.',
+              'Use only allowed paths and return strict JSON.',
+              'Match the request, plan, screenshot reference, responsive layout, accessibility and interactions.'
             ].join(' '),
             request:
             parsed.data.prompt +
@@ -1711,9 +1715,13 @@ app.post('/generate', async (c) => {
           c.env,
           JSON.stringify({
             task: [
-              'Review this generated React project.',
+              'Audit this generated React project against the complete user request and plan.appSpec.',
+              'Reject it when any requested module, exact table column, action, formula, validation, relationship or interaction is missing.',
+              'Reject every generic marketing landing page generated for a calculator, dashboard, admin panel, ecommerce system or web application.',
+              'Check that derived calculations update correctly and requested controls are functional rather than decorative.',
               'Return strict JSON:',
-              '{"approved":boolean,"issues":string[],"fixes":string[]}.'
+              '{"approved":boolean,"issues":string[],"fixes":string[]}.',
+              'Approve only when the generated product materially satisfies the requested application.'
             ].join(' '),
             request:
             parsed.data.prompt +
