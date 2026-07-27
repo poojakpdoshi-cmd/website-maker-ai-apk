@@ -1,4 +1,10 @@
 import type { GeneratedProject, GeneratedProjectFile, WebsitePlan } from '../../shared/src/index';
+import {
+  createFunctionalAppSource,
+  createFunctionalPreviewHtml,
+  createFunctionalStyles,
+  isFunctionalProject
+} from './functional-builder';
 
 export type ProjectBuildOptions = {
   formApiBase?: string;
@@ -279,6 +285,192 @@ function createPreviewHtml(plan: WebsitePlan, options: ProjectBuildOptions, prof
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(plan.businessName)}</title><meta name="description" content="${escapeHtml(plan.tagline)}"><style>${styles}</style></head><body><div class="site profile-${profile.key}"><nav class="nav"><a class="brand" href="#home"><img src="data:image/svg+xml,${encodeURIComponent(createLogoSvg(plan))}" alt=""><span>${escapeHtml(plan.businessName)}</span></a><div class="nav-links">${visiblePages.map((page) => `<a href="#${escapeHtml(slugify(page))}">${escapeHtml(titleCase(page))}</a>`).join('')}</div><a class="nav-cta" href="#contact">Let's talk</a></nav><header class="hero" id="home"><div class="hero-copy"><span class="eyebrow">${escapeHtml(profile.label)} · ${escapeHtml(plan.websiteType)}</span><h1>${escapeHtml(plan.businessName)}</h1><p class="hero-tagline">${escapeHtml(plan.tagline)}</p><div class="actions"><a class="button" href="#${escapeHtml(slugify(plan.pages[1] || 'about'))}">Explore the experience</a>${phone ? `<a class="button secondary" href="https://wa.me/${phone}" target="_blank">WhatsApp</a>` : ''}</div><div class="mini-proof"><span>Responsive</span><span>Purpose-built</span><span>Premium finish</span></div></div><div class="hero-visual" style="background-image:linear-gradient(180deg,rgba(5,8,18,.04),rgba(5,8,18,.64)),url('${escapeHtml(profile.heroImage)}')"><div class="visual-badge"><small>Designed for</small><strong>${escapeHtml(plan.websiteType)}</strong></div><div class="visual-card"><span>01</span><p>${escapeHtml(plan.sections[0]?.title || 'A memorable first impression')}</p></div></div></header><section class="metric-strip"><article><strong>${90 + (metricSeed % 9)}%</strong><span>Mobile-ready experience</span></article><article><strong>${String(Math.max(3, plan.sections.length)).padStart(2, '0')}</strong><span>Purposeful sections</span></article><article><strong>${String(Math.max(4, features.length)).padStart(2, '0')}</strong><span>Business features</span></article></section><main>${sections}<section class="feature-panel"><div class="feature-heading"><span class="eyebrow">Built with intention</span><h2>Everything needed to turn attention into action.</h2><p>A focused experience with useful features, clear hierarchy and a visual direction matched to the business.</p></div><div class="feature-grid">${featureCards}</div></section>${form}</main><footer><div><strong>${escapeHtml(plan.businessName)}</strong><p>${escapeHtml(plan.tagline)}</p></div><div class="footer-links">${plan.contact?.email ? `<a href="mailto:${escapeHtml(plan.contact.email)}">${escapeHtml(plan.contact.email)}</a>` : ''}${plan.contact?.phone ? `<a href="tel:${escapeHtml(plan.contact.phone)}">${escapeHtml(plan.contact.phone)}</a>` : ''}</div><small>© ${new Date().getFullYear()} ${escapeHtml(plan.businessName)} · Made by Poojak Doshi</small></footer></div>${script}</body></html>`;
 }
 
+function createLocalDataStoreSource(plan: WebsitePlan): string {
+  const prefix = `nexora-${slugify(plan.businessName)}`;
+  return `const PREFIX = ${JSON.stringify(prefix)};
+const listeners = new Map();
+
+function key(collectionName) {
+  return PREFIX + ':' + collectionName;
+}
+
+function read(collectionName) {
+  try {
+    const value = JSON.parse(localStorage.getItem(key(collectionName)) || '[]');
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+
+function write(collectionName, rows) {
+  localStorage.setItem(key(collectionName), JSON.stringify(rows));
+  for (const listener of listeners.get(collectionName) || []) listener(rows);
+}
+
+export function subscribeRecords(collectionName, onRows, onError) {
+  try {
+    const collectionListeners = listeners.get(collectionName) || new Set();
+    collectionListeners.add(onRows);
+    listeners.set(collectionName, collectionListeners);
+    onRows(read(collectionName));
+    return () => collectionListeners.delete(onRows);
+  } catch (error) {
+    onError(error instanceof Error ? error : new Error('Could not load records.'));
+    return () => undefined;
+  }
+}
+
+export async function createRecord(collectionName, value) {
+  write(collectionName, [...read(collectionName), { ...value, id: crypto.randomUUID() }]);
+}
+
+export async function updateRecord(collectionName, id, value) {
+  write(collectionName, read(collectionName).map((row) => row.id === id ? { ...value, id } : row));
+}
+
+export async function deleteRecord(collectionName, id) {
+  write(collectionName, read(collectionName).filter((row) => row.id !== id));
+}
+`;
+}
+
+function createFirebaseDataStoreSource(): string {
+  return `import { getApps, initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously } from 'firebase/auth';
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getFirestore,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  setDoc,
+  where
+} from 'firebase/firestore';
+
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
+};
+
+function assertConfiguration() {
+  const missing = Object.entries(firebaseConfig)
+    .filter(([, value]) => !value)
+    .map(([name]) => name);
+  if (missing.length) {
+    throw new Error('Backend configuration is incomplete: ' + missing.join(', '));
+  }
+}
+
+assertConfiguration();
+const app = getApps()[0] || initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const databaseId = import.meta.env.VITE_FIREBASE_DATABASE_ID;
+const namespace = String(import.meta.env.VITE_FIREBASE_NAMESPACE || '');
+const database = databaseId
+  ? getFirestore(app, databaseId)
+  : getFirestore(app);
+let identityPromise;
+
+function collectionKey(collectionName) {
+  return namespace ? namespace + '_' + collectionName : collectionName;
+}
+
+async function identity() {
+  if (auth.currentUser) return auth.currentUser;
+  identityPromise ||= signInAnonymously(auth).then((credential) => credential.user);
+  return identityPromise;
+}
+
+export function subscribeRecords(collectionName, onRows, onError) {
+  let unsubscribe = () => undefined;
+  let active = true;
+  void identity().then((user) => {
+    if (!active) return;
+    const ownerQuery = query(
+      collection(database, collectionKey(collectionName)),
+      where('ownerId', '==', user.uid)
+    );
+    unsubscribe = onSnapshot(ownerQuery, (snapshot) => {
+      onRows(snapshot.docs.map((record) => ({ id: record.id, ...record.data() })));
+    }, onError);
+  }).catch(onError);
+  return () => {
+    active = false;
+    unsubscribe();
+  };
+}
+
+export async function createRecord(collectionName, value) {
+  const user = await identity();
+  await addDoc(collection(database, collectionKey(collectionName)), {
+    ...value,
+    ownerId: user.uid,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp()
+  });
+}
+
+export async function updateRecord(collectionName, id, value) {
+  const user = await identity();
+  await setDoc(doc(database, collectionKey(collectionName), id), {
+    ...value,
+    ownerId: user.uid,
+    updatedAt: serverTimestamp()
+  }, { merge: true });
+}
+
+export async function deleteRecord(collectionName, id) {
+  await identity();
+  await deleteDoc(doc(database, collectionKey(collectionName), id));
+}
+`;
+}
+
+function createFirestoreRules(plan: WebsitePlan): string {
+  const collections = plan.appSpec.backend.collections
+    .map((collection) => collection.key.replace(/[^A-Za-z0-9_-]/g, ''))
+    .filter(Boolean);
+  const rules = collections.map((collection) => `    match /${collection}/{documentId} {
+      allow create: if request.auth != null
+        && request.resource.data.ownerId == request.auth.uid;
+      allow read, update, delete: if request.auth != null
+        && resource.data.ownerId == request.auth.uid
+        && (!('ownerId' in request.resource.data)
+          || request.resource.data.ownerId == request.auth.uid);
+    }`).join('\n\n');
+  return `rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+${rules || '    match /{document=**} { allow read, write: if false; }'}
+  }
+}
+`;
+}
+
+function createFirestoreIndexes(plan: WebsitePlan): string {
+  return JSON.stringify({
+    indexes: plan.appSpec.backend.indexes.map((index) => ({
+      collectionGroup: index.collection,
+      queryScope: 'COLLECTION',
+      fields: [
+        { fieldPath: 'ownerId', order: 'ASCENDING' },
+        ...index.fields.map((field) => ({
+          fieldPath: field,
+          order: index.order === 'desc' ? 'DESCENDING' : 'ASCENDING'
+        }))
+      ]
+    })),
+    fieldOverrides: []
+  }, null, 2);
+}
+
 export function buildProjectFiles(plan: WebsitePlan, options: ProjectBuildOptions = {}): GeneratedProject {
   const projectName = slugify(plan.businessName);
   const profile = chooseProfile(plan);
@@ -291,24 +483,78 @@ export function buildProjectFiles(plan: WebsitePlan, options: ProjectBuildOption
         version: '1.0.0',
         type: 'module',
         scripts: { dev: 'vite', build: 'vite build', preview: 'vite preview' },
-        dependencies: { '@vitejs/plugin-react': '^4.6.0', vite: '^7.0.4', react: '^19.1.0', 'react-dom': '^19.1.0' },
+        dependencies: {
+          '@vitejs/plugin-react': '^4.6.0',
+          vite: '^7.0.4',
+          react: '^19.1.0',
+          'react-dom': '^19.1.0',
+          ...(plan.appSpec.backend.required ? { firebase: '^12.1.0' } : {})
+        },
         devDependencies: {}
       }, null, 2)
     },
     { path: 'index.html', content: `<!doctype html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><meta name="description" content="${escapeHtml(plan.tagline)}"/><meta property="og:title" content="${escapeHtml(plan.businessName)}"/><meta property="og:description" content="${escapeHtml(plan.tagline)}"/><link rel="icon" href="/logo.svg"/><title>${escapeHtml(plan.businessName)}</title></head><body><div id="root"></div><script type="module" src="/src/main.jsx"></script></body></html>` },
     { path: 'src/main.jsx', content: `import React from 'react';\nimport ReactDOM from 'react-dom/client';\nimport App from './App.jsx';\n\nReactDOM.createRoot(document.getElementById('root')).render(<React.StrictMode><App /></React.StrictMode>);\n` },
-    { path: 'src/App.jsx', content: createAppSource(plan, options, profile) },
-    { path: 'src/styles.css', content: createStyles(plan, profile) },
+    { path: 'src/App.jsx', content: isFunctionalProject(plan) ? createFunctionalAppSource(plan) : createAppSource(plan, options, profile) },
+    { path: 'src/styles.css', content: isFunctionalProject(plan) ? createFunctionalStyles(plan) : createStyles(plan, profile) },
     { path: 'public/logo.svg', content: createLogoSvg(plan) },
     { path: 'vite.config.js', content: `import { defineConfig } from 'vite';\nimport react from '@vitejs/plugin-react';\nexport default defineConfig({ plugins: [react()] });\n` },
     { path: 'vercel.json', content: JSON.stringify({ framework: 'vite', buildCommand: 'npm run build', outputDirectory: 'dist' }, null, 2) },
-    { path: 'README.md', content: `# ${plan.businessName}\n\nGenerated by Nexora AI.\n\n## Run\n\n\`\`\`bash\nnpm install\nnpm run dev\n\`\`\`\n` }
+    { path: 'nexora.appspec.json', content: JSON.stringify(plan.appSpec, null, 2) },
+    { path: 'README.md', content: `# ${plan.businessName}\n\nGenerated by Nexora AI from the binding \`nexora.appspec.json\` application specification.\n\n## Run\n\n\`\`\`bash\nnpm install\nnpm run dev\n\`\`\`\n${plan.appSpec.persistenceRequired ? '\n## Backend\n\nPublishing is intentionally blocked until Nexora verifies the selected backend. The local preview uses device storage and does not claim to be the production database.\n' : ''}` }
   ];
-  return { files, previewHtml: createPreviewHtml(plan, options, profile), framework: 'vite-react' };
+  if (isFunctionalProject(plan)) {
+    files.push({
+      path: 'src/services/dataStore.js',
+      content: plan.appSpec.backend.required
+        ? createFirebaseDataStoreSource()
+        : createLocalDataStoreSource(plan)
+    });
+  }
+  if (plan.appSpec.backend.required) {
+    files.push(
+      {
+        path: '.env.example',
+        content: `${[
+          ...new Set([
+            ...plan.appSpec.backend.environmentVariables,
+            'VITE_FIREBASE_DATABASE_ID',
+            'VITE_FIREBASE_NAMESPACE'
+          ])
+        ].join('=\n')}=\n`
+      },
+      {
+        path: 'firebase.json',
+        content: JSON.stringify({
+          firestore: {
+            rules: 'firestore.rules',
+            indexes: 'firestore.indexes.json'
+          }
+        }, null, 2)
+      },
+      {
+        path: 'firestore.rules',
+        content: createFirestoreRules(plan)
+      },
+      {
+        path: 'firestore.indexes.json',
+        content: createFirestoreIndexes(plan)
+      }
+    );
+  }
+  return {
+    files,
+    previewHtml: isFunctionalProject(plan)
+      ? createFunctionalPreviewHtml(plan, createLogoSvg(plan))
+      : createPreviewHtml(plan, options, profile),
+    framework: 'vite-react'
+  };
 }
 
 export function renderPreviewHtml(plan: WebsitePlan, options: ProjectBuildOptions = {}): string {
-  return createPreviewHtml(plan, options, chooseProfile(plan));
+  return isFunctionalProject(plan)
+    ? createFunctionalPreviewHtml(plan, createLogoSvg(plan))
+    : createPreviewHtml(plan, options, chooseProfile(plan));
 }
 
 export function projectSlug(plan: WebsitePlan): string {

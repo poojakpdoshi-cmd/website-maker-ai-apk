@@ -87,17 +87,17 @@ export function validateFullStackArtifacts(
     /(^|\/)(api|server|backend|functions|workers?)(\/|$)/.test(
       path
     )
-  ) || /\b(app\.(get|post|put|patch|delete)|router\.|serve\(|hono|express|serverless)\b/.test(
-    allContent
-  );
+  ) || /\b(app\.(get|post|put|patch|delete)|router\.|serve\(|hono|express|serverless|getFirestore|firebase\/firestore)\b/.test(
+      allContent
+    );
 
   const hasDatabase = paths.some((path) =>
-    /(migration|migrations|schema\.sql|supabase|prisma|drizzle)/.test(
+    /(migration|migrations|schema\.sql|supabase|prisma|drizzle|firebase|firestore)/.test(
       path
     )
-  ) || /\b(create table|alter table|prisma schema|drizzle|supabase)\b/.test(
-    allContent
-  );
+  ) || /\b(create table|alter table|prisma schema|drizzle|supabase|getFirestore|firestore)\b/.test(
+      allContent
+    );
 
   const hasEnvironmentExample = paths.some(
     (path) =>
@@ -112,7 +112,7 @@ export function validateFullStackArtifacts(
   );
 
   const hasFrontendApiConnection =
-    /\b(fetch|axios|supabase\.from|supabase\.auth|graphql|trpc)\b/.test(
+    /\b(fetch|axios|supabase\.from|supabase\.auth|graphql|trpc|getfirestore|onsnapshot)\b/.test(
       allContent
     );
 

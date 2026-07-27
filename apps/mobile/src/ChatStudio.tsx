@@ -6,9 +6,16 @@ import {
   useState
 } from 'react';
 import ThinkMaxControl from './ThinkMaxControl';
+import {
+  deleteCachedChat,
+  loadCachedChats,
+  saveCachedChat
+} from './chat-cache';
+import { formatElapsedDuration } from './duration-format';
 
 type ChatResult = {
   projectName: string;
+  jobId?: string;
 } | null;
 
 export type ChatHistoryItem = {
@@ -26,6 +33,8 @@ export type ChatAssistantReply = {
   text: string;
   processingDurationMs: number | null;
   tokenUsage: ChatTokenUsage | null;
+  provider?: string | null;
+  model?: string | null;
 };
 
 type WorkspaceTab =
@@ -41,6 +50,12 @@ export type LiveBuildActivity = {
   progress: number;
   currentAgent?: string | null;
   currentStep?: string | null;
+  errorMessage?: string | null;
+  failedStage?: string | null;
+  retryable?: boolean;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  durationMs?: number | null;
   events: Array<{
     id: number;
     agent_name?: string | null;
@@ -55,6 +70,9 @@ export type LiveBuildActivity = {
 type Props = {
   busy: boolean;
   userKey: string;
+  apiBase: string;
+  token: string;
+  installationId: string;
   activity?: LiveBuildActivity | null;
   thinkMaxEnabled: boolean;
   onThinkMaxChange: (enabled: boolean) => void;
@@ -66,7 +84,17 @@ type Props = {
     } | null,
     activityListener?: (activity: LiveBuildActivity) => void
   ) => Promise<ChatResult>;
-  onChat: (prompt: string, history: ChatHistoryItem[], attachment?: { name: string; dataUrl: string } | null) => Promise<ChatAssistantReply>;
+  onChat: (
+    prompt: string,
+    history: ChatHistoryItem[],
+    attachment: { name: string; dataUrl: string } | null | undefined,
+    identity: {
+      conversationId: string;
+      userMessageId: string;
+      assistantMessageId: string;
+      idempotencyKey: string;
+    }
+  ) => Promise<ChatAssistantReply>;
   onOpenPreview: () => void;
   onNavigate: (tab: WorkspaceTab) => void;
 };
@@ -78,6 +106,10 @@ type Message = {
   createdAt?: string | null;
   processingDurationMs?: number | null;
   tokenUsage?: ChatTokenUsage | null;
+  status?: 'pending' | 'completed' | 'failed' | 'cancelled';
+  provider?: string | null;
+  model?: string | null;
+  operation?: 'qa' | 'generation';
 };
 
 type SavedChat = {
@@ -86,6 +118,20 @@ type SavedChat = {
   updatedAt: number;
   messages: Message[];
   activity?: LiveBuildActivity | null;
+};
+
+type RemoteMessage = {
+  id: string;
+  role: 'assistant' | 'user';
+  content: string;
+  status: Message['status'];
+  provider?: string | null;
+  model?: string | null;
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  total_tokens?: number | null;
+  duration_ms?: number | null;
+  created_at: string;
 };
 
 const starters = [
@@ -102,7 +148,14 @@ function isWebsiteBuildRequest(value: string): boolean {
 }
 
 function makeId(): string {
-  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return crypto.randomUUID();
+}
+
+function stableId(value: unknown): string {
+  return typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+    ? value
+    : makeId();
 }
 
 function createMessage(
@@ -110,7 +163,7 @@ function createMessage(
   text: string,
   metadata: Pick<
     Message,
-    'processingDurationMs' | 'tokenUsage'
+    'processingDurationMs' | 'tokenUsage' | 'operation'
   > = {}
 ): Message {
   return {
@@ -118,6 +171,7 @@ function createMessage(
     role,
     text,
     createdAt: new Date().toISOString(),
+    status: 'completed',
     ...metadata
   };
 }
@@ -159,12 +213,21 @@ function normalizeMessage(value: unknown): Message | null {
     : null;
 
   return {
-    id: typeof item.id === 'string' && item.id ? item.id : makeId(),
+    id: stableId(item.id),
     role: item.role,
     text: item.text,
     createdAt,
     processingDurationMs,
-    tokenUsage
+    tokenUsage,
+    status:
+      item.status === 'pending' ||
+      item.status === 'failed' ||
+      item.status === 'cancelled'
+        ? item.status
+        : 'completed',
+    provider: typeof item.provider === 'string' ? item.provider : null,
+    model: typeof item.model === 'string' ? item.model : null,
+    operation: item.operation === 'generation' ? 'generation' : 'qa'
   };
 }
 
@@ -182,7 +245,7 @@ function normalizeSavedChats(value: unknown): SavedChat[] {
       .filter((message): message is Message => Boolean(message));
 
     return [{
-      id: typeof chat.id === 'string' && chat.id ? chat.id : makeId(),
+      id: stableId(chat.id),
       title: typeof chat.title === 'string' && chat.title
         ? chat.title
         : 'Saved chat',
@@ -193,6 +256,24 @@ function normalizeSavedChats(value: unknown): SavedChat[] {
       activity: chat.activity || null
     }];
   });
+}
+
+function remoteMessage(value: RemoteMessage): Message {
+  return {
+    id: value.id,
+    role: value.role,
+    text: value.content,
+    status: value.status,
+    provider: value.provider || null,
+    model: value.model || null,
+    processingDurationMs: value.duration_ms ?? null,
+    tokenUsage: {
+      inputTokens: value.input_tokens ?? null,
+      outputTokens: value.output_tokens ?? null,
+      totalTokens: value.total_tokens ?? null
+    },
+    createdAt: value.created_at
+  };
 }
 
 function formatMessageTimestamp(value: string | null | undefined): string {
@@ -214,17 +295,14 @@ function formatMessageTimestamp(value: string | null | undefined): string {
   return `${calendarDate}, ${time}`;
 }
 
-function formatProcessingDuration(value: number | null | undefined): string {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-    return 'Processing time unavailable';
-  }
-
-  if (value < 1000) return `Processed in ${Math.round(value)} ms`;
-  if (value < 60000) return `Processed in ${(value / 1000).toFixed(1)} s`;
-
-  const minutes = Math.floor(value / 60000);
-  const seconds = Math.round((value % 60000) / 1000);
-  return `Processed in ${minutes}m ${seconds}s`;
+function formatProcessingDuration(
+  value: number | null | undefined,
+  operation: Message['operation']
+): string {
+  const formatted = formatElapsedDuration(value);
+  return formatted
+    ? `${operation === 'generation' ? 'Generated' : 'Answered'} in ${formatted}`
+    : '';
 }
 
 function formatTokenUsage(usage: ChatTokenUsage | null | undefined): string {
@@ -236,6 +314,9 @@ function formatTokenUsage(usage: ChatTokenUsage | null | undefined): string {
 export default function ChatStudio({
   busy,
   userKey,
+  apiBase,
+  token,
+  installationId,
   activity,
   thinkMaxEnabled,
   onThinkMaxChange,
@@ -260,11 +341,21 @@ export default function ChatStudio({
     dataUrl: string;
   } | null>(null);
 
-  const storageKey =
+  const legacyStorageKey =
     'nexora-chat-history:' +
     (userKey || 'anonymous').toLowerCase();
+  const cacheOwner = (userKey || 'guest').toLowerCase();
 
   const [savedChats, setSavedChats] = useState<SavedChat[]>([]);
+  const [historySyncState, setHistorySyncState] = useState<
+    'loading' | 'synced' | 'offline' | 'failed'
+  >('loading');
+  const [historyActionError, setHistoryActionError] = useState('');
+  const [nextConversationCursor, setNextConversationCursor] =
+    useState<string | null>(null);
+  const [messageCursors, setMessageCursors] = useState<
+    Record<string, string | null>
+  >({});
   const [activeChatId, setActiveChatId] = useState(() => makeId());
   const [messages, setMessages] = useState<Message[]>([]);
   const activeChatIdRef = useRef(activeChatId);
@@ -287,36 +378,121 @@ export default function ChatStudio({
   );
 
   useEffect(() => {
-    try {
-      const parsed = JSON.parse(
-        localStorage.getItem(storageKey) || '[]'
-      ) as unknown;
-      const chats = normalizeSavedChats(parsed);
-      setSavedChats(chats);
+    let cancelled = false;
 
+    async function restoreHistory(): Promise<void> {
+      setHistorySyncState('loading');
+      let cached: SavedChat[] = [];
+      try {
+        cached = normalizeSavedChats(
+          await loadCachedChats<Message, LiveBuildActivity>(cacheOwner)
+        );
+        const legacyRaw = localStorage.getItem(legacyStorageKey);
+        if (legacyRaw) {
+          const legacy = normalizeSavedChats(JSON.parse(legacyRaw));
+          const merged = [
+            ...cached,
+            ...legacy.filter(
+              (chat) => !cached.some((item) => item.id === chat.id)
+            )
+          ];
+          cached = merged;
+          await Promise.all(
+            legacy.map((chat) => saveCachedChat(cacheOwner, chat))
+          );
+          localStorage.removeItem(legacyStorageKey);
+        }
+      } catch {
+        cached = [];
+      }
+
+      if (cancelled) return;
+      setSavedChats(cached);
       setChatActivities(
         Object.fromEntries(
-          chats
+          cached
             .filter((chat) => Boolean(chat.activity))
             .map((chat) => [chat.id, chat.activity])
         ) as Record<string, LiveBuildActivity>
       );
 
-      const activeJobId = localStorage.getItem(
-        'nexora-active-generation-job'
-      );
-      const activeBuildChat = activeJobId
-        ? chats.find((chat) => chat.activity?.jobId === activeJobId)
-        : undefined;
-
-      if (activeBuildChat) {
-        setActiveChatId(activeBuildChat.id);
-        setMessages(activeBuildChat.messages);
+      if (!token || !navigator.onLine) {
+        setHistorySyncState('offline');
+        return;
       }
-    } catch {
-      setSavedChats([]);
+
+      try {
+        const listResponse = await fetch(
+          `${apiBase}/conversations?limit=50`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (!listResponse.ok) throw new Error('History sync failed.');
+        const listData = await listResponse.json() as {
+          conversations?: Array<{
+            id: string;
+            title: string;
+            updated_at: string;
+            last_message_at: string;
+          }>;
+          nextCursor?: string | null;
+        };
+        const remoteCursors: Record<string, string | null> = {};
+        const remoteChats = await Promise.all(
+          (listData.conversations || []).map(async (conversation) => {
+            const response = await fetch(
+              `${apiBase}/conversations/${encodeURIComponent(conversation.id)}/messages?limit=50`,
+              { headers: { Authorization: `Bearer ${token}` } }
+            );
+            if (!response.ok) throw new Error('Message sync failed.');
+            const data = await response.json() as {
+              messages?: RemoteMessage[];
+              nextCursor?: string | null;
+            };
+            remoteCursors[conversation.id] = data.nextCursor || null;
+            const cachedChat = cached.find(
+              (item) => item.id === conversation.id
+            );
+            return {
+              id: conversation.id,
+              title: conversation.title,
+              updatedAt:
+                Date.parse(
+                  conversation.last_message_at || conversation.updated_at
+                ) || Date.now(),
+              messages: (data.messages || []).map(remoteMessage),
+              activity: cachedChat?.activity || null
+            } satisfies SavedChat;
+          })
+        );
+        const merged = [
+          ...remoteChats,
+          ...cached.filter(
+            (chat) => !remoteChats.some((remote) => remote.id === chat.id)
+          )
+        ].sort((left, right) => right.updatedAt - left.updatedAt);
+        if (cancelled) return;
+        setSavedChats(merged);
+        setNextConversationCursor(listData.nextCursor || null);
+        setMessageCursors((current) => ({
+          ...current,
+          ...remoteCursors
+        }));
+        await Promise.all(
+          remoteChats.map((chat) => saveCachedChat(cacheOwner, chat))
+        );
+        setHistorySyncState('synced');
+      } catch {
+        if (!cancelled) {
+          setHistorySyncState(navigator.onLine ? 'failed' : 'offline');
+        }
+      }
     }
-  }, [storageKey]);
+
+    void restoreHistory();
+    return () => {
+      cancelled = true;
+    };
+  }, [apiBase, cacheOwner, legacyStorageKey, token]);
 
   useEffect(() => {
     if (messages.length === 0) return;
@@ -338,10 +514,10 @@ export default function ChatStudio({
         ...current.filter((item) => item.id !== activeChatId)
       ].slice(0, 100);
 
-      localStorage.setItem(storageKey, JSON.stringify(next));
+      void saveCachedChat(cacheOwner, next[0]);
       return next;
     });
-  }, [activeActivity, activeChatId, messages, storageKey]);
+  }, [activeActivity, activeChatId, cacheOwner, messages]);
 
   useEffect(() => {
     activeChatIdRef.current = activeChatId;
@@ -363,12 +539,12 @@ export default function ChatStudio({
       });
 
       if (changed) {
-        localStorage.setItem(storageKey, JSON.stringify(next));
+        next.forEach((chat) => void saveCachedChat(cacheOwner, chat));
       }
 
       return changed ? next : current;
     });
-  }, [chatActivities, storageKey]);
+  }, [cacheOwner, chatActivities]);
 
   useEffect(() => {
     if (!activity) return;
@@ -404,6 +580,207 @@ export default function ChatStudio({
     setLiveRoomOpen(false);
   }
 
+  async function openSavedChat(chat: SavedChat): Promise<void> {
+    activeChatIdRef.current = chat.id;
+    setActiveChatId(chat.id);
+    setMessages(chat.messages);
+    setMenuOpen(false);
+    if (chat.messages.length > 0 || !token || !navigator.onLine) return;
+
+    try {
+      const response = await fetch(
+        `${apiBase}/conversations/${encodeURIComponent(chat.id)}/messages?limit=50`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const data = await response.json() as {
+        messages?: RemoteMessage[];
+        nextCursor?: string | null;
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(data.error || 'Could not load messages.');
+      }
+      const loaded = (data.messages || []).map(remoteMessage);
+      const updated = { ...chat, messages: loaded };
+      setMessages(loaded);
+      setSavedChats((current) =>
+        current.map((item) => item.id === chat.id ? updated : item)
+      );
+      setMessageCursors((current) => ({
+        ...current,
+        [chat.id]: data.nextCursor || null
+      }));
+      await saveCachedChat(cacheOwner, updated);
+      setHistoryActionError('');
+    } catch (error) {
+      setHistoryActionError(
+        error instanceof Error ? error.message : 'Could not load messages.'
+      );
+    }
+  }
+
+  async function loadOlderConversations(): Promise<void> {
+    if (!nextConversationCursor || !token || !navigator.onLine) return;
+    try {
+      const response = await fetch(
+        `${apiBase}/conversations?limit=50&cursor=${encodeURIComponent(nextConversationCursor)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const data = await response.json() as {
+        conversations?: Array<{
+          id: string;
+          title: string;
+          updated_at: string;
+          last_message_at: string;
+        }>;
+        nextCursor?: string | null;
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(data.error || 'Could not load older chats.');
+      }
+      const older: SavedChat[] = (data.conversations || []).map(
+        (conversation) => ({
+          id: conversation.id,
+          title: conversation.title,
+          updatedAt:
+            Date.parse(
+              conversation.last_message_at || conversation.updated_at
+            ) || Date.now(),
+          messages: [],
+          activity: null
+        })
+      );
+      setSavedChats((current) => [
+        ...current,
+        ...older.filter(
+          (chat) => !current.some((item) => item.id === chat.id)
+        )
+      ]);
+      setNextConversationCursor(data.nextCursor || null);
+      setHistoryActionError('');
+    } catch (error) {
+      setHistoryActionError(
+        error instanceof Error ? error.message : 'Could not load older chats.'
+      );
+    }
+  }
+
+  async function loadEarlierMessages(): Promise<void> {
+    const cursor = messageCursors[activeChatId];
+    if (!cursor || !token || !navigator.onLine) return;
+    try {
+      const response = await fetch(
+        `${apiBase}/conversations/${encodeURIComponent(activeChatId)}/messages?limit=50&cursor=${encodeURIComponent(cursor)}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const data = await response.json() as {
+        messages?: RemoteMessage[];
+        nextCursor?: string | null;
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(data.error || 'Could not load earlier messages.');
+      }
+      const earlier = (data.messages || []).map(remoteMessage);
+      setMessages((current) => [
+        ...earlier.filter(
+          (message) => !current.some((item) => item.id === message.id)
+        ),
+        ...current
+      ]);
+      setMessageCursors((current) => ({
+        ...current,
+        [activeChatId]: data.nextCursor || null
+      }));
+      setHistoryActionError('');
+    } catch (error) {
+      setHistoryActionError(
+        error instanceof Error
+          ? error.message
+          : 'Could not load earlier messages.'
+      );
+    }
+  }
+
+  async function renameChat(chat: SavedChat): Promise<void> {
+    const title = window.prompt('Rename this chat', chat.title)?.trim();
+    if (!title || title === chat.title) return;
+    if (title.length > 120) {
+      setHistoryActionError('Chat titles must be 120 characters or fewer.');
+      return;
+    }
+    try {
+      if (!token || !navigator.onLine) {
+        throw new Error('Connect to the internet to rename this saved chat.');
+      }
+      const response = await fetch(
+        `${apiBase}/conversations/${encodeURIComponent(chat.id)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ title })
+        }
+      );
+      const data = await response.json().catch(() => ({})) as {
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(data.error || 'Could not rename the chat.');
+      }
+      const updated = { ...chat, title, updatedAt: Date.now() };
+      setSavedChats((current) =>
+        current.map((item) => item.id === chat.id ? updated : item)
+      );
+      await saveCachedChat(cacheOwner, updated);
+      setHistoryActionError('');
+    } catch (error) {
+      setHistoryActionError(
+        error instanceof Error ? error.message : 'Could not rename the chat.'
+      );
+    }
+  }
+
+  async function removeChat(chat: SavedChat): Promise<void> {
+    if (!window.confirm(
+      `Delete “${chat.title}”? It will be hidden from every signed-in device.`
+    )) {
+      return;
+    }
+    try {
+      if (token && navigator.onLine) {
+        const response = await fetch(
+          `${apiBase}/conversations/${encodeURIComponent(chat.id)}`,
+          {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` }
+          }
+        );
+        if (!response.ok && response.status !== 404) {
+          const data = await response.json().catch(() => ({})) as {
+            error?: string;
+          };
+          throw new Error(data.error || 'Could not delete the chat.');
+        }
+      } else if (userKey && userKey !== 'guest') {
+        throw new Error('Connect to the internet to delete this saved chat.');
+      }
+      setSavedChats((current) =>
+        current.filter((item) => item.id !== chat.id)
+      );
+      await deleteCachedChat(cacheOwner, chat.id);
+      if (activeChatIdRef.current === chat.id) newChat();
+      setHistoryActionError('');
+    } catch (error) {
+      setHistoryActionError(
+        error instanceof Error ? error.message : 'Could not delete the chat.'
+      );
+    }
+  }
+
   function appendMessageToChat(
     chatId: string,
     fallbackMessages: Message[],
@@ -435,7 +812,7 @@ export default function ChatStudio({
         ...current.filter((chat) => chat.id !== chatId)
       ].slice(0, 100);
 
-      localStorage.setItem(storageKey, JSON.stringify(next));
+      void saveCachedChat(cacheOwner, next[0]);
       return next;
     });
   }
@@ -482,6 +859,45 @@ export default function ChatStudio({
     event.target.value = '';
   }
 
+  async function syncGenerationConversation(
+    conversationId: string,
+    title: string,
+    generationId: string,
+    generationMessages: Message[]
+  ): Promise<void> {
+    if (!token || !navigator.onLine) {
+      setHistorySyncState('offline');
+      return;
+    }
+    try {
+      const response = await fetch(
+        `${apiBase}/conversations/${encodeURIComponent(conversationId)}/messages/sync`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            title,
+            generationId,
+            messages: generationMessages.map((message) => ({
+              id: message.id,
+              role: message.role,
+              content: message.text,
+              status: message.status || 'completed',
+              createdAt: message.createdAt || new Date().toISOString()
+            }))
+          })
+        }
+      );
+      if (!response.ok) throw new Error('Generation history sync failed.');
+      setHistorySyncState('synced');
+    } catch {
+      setHistorySyncState('failed');
+    }
+  }
+
   async function submit(event: FormEvent): Promise<void> {
     event.preventDefault();
 
@@ -505,7 +921,6 @@ export default function ChatStudio({
     const attachedImage = image;
     const chatHistory = messages;
     const requestChatId = activeChatId;
-    const requestStartedAt = Date.now();
     const userMessage = createMessage(
       'user',
       image
@@ -523,32 +938,60 @@ export default function ChatStudio({
     setImage(null);
 
     if (!websiteBuildRequest) {
+      const assistantMessageId = makeId();
+      const idempotencyKey = makeId();
       try {
-        const reply = await onChat(request, chatHistory, attachedImage);
+        const reply = await onChat(
+          request,
+          chatHistory,
+          attachedImage,
+          {
+            conversationId: requestChatId,
+            userMessageId: userMessage.id,
+            assistantMessageId,
+            idempotencyKey
+          }
+        );
         appendMessageToChat(
           requestChatId,
           pendingMessages,
-          createMessage('assistant', reply.text, {
-            processingDurationMs: reply.processingDurationMs,
-            tokenUsage: reply.tokenUsage
-          })
+          {
+            ...createMessage('assistant', reply.text, {
+              processingDurationMs: reply.processingDurationMs,
+              tokenUsage: reply.tokenUsage
+            }),
+            id: assistantMessageId,
+            provider: reply.provider || null,
+            model: reply.model || null
+          }
         );
       } catch (chatError) {
         const text = chatError instanceof Error ? chatError.message : 'Assistant request failed.';
         appendMessageToChat(
           requestChatId,
           pendingMessages,
-          createMessage('assistant', `Assistant error: ${text}`)
+          {
+            ...createMessage('assistant', `Assistant error: ${text}`),
+            id: assistantMessageId,
+            status: 'failed'
+          }
         );
       }
       return;
     }
 
+    let authoritativeDurationMs: number | null = null;
+    let generationJobId: string | null = null;
     try {
       const generated = await onGenerate(
         request,
         attachedImage,
         (nextActivity) => {
+          generationJobId = nextActivity.jobId;
+          authoritativeDurationMs =
+            typeof nextActivity.durationMs === 'number'
+              ? nextActivity.durationMs
+              : authoritativeDurationMs;
           setChatActivities((current) => ({
             ...current,
             [requestChatId]: nextActivity
@@ -563,39 +1006,62 @@ export default function ChatStudio({
       }
 
       setHasProject(true);
-
+      generationJobId = generated.jobId || generationJobId;
+      const generatedMessage = createMessage(
+        'assistant',
+        `${generated.projectName} is ready. ` +
+          'The project was generated and validated.',
+        {
+          processingDurationMs: authoritativeDurationMs,
+          tokenUsage: null,
+          operation: 'generation'
+        }
+      );
       appendMessageToChat(
         requestChatId,
         pendingMessages,
-        createMessage(
-          'assistant',
-            `${generated.projectName} is ready. ` +
-            'The project was generated and validated.',
-          {
-            processingDurationMs: Date.now() - requestStartedAt,
-            tokenUsage: null
-          }
-        )
+        generatedMessage
       );
+      if (generationJobId) {
+        void syncGenerationConversation(
+          requestChatId,
+          request.replace(/\s+/g, ' ').slice(0, 80),
+          generationJobId,
+          [userMessage, generatedMessage]
+        );
+      }
     } catch (buildError) {
       const buildMessage =
         buildError instanceof Error
           ? buildError.message
           : 'Website generation failed.';
 
+      const failedMessage = {
+        ...createMessage(
+          'assistant',
+          `Build failed: ${buildMessage}\n\n` +
+            'Check your connection and try again.',
+          {
+            processingDurationMs: authoritativeDurationMs,
+            tokenUsage: null,
+            operation: 'generation'
+          }
+        ),
+        status: 'failed' as const
+      };
       appendMessageToChat(
         requestChatId,
         pendingMessages,
-        createMessage(
-          'assistant',
-            `Build failed: ${buildMessage}\n\n` +
-            'Check your connection and try again.',
-          {
-            processingDurationMs: Date.now() - requestStartedAt,
-            tokenUsage: null
-          }
-        )
+        failedMessage
       );
+      if (generationJobId) {
+        void syncGenerationConversation(
+          requestChatId,
+          request.replace(/\s+/g, ' ').slice(0, 80),
+          generationJobId,
+          [userMessage, failedMessage]
+        );
+      }
     }
   }
 
@@ -683,42 +1149,59 @@ export default function ChatStudio({
 
         <div className="claude-saved-chats">
           <strong>Recent chats</strong>
+          <small>
+            {!token
+              ? 'Guest chats stay on this device and do not survive uninstall'
+              : historySyncState === 'loading'
+              ? 'Loading cached chats…'
+              : historySyncState === 'synced'
+                ? 'Synced across your account'
+                : historySyncState === 'offline'
+                  ? 'Offline — showing cached chats'
+                  : 'Sync failed — showing cached chats'}
+          </small>
+          {historyActionError && (
+            <small role="alert">{historyActionError}</small>
+          )}
           {savedChats.length === 0 ? (
-            <small>No saved chats yet</small>
+            <small>
+              {historySyncState === 'loading'
+                ? 'Checking history…'
+                : 'No saved chats yet'}
+            </small>
           ) : (
             savedChats.map((chat) => (
               <div key={chat.id} className="claude-saved-chat-row">
                 <button
                   type="button"
-                  onClick={() => {
-                    setActiveChatId(chat.id);
-                    setMessages(chat.messages);
-                    setMenuOpen(false);
-                  }}
+                  onClick={() => void openSavedChat(chat)}
                 >
                   {chat.title}
                 </button>
                 <button
                   type="button"
-                  aria-label="Delete chat"
-                  onClick={() => {
-                    setSavedChats((current) => {
-                      const next = current.filter(
-                        (item) => item.id !== chat.id
-                      );
-                      localStorage.setItem(
-                        storageKey,
-                        JSON.stringify(next)
-                      );
-                      return next;
-                    });
-                    if (activeChatId === chat.id) newChat();
-                  }}
+                  aria-label={`Rename ${chat.title}`}
+                  onClick={() => void renameChat(chat)}
+                >
+                  Rename
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Delete ${chat.title}`}
+                  onClick={() => void removeChat(chat)}
                 >
                   ×
                 </button>
               </div>
             ))
+          )}
+          {nextConversationCursor && (
+            <button
+              type="button"
+              onClick={() => void loadOlderConversations()}
+            >
+              Load older chats
+            </button>
           )}
         </div>
 
@@ -819,6 +1302,14 @@ export default function ChatStudio({
             </section>
           ) : (
             <div className="claude-message-list">
+              {messageCursors[activeChatId] && (
+                <button
+                  type="button"
+                  onClick={() => void loadEarlierMessages()}
+                >
+                  Load earlier messages
+                </button>
+              )}
               {messages.map((message) => (
                 <article
                   key={message.id}
@@ -846,12 +1337,23 @@ export default function ChatStudio({
                       </span>
                       {message.role === 'assistant' && (
                         <>
-                          <span>
-                            {formatProcessingDuration(
-                              message.processingDurationMs
-                            )}
-                          </span>
-                          <span>{formatTokenUsage(message.tokenUsage)}</span>
+                          {formatProcessingDuration(
+                            message.processingDurationMs,
+                            message.operation
+                          ) && (
+                            <span>
+                              {formatProcessingDuration(
+                                message.processingDurationMs,
+                                message.operation
+                              )}
+                            </span>
+                          )}
+                          {typeof message.tokenUsage?.totalTokens === 'number' && (
+                            <span>{formatTokenUsage(message.tokenUsage)}</span>
+                          )}
+                          {message.status === 'failed' && (
+                            <span>Failed</span>
+                          )}
                         </>
                       )}
                     </div>

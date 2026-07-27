@@ -10,9 +10,14 @@ export type CouncilProjectPatch = {
 };
 
 const allowedFiles = new Set([
+  'package.json',
+  'index.html',
+  'src/main.jsx',
   'src/App.jsx',
   'src/styles.css',
   'public/logo.svg',
+  'vite.config.js',
+  'vercel.json',
   'README.md'
 ]);
 
@@ -40,6 +45,9 @@ function isAllowedGeneratedPath(
     'vercel.json',
     'wrangler.toml',
     'wrangler.jsonc',
+    'firebase.json',
+    'firestore.rules',
+    'firestore.indexes.json',
     'prisma/schema.prisma'
   ]);
 
@@ -48,6 +56,7 @@ function isAllowedGeneratedPath(
   }
 
   const fullStackPaths = [
+    /^src\/(assets|components|context|features|hooks|lib|pages|services|store|types|utils)\/[A-Za-z0-9._/-]+\.(ts|tsx|js|jsx|json|css|svg)$/,
     /^(api|server|backend|functions|workers)\/[A-Za-z0-9._/-]+\.(ts|tsx|js|mjs|cjs|json|sql)$/,
     /^src\/(api|server|backend|services|lib)\/[A-Za-z0-9._/-]+\.(ts|tsx|js|mjs|cjs|json|sql)$/,
     /^supabase\/migrations\/[A-Za-z0-9._-]+\.sql$/,

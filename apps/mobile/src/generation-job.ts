@@ -10,6 +10,14 @@ export type GenerationLaunchPayload = {
     name?: string;
   };
   thinkMax?: true;
+  websitePalette?: {
+    id: string;
+    label: string;
+    primary: string;
+    secondary: string;
+    background: string;
+    text: string;
+  };
 };
 
 export type GenerationJobState =

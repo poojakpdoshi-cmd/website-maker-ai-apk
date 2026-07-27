@@ -1,6 +1,10 @@
-import type { GeneratedProjectFile } from '@wmai/shared';
+import type {
+  ApplicationSpec,
+  GeneratedProjectFile
+} from '@wmai/shared';
 
 import { validateFullStackArtifacts } from './fullstack-policy';
+import { validateAppSpecRequirements } from './requirement-validator';
 export type ProjectValidationResult = {
   passed: boolean;
   errors: string[];
@@ -14,6 +18,7 @@ const requiredFiles = [
   'src/main.jsx',
   'src/App.jsx',
   'src/styles.css',
+  'nexora.appspec.json',
   'public/logo.svg',
   'vite.config.js',
   'vercel.json'
@@ -29,7 +34,8 @@ function objectValue(
 
 export function validateGeneratedProject(
   files: GeneratedProjectFile[],
-  request = ''
+  request = '',
+  appSpec?: ApplicationSpec
 ): ProjectValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -223,6 +229,45 @@ export function validateGeneratedProject(
 
   checks.fullStackRequirements =
     fullStackErrors.length === 0;
+
+  let bindingSpec = appSpec;
+  if (!bindingSpec) {
+    try {
+      bindingSpec = JSON.parse(
+        byPath.get('nexora.appspec.json') || ''
+      ) as ApplicationSpec;
+    } catch {
+      bindingSpec = undefined;
+    }
+  }
+
+  if (bindingSpec) {
+    const requirementValidation =
+      validateAppSpecRequirements(bindingSpec, files);
+    checks.requirementContract =
+      requirementValidation.passed;
+    Object.assign(
+      checks,
+      Object.fromEntries(
+        Object.entries(requirementValidation.checks).map(
+          ([key, value]) => [`requirement_${key}`, value]
+        )
+      )
+    );
+    errors.push(
+      ...requirementValidation.findings
+        .filter((finding) => finding.severity === 'error')
+        .map((finding) => finding.message)
+    );
+    warnings.push(
+      ...requirementValidation.findings
+        .filter((finding) => finding.severity === 'warning')
+        .map((finding) => finding.message)
+    );
+  } else {
+    checks.requirementContract = false;
+    errors.push('Binding application specification is missing.');
+  }
 
   return {
     passed: errors.length === 0,

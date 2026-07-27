@@ -39,32 +39,33 @@ export function createFullStackReport(
       ) ||
       paths.some((path) =>
         /^(app|src)\/api\//.test(path)
-      ),
+      ) ||
+      /\b(getFirestore|onSnapshot|subscribeRecords)\b/i.test(content),
 
     database:
       paths.some((path) =>
-        /(supabase|prisma|drizzle|migration|schema\.sql)/.test(
+        /(supabase|prisma|drizzle|migration|schema\.sql|firebase|firestore)/.test(
           path
         )
       ) ||
-      /\b(create table|prisma|drizzle|supabase\.from)\b/i.test(
+      /\b(create table|prisma|drizzle|supabase\.from|getFirestore|firestore)\b/i.test(
         content
       ),
 
     migrations:
       paths.some((path) =>
-        /(migrations?\/.*\.sql|schema\.sql|schema\.prisma)$/.test(
+        /(migrations?\/.*\.sql|schema\.sql|schema\.prisma|firestore\.rules|firestore\.indexes\.json)$/.test(
           path
         )
       ),
 
     authentication:
-      /\b(supabase\.auth|signInWith|signUp|verifySession|requireAuth|jwt\.verify|getServerSession)\b/i.test(
+      /\b(supabase\.auth|signInWith|signUp|signInAnonymously|verifySession|requireAuth|jwt\.verify|getServerSession)\b/i.test(
         content
       ),
 
     authorization:
-      /\b(requireAdmin|isAdmin|roles?|permissions?|create policy|row level security|rls)\b/i.test(
+      /\b(requireAdmin|isAdmin|roles?|permissions?|create policy|row level security|rls|ownerId|request\.auth)\b/i.test(
         content
       ),
 
@@ -76,6 +77,9 @@ export function createFullStackReport(
         content
       ) ||
       /\.(insert|update|upsert|delete)\s*\(/i.test(
+        content
+      ) ||
+      /\b(addDoc|setDoc|deleteDoc)\s*\(/i.test(
         content
       ),
 

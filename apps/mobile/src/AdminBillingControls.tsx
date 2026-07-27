@@ -6,11 +6,8 @@ export type BillingAccount = {
   username: string;
   plan_id?: string;
   plan_name?: string;
-  subscription_status?: string;
-  cycle_end?: string | null;
+  plan_package_tokens?: number;
   token_balance?: number;
-  monthly_balance?: number;
-  topup_balance?: number;
   lifetime_used?: number;
 };
 
@@ -25,13 +22,6 @@ type Props = {
   onUpdated: () => Promise<void>;
 };
 
-function dateInputValue(value?: string | null): string {
-  const date = value ? new Date(value) : new Date(Date.now() + 30 * 86400000);
-  if (Number.isNaN(date.getTime())) return '';
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return local.toISOString().slice(0, 10);
-}
-
 export default function AdminBillingControls({
   apiBase,
   token,
@@ -43,27 +33,61 @@ export default function AdminBillingControls({
   onUpdated
 }: Props) {
   const [open, setOpen] = useState(false);
-  const [planId, setPlanId] = useState(account.plan_id || 'trial');
-  const [status, setStatus] = useState(account.subscription_status || 'active');
-  const [cycleEnd, setCycleEnd] = useState(dateInputValue(account.cycle_end));
-  const [tokenAdjustment, setTokenAdjustment] = useState('0');
+  const [action, setAction] = useState<'assign_package' | 'admin_bonus'>(
+    'assign_package'
+  );
+  const [planId, setPlanId] = useState(
+    ['starter', 'pro', 'business'].includes(account.plan_id || '')
+      ? account.plan_id || 'starter'
+      : 'starter'
+  );
+  const [amount, setAmount] = useState('');
+  const [reason, setReason] = useState('');
+  const [grantAttempt, setGrantAttempt] = useState<{
+    fingerprint: string;
+    idempotencyKey: string;
+  } | null>(null);
 
   useEffect(() => {
-    setPlanId(account.plan_id || 'trial');
-    setStatus(account.subscription_status || 'active');
-    setCycleEnd(dateInputValue(account.cycle_end));
-  }, [account.plan_id, account.subscription_status, account.cycle_end]);
+    if (['starter', 'pro', 'business'].includes(account.plan_id || '')) {
+      setPlanId(account.plan_id || 'starter');
+    }
+  }, [account.plan_id]);
 
-  async function save(): Promise<void> {
-    const end = new Date(`${cycleEnd}T23:59:59.000Z`);
-    if (Number.isNaN(end.getTime())) {
-      onError('Choose a valid renewal date.');
+  async function grant(): Promise<void> {
+    const bonusAmount = Number.parseInt(amount, 10);
+    if (action === 'admin_bonus' && (!Number.isSafeInteger(bonusAmount) || bonusAmount <= 0)) {
+      onError('Enter a positive whole-number token amount.');
+      return;
+    }
+    if (reason.trim().length < 3) {
+      onError('Enter a reason for this grant.');
+      return;
+    }
+
+    const description = action === 'assign_package'
+      ? `${planId} token package`
+      : `${bonusAmount.toLocaleString()} extra tokens`;
+    if (!window.confirm(
+      `Grant ${description} to ${account.username}? This grant is non-expiring and will be recorded in the audit ledger.`
+    )) {
       return;
     }
 
     onBusy(true);
     onError('');
     onMessage('');
+    const fingerprint = JSON.stringify({
+      action,
+      planId: action === 'assign_package' ? planId : null,
+      amount: action === 'admin_bonus' ? bonusAmount : null,
+      reason: reason.trim()
+    });
+    const idempotencyKey =
+      grantAttempt?.fingerprint === fingerprint
+        ? grantAttempt.idempotencyKey
+        : crypto.randomUUID();
+    setGrantAttempt({ fingerprint, idempotencyKey });
 
     try {
       const response = await fetch(
@@ -74,23 +98,42 @@ export default function AdminBillingControls({
             'content-type': 'application/json',
             Authorization: `Bearer ${token}`
           },
-          body: JSON.stringify({
-            planId,
-            status,
-            cycleEnd: end.toISOString(),
-            tokenAdjustment: Number.parseInt(tokenAdjustment || '0', 10) || 0
-          })
+          body: JSON.stringify(
+            action === 'assign_package'
+              ? {
+                  action,
+                  planId,
+                  reason: reason.trim(),
+                  idempotencyKey
+                }
+              : {
+                  action,
+                  amount: bonusAmount,
+                  reason: reason.trim(),
+                  idempotencyKey
+                }
+          )
         }
       );
 
-      const data = await response.json().catch(() => ({})) as { error?: string };
-      if (!response.ok) throw new Error(data.error || 'Could not update billing.');
+      const data = await response.json().catch(() => ({})) as {
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(data.error || 'Could not grant Nexora Tokens.');
+      }
 
-      setTokenAdjustment('0');
-      onMessage(`Billing updated for ${account.username}.`);
+      setAmount('');
+      setReason('');
+      setGrantAttempt(null);
+      onMessage(`${description} granted to ${account.username}.`);
       await onUpdated();
     } catch (saveError) {
-      onError(saveError instanceof Error ? saveError.message : 'Could not update billing.');
+      onError(
+        saveError instanceof Error
+          ? saveError.message
+          : 'Could not grant Nexora Tokens.'
+      );
     } finally {
       onBusy(false);
     }
@@ -98,50 +141,80 @@ export default function AdminBillingControls({
 
   return (
     <div className="admin-billing-control">
-      <button type="button" className="admin-user-action-v5" onClick={() => setOpen(!open)} disabled={busy}>
-        {open ? 'Close Billing' : 'Plan & Tokens'}
+      <button
+        type="button"
+        className="admin-user-action-v5"
+        onClick={() => setOpen(!open)}
+        disabled={busy}
+      >
+        {open ? 'Close Tokens' : 'Packages & Tokens'}
       </button>
 
       {open && (
         <div className="admin-billing-editor">
           <div className="admin-billing-summary">
-            <span>{account.plan_name || 'Free Trial'}</span>
+            <span>{account.plan_name || 'No package assigned'}</span>
             <strong>{account.token_balance || 0} tokens</strong>
             <small>{account.lifetime_used || 0} used lifetime</small>
           </div>
 
           <label>
-            Plan
-            <select value={planId} onChange={(event) => setPlanId(event.target.value)}>
-              <option value="trial">Free Trial · 100</option>
-              <option value="starter">Starter · ₹199 · 1,000</option>
-              <option value="pro">Pro · ₹499 · 3,500</option>
-              <option value="business">Business · ₹999 · 9,000</option>
+            Grant type
+            <select
+              value={action}
+              onChange={(event) =>
+                setAction(event.target.value as typeof action)
+              }
+            >
+              <option value="assign_package">Assign token package</option>
+              <option value="admin_bonus">Add extra tokens</option>
             </select>
           </label>
 
-          <label>
-            Status
-            <select value={status} onChange={(event) => setStatus(event.target.value)}>
-              <option value="active">Active</option>
-              <option value="paused">Paused</option>
-              <option value="cancelled">Cancelled</option>
-              <option value="expired">Expired</option>
-            </select>
-          </label>
+          {action === 'assign_package' ? (
+            <label>
+              Package
+              <select
+                value={planId}
+                onChange={(event) => setPlanId(event.target.value)}
+              >
+                <option value="starter">Starter</option>
+                <option value="pro">Pro</option>
+                <option value="business">Business</option>
+              </select>
+            </label>
+          ) : (
+            <label>
+              Extra tokens
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={amount}
+                onChange={(event) => setAmount(event.target.value)}
+                placeholder="500"
+              />
+            </label>
+          )}
 
           <label>
-            Renewal / expiry
-            <input type="date" value={cycleEnd} onChange={(event) => setCycleEnd(event.target.value)} />
+            Reason
+            <input
+              type="text"
+              maxLength={500}
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="Required audit reason"
+            />
           </label>
 
-          <label>
-            Add or deduct tokens
-            <input type="number" value={tokenAdjustment} onChange={(event) => setTokenAdjustment(event.target.value)} placeholder="500 or -100" />
-          </label>
-
-          <button type="button" className="admin-primary-v5" onClick={() => void save()} disabled={busy}>
-            {busy ? 'Saving…' : 'Apply Billing'}
+          <button
+            type="button"
+            className="admin-primary-v5"
+            onClick={() => void grant()}
+            disabled={busy}
+          >
+            {busy ? 'Granting…' : 'Confirm Grant'}
           </button>
         </div>
       )}

@@ -1,10 +1,13 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { applyAppearance, loadAppearance } from './appearance';
 import './styles.css';
 import './nexora-theme.css';
 
 const isAndroid = /Android/i.test(navigator.userAgent);
+
+applyAppearance(loadAppearance());
 
 function updateViewportHeight() {
   const viewportHeight = window.visualViewport?.height ?? window.innerHeight;

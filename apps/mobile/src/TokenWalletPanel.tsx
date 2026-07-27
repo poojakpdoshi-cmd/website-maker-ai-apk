@@ -6,31 +6,25 @@ type WalletResponse = {
   plan: {
     id: string;
     name: string;
-    monthlyPriceInr: number | null;
-    monthlyTokens: number | null;
-    recurring: boolean;
+    packagePriceInr: number | null;
+    packageTokens: number | null;
+    nonExpiring: boolean;
   };
-  subscription: {
+  entitlement: {
     status: string;
-    cycleStart: string | null;
-    cycleEnd: string | null;
-    renewsAt: string | null;
   };
   wallet: {
-    monthlyBalance: number | null;
-    topupBalance: number | null;
     reservedBalance: number;
     available: number | null;
     lifetimeUsed: number | null;
-    resetAt: string | null;
+    nonExpiring: boolean;
   };
   ledger: Array<{
     id: string;
     operation: string;
-    description: string;
+    reason: string;
     amount: number;
-    direction: string;
-    status: string;
+    transaction_type: string;
     balance_after: number;
     created_at: string;
   }>;
@@ -47,17 +41,6 @@ type Props = {
   token: string;
   installationId: string;
 };
-
-function formatDate(value: string | null): string {
-  if (!value) return 'No expiry';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleDateString(undefined, {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric'
-  });
-}
 
 function operationLabel(value: string): string {
   return value
@@ -93,11 +76,9 @@ export default function TokenWalletPanel({
 
       const data = await response.json().catch(() => ({})) as
         WalletResponse & { error?: string };
-
       if (!response.ok) {
         throw new Error(data.error || 'Could not load Nexora Tokens.');
       }
-
       setWallet(data);
     } catch (loadError) {
       setError(
@@ -135,17 +116,6 @@ export default function TokenWalletPanel({
   const available = wallet.unlimited
     ? 'Unlimited'
     : String(wallet.wallet.available ?? 0);
-  const allowance = wallet.unlimited
-    ? 'Owner access'
-    : `${wallet.wallet.available ?? 0} / ${wallet.plan.monthlyTokens ?? 0}`;
-  const percent = wallet.unlimited || !wallet.plan.monthlyTokens
-    ? 0
-    : Math.min(
-        100,
-        Math.round(
-          ((wallet.wallet.available || 0) / wallet.plan.monthlyTokens) * 100
-        )
-      );
 
   return (
     <section className="token-wallet-card">
@@ -156,7 +126,7 @@ export default function TokenWalletPanel({
           <span>
             {wallet.unlimited
               ? 'Owner account has unlimited access.'
-              : `Renews on ${formatDate(wallet.subscription.renewsAt || wallet.subscription.cycleEnd)}`}
+              : 'Non-expiring token entitlement'}
           </span>
         </div>
         <button type="button" onClick={() => void loadWallet()} disabled={loading}>
@@ -170,16 +140,10 @@ export default function TokenWalletPanel({
       </div>
 
       {!wallet.unlimited && (
-        <>
-          <div className="token-wallet-progress" role="progressbar" aria-valuemin={0} aria-valuemax={wallet.plan.monthlyTokens || 0} aria-valuenow={wallet.wallet.available || 0}>
-            <span style={{ width: `${percent}%` }} />
-          </div>
-          <div className="token-wallet-meta">
-            <span>{allowance}</span>
-            <span>{wallet.wallet.topupBalance || 0} top-up</span>
-            <span>{wallet.wallet.reservedBalance || 0} reserved</span>
-          </div>
-        </>
+        <div className="token-wallet-meta">
+          <span>Tokens do not reset or expire</span>
+          <span>{wallet.wallet.reservedBalance || 0} reserved</span>
+        </div>
       )}
 
       {wallet.costs.length > 0 && (
@@ -202,11 +166,11 @@ export default function TokenWalletPanel({
             {wallet.ledger.slice(0, 8).map((entry) => (
               <article key={entry.id}>
                 <div>
-                  <strong>{entry.description || operationLabel(entry.operation)}</strong>
+                  <strong>{entry.reason || operationLabel(entry.operation)}</strong>
                   <span>{new Date(entry.created_at).toLocaleString()}</span>
                 </div>
-                <b className={entry.direction === 'credit' || entry.direction === 'refund' ? 'credit' : 'debit'}>
-                  {entry.direction === 'credit' || entry.direction === 'refund' ? '+' : '-'}
+                <b className={entry.amount > 0 ? 'credit' : 'debit'}>
+                  {entry.amount > 0 ? '+' : ''}
                   {entry.amount}
                 </b>
               </article>
