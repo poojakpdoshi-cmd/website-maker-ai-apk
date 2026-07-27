@@ -243,7 +243,7 @@ async function runAdminAuthenticationRegression() {
   );
   assert.match(
     appSource,
-    /mode === 'admin-login' \|\| mode === 'admin-dashboard'/,
+    /mode === ['"]admin-login['"] \|\| mode === ['"]admin-dashboard['"]/,
     'admin-login mode renders the dedicated AdminPanelV5 login flow'
   );
 }

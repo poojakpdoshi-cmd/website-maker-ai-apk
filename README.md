@@ -27,7 +27,11 @@ This version removes the localhost admin webpage. User login, owner login, subsc
 ## Fast local route
 
 1. Create Supabase project.
-2. Run `supabase/ALL_IN_ONE_SETUP.sql` in Supabase SQL Editor.
+2. Run the ordered SQL migrations in `supabase/migrations/`. Existing
+   installations must also apply
+   `011_generation_live_sites_firebase_theme.sql`,
+   `012_conversations_timing_security.sql`, and
+   `013_non_expiring_token_packages.sql`.
 3. In Termux, run `bash scripts/configure-termux-api.sh`.
 4. Start backend with `bash scripts/start-termux-api.sh`.
 5. In the APK setup screen, enter:
@@ -39,3 +43,6 @@ This version removes the localhost admin webpage. User login, owner login, subsc
 ## APK build
 
 Push this project to GitHub. The included workflow `.github/workflows/build-apk.yml` builds `app-debug.apk` and uploads it as an Actions artifact.
+
+Production migration, Firebase OAuth and Worker rollout instructions are in
+[`docs/NEXORA_PRODUCTION_ROLLOUT.md`](docs/NEXORA_PRODUCTION_ROLLOUT.md).

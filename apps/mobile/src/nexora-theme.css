@@ -25,6 +25,8 @@
   --nx-danger: #ff5f82;
   --nx-info: #65b9ff;
   --nx-focus: #6ee7ff;
+  --nx-accent: #06b6d4;
+  --nx-accent-contrast: #000000;
   --nx-radius-xs: 10px;
   --nx-radius-sm: 14px;
   --nx-radius-md: 20px;
@@ -335,11 +337,11 @@ button[aria-busy='true'],
 .cms-studio .primary-button,
 .my-webs-list .project-actions a:first-of-type {
   overflow: hidden;
-  border-color: rgba(119, 210, 255, .62) !important;
+  border-color: color-mix(in srgb, var(--nx-accent) 70%, white) !important;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, .28), transparent 42%),
-    linear-gradient(118deg, var(--nx-blue), var(--nx-violet) 58%, var(--nx-purple)) !important;
-  color: #fff !important;
+    linear-gradient(118deg, var(--nx-accent), color-mix(in srgb, var(--nx-accent) 68%, var(--nx-violet))) !important;
+  color: var(--nx-accent-contrast) !important;
   text-shadow: 0 1px 2px rgba(3, 5, 24, .45);
   box-shadow:
     0 5px 0 #34218d,

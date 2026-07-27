@@ -10,5 +10,9 @@ android/
 .dev.vars.*
 !.dev.vars.example
 *.tsbuildinfo
+*.apk
+*.aab
 *.jks
 *.keystore
+.gradle/
+build/

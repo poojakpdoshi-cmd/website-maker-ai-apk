@@ -36,12 +36,12 @@ assert.match(app, /fetch\(`\$\{config\.apiBase\}\/generate`/);
 assert.match(app, /saveGenerationLaunch\(/);
 assert.match(app, /loadGenerationLaunch\(/);
 assert.match(app, /normalizeGenerationStatus\(data\.job\.status\)/);
-assert.match(app, /state === 'cancelled'/);
-assert.match(app, /state === 'unknown'/);
+assert.match(app, /state === ['"]cancelled['"]/);
+assert.match(app, /state === ['"]unknown['"]/);
 assert.match(app, /Connection interrupted\. Reconnecting to the saved task/);
 assert.match(app, /controller\.abort\(\)/);
 assert.match(app, /The generation status request timed out\./);
-assert.match(app, /setTab\('preview'\)/);
+assert.match(app, /setTab\(['"]preview['"]\)/);
 
 const newChat = chat.slice(
   chat.indexOf('function newChat()'),
@@ -51,13 +51,18 @@ assert.doesNotMatch(newChat, /location\.reload|active-generation-job/);
 assert.match(chat, /function appendMessageToChat\(/);
 assert.match(chat, /activeChatIdRef\.current === chatId/);
 assert.match(chat, /createdAt: new Date\(\)\.toISOString\(\)/);
-assert.match(chat, /Processing time unavailable/);
+assert.match(chat, /formatElapsedDuration/);
+assert.match(chat, /Answered/);
+assert.doesNotMatch(chat, /Processing time unavailable/);
 assert.match(chat, /Token usage unavailable/);
 assert.match(chat, /normalizeSavedChats/);
 
 assert.match(assistant, /processingDurationMs/);
 assert.match(assistant, /usageMetadata/);
 assert.match(assistant, /usage\?\.total_tokens/);
+assert.match(assistant, /ASSISTANT_AI_MAX_ATTEMPTS = 2/);
+assert.match(assistant, /controller\.abort\(\)/);
+assert.match(assistant, /assistantBindingRun/);
 assert.doesNotMatch(assistant, /WebForge|Website Maker AI/i);
 
 console.log('Generation, chat metadata and new-chat regression tests passed.');

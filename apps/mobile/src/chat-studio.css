@@ -441,7 +441,7 @@ html[data-nexora-theme='light'] .claude-drawer {
 
 .claude-saved-chat-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 44px;
+  grid-template-columns: minmax(0, 1fr) auto 36px;
   align-items: center;
   gap: 4px;
 }
@@ -460,10 +460,16 @@ html[data-nexora-theme='light'] .claude-drawer {
 }
 
 .claude-saved-chat-row button:last-child {
-  width: 44px;
+  width: 36px;
   padding: 0 !important;
   color: var(--nx-muted) !important;
   text-align: center;
+}
+
+.claude-saved-chat-row button:nth-child(2) {
+  padding-inline: 6px !important;
+  color: var(--nx-accent) !important;
+  font-size: 10px;
 }
 
 .claude-drawer-nav {

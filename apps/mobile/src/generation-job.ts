@@ -14,6 +14,14 @@ export type GenerationLaunchPayload = {
   motionFrameCount?: number;
   motionDurationSeconds?: number;
   thinkMax?: true;
+  websitePalette?: {
+    id: string;
+    label: string;
+    primary: string;
+    secondary: string;
+    background: string;
+    text: string;
+  };
 };
 
 // NEXORA_SAAS_MOTION_MODE_V1

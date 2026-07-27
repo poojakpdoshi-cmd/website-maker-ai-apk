@@ -5,7 +5,7 @@ export const thinkMaxFlagSchema = z.boolean().optional();
 
 const websitePlanSchema = z.object({
   businessName: z.string().trim().min(1).max(60),
-  websiteType: z.string().trim().regex(/^[a-z0-9-]+$/).max(40),
+  websiteType: z.string().trim().regex(/^[a-z0-9_-]+$/).max(40),
   tagline: z.string().trim().min(1).max(180),
   pages: z.array(
     z.string().trim().regex(/^[a-z0-9-]+$/).max(60)
@@ -28,7 +28,8 @@ const websitePlanSchema = z.object({
     phone: z.string().trim().min(1).max(40).optional(),
     email: z.string().trim().email().max(160).optional(),
     address: z.string().trim().min(1).max(180).optional()
-  }).strict().optional()
+  }).strict().optional(),
+  appSpec: z.unknown()
 }).strict();
 
 const thinkMaxRefinementSchema = z.object({
@@ -92,7 +93,8 @@ export async function runOptionalThinkMax(
     return {
       plan: {
         ...refinement.refinedPlan,
-        contact: input.plan.contact
+        contact: input.plan.contact,
+        appSpec: input.plan.appSpec
       },
       architectureBrief: refinement.architectureBrief,
       completed: true
