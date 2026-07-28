@@ -1,0 +1,110 @@
+name: Nexora Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - nexora-redesign
+    paths:
+      - "apps/mobile/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/nexora-android.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nexora-android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-signed-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build Nexora mobile frontend
+        run: npm run build -w @wmai/mobile
+
+      - name: Prepare Android project
+        working-directory: apps/mobile
+        run: |
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
+          npx cap sync android
+
+      - name: Set increasing release version
+        id: version
+        run: |
+          VERSION_CODE=$((100000 + GITHUB_RUN_NUMBER))
+          VERSION_NAME="1.0.${GITHUB_RUN_NUMBER}"
+          sed -i -E "s/versionCode[[:space:]]+[0-9]+/versionCode ${VERSION_CODE}/" apps/mobile/android/app/build.gradle
+          sed -i -E "s/versionName[[:space:]]+\"[^\"]+\"/versionName \"${VERSION_NAME}\"/" apps/mobile/android/app/build.gradle
+          echo "version_code=${VERSION_CODE}" >> "$GITHUB_OUTPUT"
+          echo "version_name=${VERSION_NAME}" >> "$GITHUB_OUTPUT"
+          grep -nE "versionCode|versionName" apps/mobile/android/app/build.gradle
+
+      - name: Restore permanent release keystore
+        run: |
+          printf '%s' '${{ secrets.NEXORA_KEYSTORE_BASE64 }}' | base64 --decode > "$RUNNER_TEMP/nexora-release.jks"
+          test -s "$RUNNER_TEMP/nexora-release.jks"
+
+      - name: Build permanently signed release APK
+        working-directory: apps/mobile/android
+        env:
+          KEYSTORE_PATH: ${{ runner.temp }}/nexora-release.jks
+          STORE_PASSWORD: ${{ secrets.NEXORA_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.NEXORA_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.NEXORA_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew clean assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file="$KEYSTORE_PATH" \
+            -Pandroid.injected.signing.store.password="$STORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+
+      - name: Verify and rename signed APK
+        run: |
+          APK="apps/mobile/android/app/build/outputs/apk/release/app-release.apk"
+          test -f "$APK"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          APK_SIZE_BYTES="$(stat -c%s "$APK")"
+          APK_SIZE_MIB="$(awk "BEGIN {printf \"%.2f\", $APK_SIZE_BYTES / 1048576}")"
+          echo "SIGNED_APK_SIZE_BYTES=$APK_SIZE_BYTES"
+          echo "SIGNED_APK_SIZE_MIB=$APK_SIZE_MIB"
+          printf 'Signed release APK: %s bytes (%s MiB)\n' "$APK_SIZE_BYTES" "$APK_SIZE_MIB" >> "$GITHUB_STEP_SUMMARY"
+          SHORT_SHA="${GITHUB_SHA::7}"
+          cp "$APK" "Nexora-AI-${{ steps.version.outputs.version_name }}-${SHORT_SHA}.apk"
+
+      - name: Upload signed Nexora APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nexora-AI-Signed-${{ steps.version.outputs.version_code }}
+          path: Nexora-AI-*.apk
+          if-no-files-found: error
+          retention-days: 30

@@ -12,10 +12,20 @@ jobs:
       - name: Install PostgreSQL client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
 
-      - name: Apply live build migration
+      - name: Apply Nexora database migrations
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
         run: |
           test -n "$SUPABASE_DB_URL"
-          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 \
-            -f supabase/migrations/005_live_build_room.sql
+          for migration in \
+            supabase/migrations/006_website_cms.sql \
+            supabase/migrations/007_cms_media_library.sql \
+            supabase/migrations/008_cms_scheduled_publishing.sql \
+            supabase/migrations/009_full_stack_report.sql \
+            supabase/migrations/010_subscription_tokens.sql \
+            supabase/migrations/011_generation_live_sites_firebase_theme.sql \
+            supabase/migrations/012_conversations_timing_security.sql \
+            supabase/migrations/013_non_expiring_token_packages.sql
+          do
+            psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f "$migration"
+          done

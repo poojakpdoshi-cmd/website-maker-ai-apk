@@ -12,7 +12,7 @@ async function main() {
   );
   assert(mode === 'built-in', 'Expected the zero-cost built-in brain without an API key.');
   assert(plan.businessName === 'Test Jewels', `Business name parsing failed: ${plan.businessName}`);
-  assert(plan.pages.includes('products'), 'Products page was not selected.');
+  assert(plan.pages.includes('collections'), 'Collections page was not selected.');
   assert(plan.features.includes('contact-form'), 'Contact form was not selected.');
 
   const generated = buildProjectFiles(plan, { formApiBase: 'https://api.example.com', formPublicKey: 'test-form-key' });

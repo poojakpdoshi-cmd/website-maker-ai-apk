@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.poojak.webforgeai',
-  appName: 'WebForge.Ai',
+  appName: 'Nexora.Ai',
   webDir: 'dist',
 
   server: {
@@ -11,7 +11,7 @@ const config: CapacitorConfig = {
   },
 
   android: {
-    backgroundColor: '#F7F9FC',
+    backgroundColor: '#000008',
     allowMixedContent: false,
     webContentsDebuggingEnabled: false,
     loggingBehavior: 'none'

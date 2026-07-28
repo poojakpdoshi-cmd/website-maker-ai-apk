@@ -4,4 +4,17 @@ compatibility_date = "2026-07-01"
 workers_dev = true
 
 [vars]
-APP_NAME = "Website Maker AI"
+APP_NAME = "Nexora.Ai"
+
+QA_PROVIDER = "arcee"
+# Set ARCEE_QA_MODEL to a verified model ID in the Worker environment.
+ARCEE_QA_MODEL = ""
+
+GROQ_CODER_MODEL = "openai/gpt-oss-120b"
+GROQ_REVIEWER_MODEL = "qwen/qwen3-32b"
+CLOUDFLARE_REPAIR_MODEL = "@cf/qwen/qwen3-30b-a3b-fp8"
+[ai]
+binding = "AI"
+
+[triggers]
+crons = ["*/5 * * * *"]

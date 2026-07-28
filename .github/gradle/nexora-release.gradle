@@ -1,0 +1,45 @@
+def requiredNexoraEnvironment = { String name ->
+    def value = System.getenv(name)
+    if (value == null || value.trim().isEmpty()) {
+        throw new GradleException("Missing required environment variable: ${name}")
+    }
+    value
+}
+
+def nexoraVersionCodeText = requiredNexoraEnvironment('NEXORA_VERSION_CODE')
+if (!(nexoraVersionCodeText ==~ /[1-9][0-9]*/)) {
+    throw new GradleException('NEXORA_VERSION_CODE must be a positive integer')
+}
+
+def nexoraVersionCode = Long.parseLong(nexoraVersionCodeText)
+if (nexoraVersionCode > 2100000000L) {
+    throw new GradleException('NEXORA_VERSION_CODE exceeds the Android limit')
+}
+
+def nexoraVersionName = requiredNexoraEnvironment('NEXORA_VERSION_NAME')
+def nexoraKeystore = file(requiredNexoraEnvironment('NEXORA_KEYSTORE_PATH'))
+if (!nexoraKeystore.isFile()) {
+    throw new GradleException('NEXORA_KEYSTORE_PATH does not point to a file')
+}
+
+android {
+    defaultConfig {
+        versionCode nexoraVersionCode.intValue()
+        versionName nexoraVersionName
+    }
+
+    signingConfigs {
+        release {
+            storeFile nexoraKeystore
+            storePassword requiredNexoraEnvironment('NEXORA_KEYSTORE_PASSWORD')
+            keyAlias requiredNexoraEnvironment('NEXORA_KEY_ALIAS')
+            keyPassword requiredNexoraEnvironment('NEXORA_KEY_PASSWORD')
+        }
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+        }
+    }
+}

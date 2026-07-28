@@ -4,7 +4,7 @@ import app from '../../api/src/index';
 
 const port = Number(process.env.PORT || 8787);
 const env = {
-  APP_NAME: process.env.APP_NAME || 'Website Maker AI',
+  APP_NAME: process.env.APP_NAME || 'Nexora.Ai',
   PUBLIC_API_BASE_URL: process.env.PUBLIC_API_BASE_URL,
   ADMIN_USERNAME: process.env.ADMIN_USERNAME,
   ADMIN_PASSWORD_SALT: process.env.ADMIN_PASSWORD_SALT,
@@ -14,6 +14,9 @@ const env = {
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,
   GEMINI_MODEL: process.env.GEMINI_MODEL,
+  ARCEE_API_KEY: process.env.ARCEE_API_KEY,
+  ARCEE_QA_MODEL: process.env.ARCEE_QA_MODEL,
+  QA_PROVIDER: process.env.QA_PROVIDER,
   GITHUB_CLIENT_ID: process.env.GITHUB_CLIENT_ID,
   GITHUB_CLIENT_SECRET: process.env.GITHUB_CLIENT_SECRET,
   GITHUB_REDIRECT_URI: process.env.GITHUB_REDIRECT_URI,
@@ -21,6 +24,10 @@ const env = {
   VERCEL_CLIENT_SECRET: process.env.VERCEL_CLIENT_SECRET,
   VERCEL_REDIRECT_URI: process.env.VERCEL_REDIRECT_URI,
   VERCEL_INTEGRATION_SLUG: process.env.VERCEL_INTEGRATION_SLUG,
+  FIREBASE_CLIENT_ID: process.env.FIREBASE_CLIENT_ID,
+  FIREBASE_CLIENT_SECRET: process.env.FIREBASE_CLIENT_SECRET,
+  FIREBASE_REDIRECT_URI: process.env.FIREBASE_REDIRECT_URI,
+  OAUTH_ALLOWED_ORIGINS: process.env.OAUTH_ALLOWED_ORIGINS,
   TOKEN_ENCRYPTION_KEY: process.env.TOKEN_ENCRYPTION_KEY
 };
 
@@ -42,7 +49,18 @@ const server = createServer(async (incoming, outgoing) => {
       init.body = body;
       init.duplex = 'half';
     }
-    const response = await app.fetch(new Request(url, init), env);
+    const executionContext = {
+      waitUntil(promise: Promise<unknown>) {
+        void promise.catch(console.error);
+      },
+      passThroughOnException() {}
+    } as Parameters<typeof app.fetch>[2];
+
+    const response = await app.fetch(
+      new Request(url, init),
+      env,
+      executionContext
+    );
     outgoing.statusCode = response.status;
     response.headers.forEach((value, name) => outgoing.setHeader(name, value));
     outgoing.end(Buffer.from(await response.arrayBuffer()));
@@ -55,5 +73,5 @@ const server = createServer(async (incoming, outgoing) => {
 });
 
 server.listen(port, '0.0.0.0', () => {
-  console.log(`Website Maker AI API running at http://127.0.0.1:${port}`);
+  console.log(`Nexora.Ai API running at http://127.0.0.1:${port}`);
 });

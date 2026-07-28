@@ -86,6 +86,7 @@ function App() {
     if (activeToken) {
       await fetch(`${apiBase}/admin/auth/logout`, { method: 'POST', headers: { Authorization: `Bearer ${activeToken}` } }).catch(() => undefined);
     }
+    window.location.assign('/auth/login');
   }
 
   async function approveUser(event: FormEvent) {
@@ -131,7 +132,7 @@ function App() {
   }, [token]);
 
   if (!token) {
-    return <main className="admin-login"><section className="login-box"><div className="logo">W</div><p>WEBSITE MAKER AI</p><h1>Admin login</h1><form onSubmit={handleLogin}><label>Username<input type="text" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="Admin username" autoComplete="username" required /></label><label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Admin password" autoComplete="current-password" required /></label><button disabled={busy}>{busy ? 'Signing in…' : 'Open admin dashboard'}</button></form>{message && <div className="message">{message}</div>}<small>Made by Poojak Doshi</small></section></main>;
+    return <main className="admin-login"><section className="login-box"><div className="logo">N</div><p>NEXORA.AI</p><h1>Admin login</h1><form onSubmit={handleLogin}><label>Username<input type="text" value={username} onChange={(event) => setUsername(event.target.value)} placeholder="Admin username" autoComplete="username" required /></label><label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Admin password" autoComplete="current-password" required /></label><button disabled={busy}>{busy ? 'Signing in…' : 'Open admin dashboard'}</button></form>{message && <div className="message">{message}</div>}<small>Made by Poojak Doshi</small></section></main>;
   }
 
   const cards: Array<[string, number]> = [
@@ -144,8 +145,8 @@ function App() {
   ];
 
   return <main>
-    <aside><div className="logo">W</div><h2>Admin</h2><nav><button className="active">Overview</button><button>Users</button><button disabled>Payments (later)</button><button disabled>Templates (later)</button><button disabled>Deployments (later)</button><button disabled>Settings (later)</button></nav><button className="logout" onClick={() => void logout()}>Log out</button><small>Made by Poojak Doshi</small></aside>
-    <section className="content"><header><div><p>WEBSITE MAKER AI</p><h1>Control centre</h1></div><div className="header-actions"><button onClick={() => void loadDashboard()}>Refresh</button><button className="mobile-logout" onClick={() => void logout()}>Log out</button></div></header>
+    <aside><div className="logo">N</div><h2>Admin</h2><nav><button className="active">Overview</button><button>Users</button><button disabled>Payments (later)</button><button disabled>Templates (later)</button><button disabled>Deployments (later)</button><button disabled>Settings (later)</button></nav><button className="logout" onClick={() => void logout()}>Exit Admin Panel</button><small>Made by Poojak Doshi</small></aside>
+    <section className="content"><header><div><p>NEXORA.AI</p><h1>Control centre</h1></div><div className="header-actions"><button onClick={() => void loadDashboard()}>Refresh</button><button className="mobile-logout" onClick={() => void logout()}>Exit Admin Panel</button></div></header>
       <div className="grid">{cards.map(([label, value]) => <article key={label}><span>{label}</span><strong>{value}</strong><em>Live Supabase data</em></article>)}</div>
       <section className="table"><div className="table-head"><h2>Approve subscriber</h2></div><form className="approve-form" onSubmit={approveUser}><input type="email" value={newUserEmail} onChange={(event) => setNewUserEmail(event.target.value)} placeholder="Subscriber email" required /><input type="datetime-local" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} /><input type="number" min="1" max="5" value={maxDevices} onChange={(event) => setMaxDevices(Number(event.target.value))} aria-label="Device limit" title="Device limit" /><input type="number" min="0" max="100" value={dailyWebsiteLimit} onChange={(event) => setDailyWebsiteLimit(Number(event.target.value))} aria-label="Daily website limit" title="Daily website limit" /><button disabled={busy}>Approve email</button></form>{message && <div className="message">{message}</div>}</section>
       <section className="table"><div className="table-head"><h2>Approved users</h2><span>{users.length} loaded</span></div><div className="user-table">{users.length ? users.map((user) => <article key={user.email}><div><strong>{user.email}</strong><span>{user.status} • {user.max_devices} devices • {user.daily_website_limit} website/day</span></div><time>{user.expires_at ? `Expires ${new Date(user.expires_at).toLocaleString()}` : 'No expiry'}</time></article>) : <div className="empty">No approved users yet.</div>}</div></section>

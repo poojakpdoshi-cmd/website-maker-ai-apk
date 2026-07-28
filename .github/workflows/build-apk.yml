@@ -7,6 +7,8 @@ on:
       - webforge-v4-upgrade
     paths:
       - 'apps/mobile/**'
+      - 'apps/api/**'
+      - 'apps/api-node/**'
       - 'packages/**'
       - 'package.json'
       - 'package-lock.json'
@@ -21,7 +23,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build WebForge V4.1 APK
+    name: Build Nexora.Ai APK
     runs-on: ubuntu-latest
     timeout-minutes: 40
 
@@ -53,14 +55,13 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: Verify WebForge source
+      - name: Verify Nexora.Ai source
         run: |
-          test -f apps/mobile/assets/icon.png
-          test -f apps/mobile/public/webforge-logo.svg
+          test -f apps/mobile/assets/launcher-brand/logo.png
 
-          grep -n "OWNER LOGIN" apps/mobile/src/App.tsx
-          grep -n "USER LOGIN" apps/mobile/src/App.tsx
-          grep -n "V4.1.*NEW BUILD" apps/mobile/src/App.tsx
+          grep -n "readResponse" apps/mobile/src/App.tsx
+          grep -n "full_stack_report" apps/mobile/src/App.tsx
+          grep -n "V4.2.*CHAT BUILD" apps/mobile/src/App.tsx
 
           grep -n ">Setup<\|Connection settings" \
             apps/mobile/src/App.tsx && exit 1 || true
@@ -79,16 +80,15 @@ jobs:
         run: |
           rm -rf android
 
-          cp -f assets/icon-only.png assets/icon.png
-
           npx cap add android
-          npx capacitor-assets generate --android
+          npx capacitor-assets generate --android \
+            --assetPath assets/launcher-brand
           npx cap sync android
 
-          sed -i 's/versionCode 1/versionCode 41/' \
+          sed -i 's/versionCode 1/versionCode 42/' \
             android/app/build.gradle
 
-          sed -i 's/versionName "1.0"/versionName "4.1.0"/' \
+          sed -i 's/versionName "1.0"/versionName "4.2.0"/' \
             android/app/build.gradle
 
           echo "===== ANDROID VERSION ====="
@@ -121,11 +121,11 @@ jobs:
 
           cp \
             app/build/outputs/apk/debug/app-debug.apk \
-            "$GITHUB_WORKSPACE/WebForge-Ai-V4.1-${SHORT_SHA}.apk"
+            "$GITHUB_WORKSPACE/Nexora-AI-${SHORT_SHA}.apk"
 
       - name: Upload uniquely named APK
         uses: actions/upload-artifact@v4
         with:
-          name: WebForge-Ai-V4.1-${{ github.run_number }}
-          path: WebForge-Ai-V4.1-*.apk
+          name: Nexora-AI-${{ github.run_number }}
+          path: Nexora-AI-*.apk
           if-no-files-found: error

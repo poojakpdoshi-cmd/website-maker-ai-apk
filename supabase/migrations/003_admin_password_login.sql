@@ -1,4 +1,4 @@
--- Website Maker AI V2.1: secure username/password admin sessions.
+-- Nexora.Ai V2.1: secure username/password admin sessions.
 
 create table if not exists admin_sessions (
   id uuid primary key default gen_random_uuid(),

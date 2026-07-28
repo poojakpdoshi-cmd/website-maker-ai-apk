@@ -1,0 +1,549 @@
+/*
+ * Nexora 4D design system
+ * Shared colour, type, surface, control and state primitives.
+ */
+
+:root {
+  color-scheme: dark;
+  --nx-bg: #030617;
+  --nx-bg-deep: #01030d;
+  --nx-surface: rgba(10, 17, 42, .82);
+  --nx-surface-strong: rgba(8, 13, 32, .96);
+  --nx-surface-soft: rgba(22, 34, 70, .6);
+  --nx-surface-raised: rgba(19, 30, 64, .9);
+  --nx-text: #f7f9ff;
+  --nx-text-soft: #c6cee5;
+  --nx-muted: #8895b4;
+  --nx-border: rgba(109, 155, 255, .2);
+  --nx-border-strong: rgba(66, 205, 255, .48);
+  --nx-cyan: #43dcff;
+  --nx-blue: #3686ff;
+  --nx-violet: #7c4dff;
+  --nx-purple: #bd4dff;
+  --nx-success: #36dda2;
+  --nx-warning: #ffbf4b;
+  --nx-danger: #ff5f82;
+  --nx-info: #65b9ff;
+  --nx-focus: #6ee7ff;
+  --nx-accent: #06b6d4;
+  --nx-accent-contrast: #000000;
+  --nx-radius-xs: 10px;
+  --nx-radius-sm: 14px;
+  --nx-radius-md: 20px;
+  --nx-radius-lg: 28px;
+  --nx-radius-xl: 36px;
+  --nx-space-1: 4px;
+  --nx-space-2: 8px;
+  --nx-space-3: 12px;
+  --nx-space-4: 16px;
+  --nx-space-5: 20px;
+  --nx-space-6: 24px;
+  --nx-space-8: 32px;
+  --nx-shadow-soft: 0 18px 46px rgba(0, 0, 0, .34);
+  --nx-shadow-panel:
+    0 28px 90px rgba(0, 0, 0, .46),
+    inset 0 1px 0 rgba(255, 255, 255, .07),
+    inset 0 0 0 1px rgba(54, 134, 255, .04);
+  --nx-glow: 0 0 28px rgba(67, 220, 255, .13);
+  --nx-control-height: 48px;
+  --nx-font:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+
+  /* Compatibility aliases used by feature-specific style sheets. */
+  --wf-bg: var(--nx-bg);
+  --wf-panel: var(--nx-surface-strong);
+  --wf-card: var(--nx-surface);
+  --wf-soft: var(--nx-surface-soft);
+  --wf-border: var(--nx-border);
+  --wf-text: var(--nx-text);
+  --wf-muted: var(--nx-muted);
+  --wf-accent: var(--nx-violet);
+}
+
+html[data-nexora-theme='light'] {
+  color-scheme: light;
+  --nx-bg: #eef2ff;
+  --nx-bg-deep: #e6ebff;
+  --nx-surface: rgba(255, 255, 255, .76);
+  --nx-surface-strong: rgba(249, 251, 255, .96);
+  --nx-surface-soft: rgba(231, 238, 255, .76);
+  --nx-surface-raised: rgba(255, 255, 255, .94);
+  --nx-text: #07132f;
+  --nx-text-soft: #273858;
+  --nx-muted: #667493;
+  --nx-border: rgba(63, 102, 196, .2);
+  --nx-border-strong: rgba(50, 127, 255, .48);
+  --nx-shadow-soft: 0 18px 50px rgba(42, 61, 120, .15);
+  --nx-shadow-panel:
+    0 30px 90px rgba(54, 72, 132, .18),
+    inset 0 1px 0 rgba(255, 255, 255, .94),
+    inset 0 0 0 1px rgba(54, 134, 255, .08);
+  --nx-glow: 0 0 30px rgba(54, 134, 255, .14);
+}
+
+html {
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body,
+button,
+input,
+textarea,
+select {
+  font-family: var(--nx-font);
+}
+
+body {
+  color: var(--nx-text) !important;
+  background:
+    radial-gradient(circle at 50% -18%, rgba(54, 134, 255, .23), transparent 37%),
+    radial-gradient(circle at 100% 24%, rgba(189, 77, 255, .14), transparent 31%),
+    radial-gradient(circle at -6% 92%, rgba(67, 220, 255, .11), transparent 30%),
+    linear-gradient(155deg, var(--nx-bg-deep), var(--nx-bg) 54%, #080729) !important;
+  background-attachment: fixed !important;
+}
+
+html[data-nexora-theme='light'] body {
+  background:
+    radial-gradient(circle at 50% -15%, rgba(54, 134, 255, .2), transparent 38%),
+    radial-gradient(circle at 108% 35%, rgba(189, 77, 255, .12), transparent 32%),
+    radial-gradient(circle at -8% 92%, rgba(67, 220, 255, .15), transparent 28%),
+    linear-gradient(155deg, #f9fbff, var(--nx-bg) 58%, #f5efff) !important;
+}
+
+::selection {
+  color: #fff;
+  background: rgba(124, 77, 255, .78);
+}
+
+h1,
+h2,
+h3,
+h4,
+strong {
+  color: var(--nx-text);
+}
+
+h1,
+h2,
+h3,
+h4,
+p {
+  text-wrap: pretty;
+}
+
+.eyebrow,
+.admin-kicker-v5,
+.admin-section-label-v5 {
+  color: var(--nx-cyan) !important;
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+
+.muted,
+.tiny {
+  color: var(--nx-muted) !important;
+}
+
+a {
+  color: var(--nx-cyan);
+}
+
+/* Shared glass surfaces */
+.nx-glass,
+.login-card,
+.panel,
+.template-card,
+.capability-card,
+.analytics-grid article,
+.analytics-chart-card,
+.analytics-types-card,
+.connection-grid article,
+.project-list article,
+.account-grid article,
+.account-password-card,
+.token-wallet-card,
+.cms-sidebar,
+.cms-editor,
+.cms-seo-card,
+.cms-revisions,
+.cms-visual-fields,
+.cms-media-library-modal,
+.cms-draft-preview,
+.cms-schedule-card {
+  border: 1px solid var(--nx-border) !important;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, .055), transparent 35%),
+    var(--nx-surface) !important;
+  box-shadow: var(--nx-shadow-panel) !important;
+  backdrop-filter: blur(22px) saturate(132%);
+  -webkit-backdrop-filter: blur(22px) saturate(132%);
+}
+
+/* Shared inputs */
+input,
+textarea,
+select,
+.nx-input {
+  min-height: var(--nx-control-height);
+  border: 1px solid var(--nx-border) !important;
+  border-radius: var(--nx-radius-sm) !important;
+  outline: 0;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .035), transparent),
+    rgba(2, 7, 24, .72) !important;
+  color: var(--nx-text) !important;
+  box-shadow:
+    inset 0 2px 9px rgba(0, 0, 0, .2),
+    inset 0 1px 0 rgba(255, 255, 255, .035) !important;
+  transition:
+    border-color .18s ease,
+    box-shadow .18s ease,
+    background-color .18s ease;
+}
+
+html[data-nexora-theme='light'] input,
+html[data-nexora-theme='light'] textarea,
+html[data-nexora-theme='light'] select,
+html[data-nexora-theme='light'] .nx-input {
+  background: rgba(255, 255, 255, .72) !important;
+  box-shadow:
+    inset 0 2px 8px rgba(46, 66, 122, .08),
+    inset 0 1px 0 rgba(255, 255, 255, .9) !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: color-mix(in srgb, var(--nx-muted) 82%, transparent) !important;
+  opacity: 1;
+}
+
+input:focus,
+textarea:focus,
+select:focus,
+.nx-input:focus {
+  border-color: var(--nx-border-strong) !important;
+  box-shadow:
+    0 0 0 3px rgba(67, 220, 255, .12),
+    0 0 26px rgba(124, 77, 255, .14),
+    inset 0 1px 0 rgba(255, 255, 255, .05) !important;
+}
+
+label {
+  color: var(--nx-text-soft) !important;
+  font-weight: 650;
+}
+
+.password-input-wrap {
+  position: relative;
+  display: block;
+}
+
+.password-input-wrap input {
+  padding-right: 72px !important;
+}
+
+.password-visibility-toggle {
+  position: absolute;
+  top: 50%;
+  right: 3px;
+  width: 62px;
+  min-width: 62px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0 8px !important;
+  border-color: transparent !important;
+  background: transparent !important;
+  color: var(--nx-cyan) !important;
+  box-shadow: none !important;
+  transform: translateY(-50%) !important;
+  font-size: 11px;
+}
+
+.password-visibility-toggle:active:not(:disabled) {
+  transform: translateY(calc(-50% + 2px)) !important;
+}
+
+/* Reusable 4D button system */
+button,
+.nx-button {
+  position: relative;
+  min-height: 44px;
+  border: 1px solid var(--nx-border) !important;
+  border-radius: var(--nx-radius-sm) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .08), transparent 48%),
+    var(--nx-surface-raised) !important;
+  color: var(--nx-text-soft) !important;
+  box-shadow:
+    0 4px 0 rgba(2, 5, 18, .84),
+    0 10px 24px rgba(0, 0, 0, .22),
+    inset 0 1px 0 rgba(255, 255, 255, .08),
+    inset 0 0 0 1px rgba(255, 255, 255, .015) !important;
+  font-weight: 750;
+  transition:
+    transform .14s ease,
+    border-color .18s ease,
+    color .18s ease,
+    box-shadow .18s ease,
+    filter .18s ease;
+  touch-action: manipulation;
+}
+
+button:hover:not(:disabled),
+.nx-button:hover:not(:disabled) {
+  border-color: rgba(67, 220, 255, .38) !important;
+  color: var(--nx-text) !important;
+  filter: brightness(1.06);
+}
+
+button:active:not(:disabled),
+.nx-button:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow:
+    0 1px 0 rgba(2, 5, 18, .9),
+    0 5px 14px rgba(0, 0, 0, .2),
+    inset 0 2px 8px rgba(0, 0, 0, .18) !important;
+}
+
+button:focus-visible,
+.nx-button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--nx-focus) 72%, transparent) !important;
+  outline-offset: 3px;
+}
+
+button:disabled,
+.nx-button:disabled,
+button[aria-busy='true'],
+.nx-button[aria-busy='true'] {
+  opacity: .52;
+  cursor: not-allowed;
+  filter: saturate(.55);
+  transform: none !important;
+}
+
+.nx-button--primary,
+.primary,
+.admin-primary-v5,
+.claude-send-button,
+.cms-studio .primary-button,
+.my-webs-list .project-actions a:first-of-type {
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--nx-accent) 70%, white) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .28), transparent 42%),
+    linear-gradient(118deg, var(--nx-accent), color-mix(in srgb, var(--nx-accent) 68%, var(--nx-violet))) !important;
+  color: var(--nx-accent-contrast) !important;
+  text-shadow: 0 1px 2px rgba(3, 5, 24, .45);
+  box-shadow:
+    0 5px 0 #34218d,
+    0 14px 30px rgba(64, 83, 255, .32),
+    0 0 26px rgba(67, 220, 255, .13),
+    inset 0 1px 0 rgba(255, 255, 255, .44),
+    inset 0 0 0 1px rgba(255, 255, 255, .12) !important;
+}
+
+.nx-button--primary:hover:not(:disabled),
+.primary:hover:not(:disabled),
+.admin-primary-v5:hover:not(:disabled),
+.claude-send-button:hover:not(:disabled),
+.cms-studio .primary-button:hover:not(:disabled) {
+  color: #fff !important;
+  box-shadow:
+    0 5px 0 #34218d,
+    0 17px 34px rgba(64, 83, 255, .4),
+    0 0 34px rgba(67, 220, 255, .2),
+    inset 0 1px 0 rgba(255, 255, 255, .48) !important;
+}
+
+.nx-button--primary:active:not(:disabled),
+.primary:active:not(:disabled),
+.admin-primary-v5:active:not(:disabled),
+.claude-send-button:active:not(:disabled) {
+  transform: translateY(4px) !important;
+  box-shadow:
+    0 1px 0 #34218d,
+    0 7px 18px rgba(64, 83, 255, .28),
+    inset 0 2px 8px rgba(23, 18, 76, .28) !important;
+}
+
+.nx-button--secondary,
+.refresh,
+.admin-refresh-v5 {
+  border-color: rgba(83, 137, 255, .36) !important;
+  background:
+    linear-gradient(180deg, rgba(80, 128, 255, .13), transparent),
+    var(--nx-surface-raised) !important;
+  color: #bcd5ff !important;
+}
+
+.nx-button--ghost,
+.nexora-app-nav button,
+.claude-drawer-nav button,
+.admin-nav-v5 button,
+.theme-choice button {
+  border-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+.nx-button--success,
+.connection-grid article.connected button {
+  border-color: rgba(54, 221, 162, .42) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .12), transparent),
+    linear-gradient(135deg, #087f65, #17b889) !important;
+  color: #e9fff7 !important;
+}
+
+.nx-button--warning,
+.notice button {
+  border-color: rgba(255, 191, 75, .48) !important;
+  background: linear-gradient(135deg, #a65d0a, #d68a12) !important;
+  color: #fff9e9 !important;
+}
+
+.nx-button--danger,
+.logout,
+.danger-button,
+.admin-user-action-v5.danger {
+  border-color: rgba(255, 95, 130, .42) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .08), transparent),
+    rgba(102, 23, 53, .76) !important;
+  color: #ffc2d0 !important;
+  box-shadow:
+    0 4px 0 rgba(49, 7, 24, .9),
+    0 10px 22px rgba(78, 10, 37, .23),
+    inset 0 1px 0 rgba(255, 255, 255, .08) !important;
+}
+
+.nx-button--icon,
+.claude-menu-button,
+.claude-add-button,
+.thinkmax-switch {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0 !important;
+  place-items: center;
+}
+
+.nx-button--compact,
+.small-button,
+.project-actions button,
+.project-actions a,
+.admin-user-action-v5,
+.cms-studio .secondary-button {
+  min-height: 44px;
+  padding: 8px 12px !important;
+  border-radius: var(--nx-radius-xs) !important;
+  font-size: 12px;
+}
+
+/* Feedback primitives */
+.error,
+.admin-error-v5,
+.admin-error-box-v5,
+.error-banner,
+.token-wallet-error {
+  border-color: rgba(255, 95, 130, .32) !important;
+  color: #ffb1c3 !important;
+}
+
+.success,
+.admin-message-v5,
+.success-banner {
+  border-color: rgba(54, 221, 162, .3) !important;
+  color: #91f3cd !important;
+}
+
+.notice,
+.notice-wide,
+.error,
+.success,
+.admin-error-v5,
+.admin-error-box-v5,
+.admin-message-v5,
+.error-banner,
+.success-banner {
+  border: 1px solid;
+  border-radius: var(--nx-radius-sm);
+  background: color-mix(in srgb, currentColor 8%, var(--nx-surface-strong));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .035);
+}
+
+.empty,
+.cms-empty {
+  border: 1px dashed var(--nx-border);
+  border-radius: var(--nx-radius-md);
+  color: var(--nx-muted) !important;
+  background: rgba(40, 62, 118, .08);
+}
+
+.pill,
+.draft,
+.cms-status,
+.admin-status-v5 {
+  border: 1px solid var(--nx-border);
+  background: rgba(62, 100, 199, .13);
+  color: #b8caff;
+}
+
+/* Logo treatment: preserve the supplied Nexora artwork. */
+.brand-mark,
+.logo-shell,
+.admin-logo-v5,
+.admin-logo-small-v5 {
+  overflow: hidden;
+  padding: 0 !important;
+  border: 1px solid rgba(77, 180, 255, .38) !important;
+  background: #030617 !important;
+  box-shadow:
+    0 0 0 1px rgba(124, 77, 255, .18),
+    0 0 34px rgba(54, 134, 255, .24),
+    0 16px 36px rgba(0, 0, 0, .3) !important;
+}
+
+.brand-mark img,
+.logo-shell img,
+.admin-logo-v5 img,
+.admin-logo-small-v5 img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .nx-glass,
+  .login-card,
+  .panel,
+  .template-card,
+  .capability-card {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: var(--nx-surface-strong) !important;
+  }
+}

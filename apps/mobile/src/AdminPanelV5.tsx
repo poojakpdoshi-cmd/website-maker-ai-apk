@@ -1,6 +1,8 @@
 import { FormEvent, useEffect, useState } from 'react';
 import './admin-v6.css';
-import './webforge-minimal-light.css';
+import AdminBillingControls, { type BillingAccount } from './AdminBillingControls';
+import { requestJson } from './api-errors';
+import { loginAdmin } from './auth-routing';
 
 type AdminMode = 'user' | 'admin-login' | 'admin-dashboard';
 
@@ -8,7 +10,7 @@ type Props = {
   apiBase: string;
   initialMode: 'admin-login' | 'admin-dashboard';
   onMode: (mode: AdminMode) => void;
-  onSetup: () => void;
+  onSetup?: () => void;
 };
 
 type Summary = {
@@ -20,9 +22,7 @@ type Summary = {
   deployments: number;
 };
 
-type Account = {
-  id: string;
-  username: string;
+type Account = BillingAccount & {
   internal_email: string;
   status: string;
   created_at: string;
@@ -47,9 +47,14 @@ export default function AdminPanelV5({
 }: Props) {
   const [adminUsername, setAdminUsername] = useState('Poojak@King');
   const [adminPassword, setAdminPassword] = useState('');
+  const [showAdminPassword, setShowAdminPassword] =
+    useState(false);
 
   const [token, setToken] = useState(
     () => localStorage.getItem(adminSessionKey) || ''
+  );
+  const [checkingSession, setCheckingSession] = useState(
+    () => Boolean(localStorage.getItem(adminSessionKey))
   );
 
   const [section, setSection] =
@@ -61,6 +66,8 @@ export default function AdminPanelV5({
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [passwordAccountId, setPasswordAccountId] = useState('');
+  const [passwordDraft, setPasswordDraft] = useState('');
 
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -109,15 +116,21 @@ export default function AdminPanelV5({
   }
 
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      setCheckingSession(false);
+      return;
+    }
 
     void loadDashboard(token)
       .then(() => onMode('admin-dashboard'))
       .catch(() => {
         localStorage.removeItem(adminSessionKey);
         setToken('');
+        setError('');
+        setMessage('');
         onMode('admin-login');
-      });
+      })
+      .finally(() => setCheckingSession(false));
   }, []);
 
   async function login(event: FormEvent) {
@@ -128,23 +141,10 @@ export default function AdminPanelV5({
     setMessage('');
 
     try {
-      const response = await fetch(
-        `${apiBase}/admin/auth/login`,
-        {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json'
-          },
-          body: JSON.stringify({
-            username: adminUsername,
-            password: adminPassword
-          })
-        }
-      );
-
-      const data = await parseResponse(response) as {
-        token: string;
-      };
+      const data = await loginAdmin(apiBase, {
+        username: adminUsername,
+        password: adminPassword
+      });
 
       localStorage.setItem(adminSessionKey, data.token);
       setToken(data.token);
@@ -190,7 +190,7 @@ export default function AdminPanelV5({
 
       setNewUsername('');
       setNewPassword('');
-      setMessage('New WebForge user created.');
+      setMessage('New Nexora user created.');
 
       await loadDashboard();
     } catch (createError) {
@@ -204,27 +204,149 @@ export default function AdminPanelV5({
     }
   }
 
+  async function changeUserPassword(account: Account) {
+    if (passwordAccountId !== account.id) {
+      setPasswordAccountId(account.id);
+      setPasswordDraft('');
+      setError('');
+      setMessage('');
+      return;
+    }
+
+    if (
+      passwordDraft.length < 10 ||
+      !/[A-Za-z]/.test(passwordDraft) ||
+      !/[0-9]/.test(passwordDraft)
+    ) {
+      setError('Password must be at least 10 characters and include a letter and a number.');
+      return;
+    }
+
+    setBusy(true);
+    setError('');
+    setMessage('');
+
+    try {
+      await requestJson<{ changed: true }>(
+        `${apiBase}/admin/accounts/${encodeURIComponent(account.id)}/password`,
+        {
+          method: 'PATCH',
+          headers: {
+            'content-type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify({ password: passwordDraft })
+        }
+      );
+
+      setPasswordAccountId('');
+      setPasswordDraft('');
+      setMessage(
+        `Password changed for ${account.username}. Existing user sessions were revoked.`
+      );
+    } catch (changeError) {
+      setError(
+        changeError instanceof Error
+          ? changeError.message
+          : 'Could not change the user password.'
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteUser(account: Account) {
+    const confirmed = window.confirm(
+      `Delete ${account.username}? This permanently removes the account and revokes access on every device.`
+    );
+
+    if (!confirmed) return;
+
+    setBusy(true);
+    setError('');
+    setMessage('');
+
+    try {
+      const response = await fetch(
+        `${apiBase}/admin/accounts/${encodeURIComponent(account.id)}`,
+        {
+          method: 'DELETE',
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+
+      await parseResponse(response);
+      setMessage(`${account.username} was deleted.`);
+      await loadDashboard();
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : 'Could not delete the user.'
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function logout() {
     if (token) {
-      await fetch(`${apiBase}/admin/auth/logout`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      }).catch(() => undefined);
+      const controller = new AbortController();
+      const timeout = window.setTimeout(
+        () => controller.abort(),
+        5000
+      );
+
+      try {
+        await fetch(`${apiBase}/admin/auth/logout`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`
+          },
+          signal: controller.signal
+        });
+      } catch {
+        // The local admin session must still be removed when offline.
+      } finally {
+        window.clearTimeout(timeout);
+      }
     }
 
     localStorage.removeItem(adminSessionKey);
     setToken('');
+    setError('');
+    setMessage('');
     onMode('user');
   }
 
-  if (initialMode === 'admin-login' && !token) {
+  function returnToApp() {
+    setError('');
+    setMessage('');
+    setAdminPassword('');
+    setShowAdminPassword(false);
+    onMode('user');
+  }
+
+  if (checkingSession) {
+    return (
+      <main className="admin-login-v5">
+        <section className="admin-login-card-v5 admin-session-check-v5">
+          <p className="admin-kicker-v5">OWNER CONTROL ROOM</p>
+          <h1>Checking access</h1>
+          <p className="admin-subtitle-v5">Validating the saved admin session.</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!token) {
     return (
       <main className="admin-login-v5">
         <section className="admin-login-card-v5">
           <div className="admin-logo-v5">
-          <img src="/webforge-logo.svg" alt="WebForge.Ai" />
+          <img src="/nexora-logo.png" alt="Nexora.Ai" />
         </div>
 
           <p className="admin-kicker-v5">
@@ -251,18 +373,29 @@ export default function AdminPanelV5({
 
             <label>
               Admin password
-              <input
-                type="password"
-                value={adminPassword}
-                onChange={(event) =>
-                  setAdminPassword(event.target.value)
-                }
-                autoComplete="current-password"
-              />
+              <span className="password-input-wrap">
+                <input
+                  type={showAdminPassword ? 'text' : 'password'}
+                  value={adminPassword}
+                  onChange={(event) =>
+                    setAdminPassword(event.target.value)
+                  }
+                  autoComplete="current-password"
+                />
+                <button
+                  type="button"
+                  className="password-visibility-toggle"
+                  aria-label={showAdminPassword ? 'Hide password' : 'Show password'}
+                  aria-pressed={showAdminPassword}
+                  onClick={() => setShowAdminPassword((visible) => !visible)}
+                >
+                  {showAdminPassword ? 'Hide' : 'Show'}
+                </button>
+              </span>
             </label>
 
             <button
-              className="admin-primary-v5"
+              className="nx-button nx-button--primary admin-primary-v5"
               disabled={busy}
             >
               {busy ? 'Signing in…' : 'Open Control Room'}
@@ -276,7 +409,7 @@ export default function AdminPanelV5({
           <div className="admin-login-links-v5">
             <button
               type="button"
-              onClick={() => onMode('user')}
+              onClick={returnToApp}
             >
               Return to App
             </button>
@@ -305,11 +438,11 @@ export default function AdminPanelV5({
       <aside className="admin-sidebar-v5">
         <div className="admin-brand-v5">
           <div className="admin-logo-small-v5">
-            <img src="/webforge-logo.svg" alt="WebForge.Ai" />
+            <img src="/icons/icon-192.png" alt="Nexora.Ai" />
           </div>
 
           <div>
-            <strong>WebForge.Ai</strong>
+            <strong>Nexora.Ai</strong>
             <span>Control Room</span>
           </div>
         </div>
@@ -344,7 +477,7 @@ export default function AdminPanelV5({
           </span>
 
           <button onClick={() => void logout()}>
-            Exit Admin
+            Exit Admin Panel
           </button>
         </div>
       </aside>
@@ -352,7 +485,7 @@ export default function AdminPanelV5({
       <section className="admin-workspace-v5">
         <header className="admin-topbar-v5">
           <div>
-            <p>WEBFORGE CONTROL</p>
+            <p>NEXORA CONTROL</p>
 
             <h1>
               {section === 'overview'
@@ -363,12 +496,20 @@ export default function AdminPanelV5({
             </h1>
           </div>
 
-          <button
-            className="admin-refresh-v5"
-            onClick={() => void loadDashboard()}
-          >
-            Sync
-          </button>
+          <div className="admin-topbar-actions-v5">
+            <button
+              className="admin-refresh-v5"
+              onClick={() => void loadDashboard()}
+            >
+              Sync
+            </button>
+            <button
+              className="admin-exit-v5"
+              onClick={() => void logout()}
+            >
+              Exit Admin Panel
+            </button>
+          </div>
         </header>
 
         {message && (
@@ -450,8 +591,10 @@ export default function AdminPanelV5({
                       onChange={(event) =>
                         setNewPassword(event.target.value)
                       }
-                      placeholder="Minimum 8 characters"
+                      placeholder="10+ characters with a letter and number"
                       autoComplete="new-password"
+                      minLength={10}
+                      pattern="(?=.*[A-Za-z])(?=.*[0-9]).{10,}"
                       required
                     />
 
@@ -507,11 +650,76 @@ export default function AdminPanelV5({
                         </span>
                       </div>
 
-                      <span
-                        className={`admin-status-v5 ${account.status}`}
-                      >
-                        {account.status}
-                      </span>
+                      <div className="admin-account-actions-v5">
+                        <span
+                          className={`admin-status-v5 ${account.status}`}
+                        >
+                          {account.status}
+                        </span>
+
+                        {passwordAccountId === account.id && (
+                          <input
+                            type="password"
+                            className="admin-inline-password-v5"
+                            value={passwordDraft}
+                            onChange={(event) =>
+                              setPasswordDraft(event.target.value)
+                            }
+                            placeholder="New password"
+                            autoComplete="new-password"
+                            minLength={10}
+                            pattern="(?=.*[A-Za-z])(?=.*[0-9]).{10,}"
+                            disabled={busy}
+                          />
+                        )}
+
+                        <button
+                          type="button"
+                          className="admin-user-action-v5"
+                          disabled={busy}
+                          onClick={() =>
+                            void changeUserPassword(account)
+                          }
+                        >
+                          {passwordAccountId === account.id
+                            ? 'Save Password'
+                            : 'Change Password'}
+                        </button>
+
+                        {passwordAccountId === account.id && (
+                          <button
+                            type="button"
+                            className="admin-user-action-v5"
+                            disabled={busy}
+                            onClick={() => {
+                              setPasswordAccountId('');
+                              setPasswordDraft('');
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        )}
+
+                        <button
+                          type="button"
+                          className="admin-user-action-v5 danger"
+                          disabled={busy}
+                          onClick={() => void deleteUser(account)}
+                        >
+                          Delete User
+                        </button>
+
+                        <AdminBillingControls
+                          apiBase={apiBase}
+                          token={token}
+                          account={account}
+                          busy={busy}
+                          onBusy={setBusy}
+                          onMessage={setMessage}
+                          onError={setError}
+                          onUpdated={() => loadDashboard()}
+                        />
+                      </div>
                     </article>
                   ))
                 ) : (
@@ -536,9 +744,11 @@ export default function AdminPanelV5({
               <strong>Username and password</strong>
             </article>
 
-            <button onClick={onSetup}>
-              Connection setup
-            </button>
+            {onSetup && (
+              <button onClick={onSetup}>
+                Connection setup
+              </button>
+            )}
           </section>
         )}
       </section>

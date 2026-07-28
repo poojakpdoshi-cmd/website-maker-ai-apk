@@ -1,0 +1,101 @@
+.fullstack-report-card {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  margin: 16px 0;
+  border: 1px solid rgba(128, 128, 128, .24);
+  border-radius: 18px;
+  background: rgba(128, 128, 128, .06);
+}
+
+.fullstack-report-ready {
+  border-color: rgba(34, 197, 94, .38);
+  background: rgba(34, 197, 94, .07);
+}
+
+.fullstack-report-blocked {
+  border-color: rgba(239, 68, 68, .38);
+  background: rgba(239, 68, 68, .07);
+}
+
+.fullstack-report-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.fullstack-report-header h3 {
+  margin: 4px 0 0;
+}
+
+.fullstack-report-eyebrow {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  opacity: .68;
+}
+
+.fullstack-report-status {
+  padding: 7px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  background: rgba(128, 128, 128, .14);
+}
+
+.fullstack-capability-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.fullstack-capability {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 42px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(128, 128, 128, .08);
+  font-size: 13px;
+}
+
+.capability-pass,
+.capability-fail {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  border-radius: 50%;
+  font-weight: 900;
+}
+
+.capability-pass {
+  color: #22c55e;
+  background: rgba(34, 197, 94, .15);
+}
+
+.capability-fail {
+  color: #ef4444;
+  background: rgba(239, 68, 68, .15);
+}
+
+.fullstack-report-issues {
+  padding: 13px;
+  border-radius: 12px;
+  background: rgba(239, 68, 68, .08);
+  font-size: 13px;
+}
+
+.fullstack-report-issues ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.fullstack-report-issues li + li {
+  margin-top: 6px;
+}
