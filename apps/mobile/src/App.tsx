@@ -1,35 +1,41 @@
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
-  FormEvent,
-  useEffect,
-  useMemo,
-  useRef,
-  useState
-} from 'react';
-import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
-import { Browser } from '@capacitor/browser';
-import AdminPanelV5 from './AdminPanelV5';
+  createClient,
+  type Session,
+  type SupabaseClient,
+} from "@supabase/supabase-js";
+import { Browser } from "@capacitor/browser";
+import AdminPanelV5 from "./AdminPanelV5";
 import ChatStudio, {
   type ChatAssistantReply,
-  type GenerationModeOptions,
-  type LiveBuildActivity
-} from './ChatStudio';
+  type LiveBuildActivity,
+} from "./ChatStudio";
 
-import CmsStudio from './CmsStudio';
-import type { FullStackReport } from './FullStackReportCard';
-import TokenWalletPanel from './TokenWalletPanel';
-import ThinkMaxControl from './ThinkMaxControl';
-import { ApiRequestError, requestJson } from './api-errors';
+import CmsStudio from "./CmsStudio";
+import type { FullStackReport } from "./FullStackReportCard";
+import TokenWalletPanel from "./TokenWalletPanel";
+import ThinkMaxControl from "./ThinkMaxControl";
+import BackendWizard from "./BackendWizard";
+import LiveWebsites from "./LiveWebsites";
 import {
-  loginAdmin,
-  loginNormalUser,
-  type UsernameSession
-} from './auth-routing';
+  accentPresets,
+  applyAppearance,
+  contrastForAccent,
+  loadAppearance,
+  resolveAccent,
+  saveAppearance,
+  websitePalettes,
+  type AppearanceSettings,
+  type WebsitePalette,
+} from "./appearance";
+import { ApiRequestError, requestJson } from "./api-errors";
+import { loginNormalUser, type UsernameSession } from "./auth-routing";
 import {
   cleanRuntimeConfig,
   resolveRuntimeConfig,
   type RuntimeConfig,
-  validRuntimeConfig
-} from './runtime-config';
+  validRuntimeConfig,
+} from "./runtime-config";
 import {
   activeGenerationJobKey,
   loadGenerationLaunch,
@@ -37,11 +43,34 @@ import {
   removeGenerationLaunch,
   saveGenerationLaunch,
   waitForGenerationPoll,
-  type GenerationLaunchPayload
-} from './generation-job';
-type AppTheme = 'dark' | 'light' | 'system';
-type WebsitePlan = { businessName: string; websiteType: string; tagline: string; pages: string[]; features: string[]; theme: { style: string; primary: string; secondary: string; background: string; text: string } };
-type GenerateResponse = { projectId: string; jobId?: string; versionNumber?: number; plan: WebsitePlan; previewHtml: string; framework: 'vite-react'; fileCount: number; mode: 'ai' | 'built-in'; thinkMaxCompleted?: boolean };
+  type GenerationLaunchPayload,
+} from "./generation-job";
+type WebsitePlan = {
+  businessName: string;
+  websiteType: string;
+  tagline: string;
+  pages: string[];
+  features: string[];
+  theme: {
+    style: string;
+    primary: string;
+    secondary: string;
+    background: string;
+    text: string;
+  };
+  appSpec?: { backend?: { required?: boolean } };
+};
+type GenerateResponse = {
+  projectId: string;
+  jobId?: string;
+  versionNumber?: number;
+  plan: WebsitePlan;
+  previewHtml: string;
+  framework: "vite-react";
+  fileCount: number;
+  mode: "ai" | "built-in";
+  thinkMaxCompleted?: boolean;
+};
 type GenerationStatusResponse = {
   job: {
     id: string;
@@ -51,13 +80,19 @@ type GenerationStatusResponse = {
     current_agent?: string | null;
     progress?: number | null;
     error_message?: string | null;
+    failed_stage?: string | null;
+    retryable?: boolean | null;
+    attempt_count?: number | null;
     updated_at?: string | null;
+    started_at?: string | null;
+    completed_at?: string | null;
+    duration_ms?: number | null;
   };
-  events: LiveBuildActivity['events'];
+  events: LiveBuildActivity["events"];
 };
 type AccessResponse = {
   approved: true;
-  role: 'admin' | 'subscriber';
+  role: "admin" | "subscriber";
   maxDevices: number;
   activeDevices: number;
   subscriptionExpiresAt?: string | null;
@@ -73,8 +108,6 @@ type ProjectSourceResponse = {
   versionNumber: number;
   files: ProjectSourceFile[];
 };
-
-
 
 type CapabilityPack = {
   id: string;
@@ -95,8 +128,17 @@ type WebsiteTemplate = {
   prompt: string;
 };
 
-type ProjectSummary = { id: string; name: string; website_type: string; status: string; framework: string; github_repository?: string | null; production_url?: string | null; deployment_state?: string | null; created_at: string };
-
+type ProjectSummary = {
+  id: string;
+  name: string;
+  website_type: string;
+  status: string;
+  framework: string;
+  github_repository?: string | null;
+  production_url?: string | null;
+  deployment_state?: string | null;
+  created_at: string;
+};
 
 type UsageData = {
   used: number;
@@ -129,342 +171,280 @@ type AnalyticsData = {
   recentProjects: ProjectSummary[];
 };
 
-type IntegrationStatus = { github: { external_account_name?: string | null } | null; vercel: { external_account_name?: string | null } | null };
-
-
+type IntegrationStatus = {
+  github: { external_account_name?: string | null } | null;
+  vercel: { external_account_name?: string | null } | null;
+};
 
 const capabilityPacks: CapabilityPack[] = [
   {
-    id: 'premium-motion',
-    name: 'Premium Motion',
-    icon: '✦',
+    id: "premium-motion",
+    name: "Premium Motion",
+    icon: "✦",
     description:
-      'Smooth entrances, hover interactions and cinematic scrolling.',
+      "Smooth entrances, hover interactions and cinematic scrolling.",
     features: [
-      'Scroll reveals',
-      'Hover effects',
-      'Micro animations',
-      'Smooth transitions'
+      "Scroll reveals",
+      "Hover effects",
+      "Micro animations",
+      "Smooth transitions",
     ],
     instruction: [
-      'Add tasteful premium motion effects.',
-      'Use smooth section reveals, interactive hover states,',
-      'animated buttons and subtle background movement.',
-      'Keep animations lightweight, accessible and mobile friendly.'
-    ].join(' ')
+      "Add tasteful premium motion effects.",
+      "Use smooth section reveals, interactive hover states,",
+      "animated buttons and subtle background movement.",
+      "Keep animations lightweight, accessible and mobile friendly.",
+    ].join(" "),
   },
   {
-    id: 'three-dimensional',
-    name: '3D Visual Experience',
-    icon: '⬡',
+    id: "three-dimensional",
+    name: "3D Visual Experience",
+    icon: "⬡",
     description:
-      'Depth, perspective, layered cards and interactive 3D-style visuals.',
-    features: [
-      '3D cards',
-      'Depth effects',
-      'Perspective',
-      'Layered hero'
-    ],
+      "Depth, perspective, layered cards and interactive 3D-style visuals.",
+    features: ["3D cards", "Depth effects", "Perspective", "Layered hero"],
     instruction: [
-      'Create a strong three-dimensional visual experience.',
-      'Use CSS perspective, layered cards, depth, lighting, shadows,',
-      'glass surfaces and interactive tilt-style presentation.',
-      'Do not require large external 3D libraries unless essential.',
-      'Maintain excellent performance on Android phones.'
-    ].join(' ')
+      "Create a strong three-dimensional visual experience.",
+      "Use CSS perspective, layered cards, depth, lighting, shadows,",
+      "glass surfaces and interactive tilt-style presentation.",
+      "Do not require large external 3D libraries unless essential.",
+      "Maintain excellent performance on Android phones.",
+    ].join(" "),
   },
   {
-    id: 'ecommerce-pro',
-    name: 'Ecommerce Pro',
-    icon: '▣',
+    id: "ecommerce-pro",
+    name: "Ecommerce Pro",
+    icon: "▣",
     description:
-      'Product categories, offers, conversion sections and shopping UI.',
-    features: [
-      'Product cards',
-      'Categories',
-      'Offers',
-      'Conversion UI'
-    ],
+      "Product categories, offers, conversion sections and shopping UI.",
+    features: ["Product cards", "Categories", "Offers", "Conversion UI"],
     instruction: [
-      'Add a complete ecommerce-style experience.',
-      'Include category navigation, product cards, price display,',
-      'offers, trust badges, testimonials, product filters,',
-      'strong calls to action and mobile shopping navigation.',
-      'Do not create fake payment processing.'
-    ].join(' ')
+      "Add a complete ecommerce-style experience.",
+      "Include category navigation, product cards, price display,",
+      "offers, trust badges, testimonials, product filters,",
+      "strong calls to action and mobile shopping navigation.",
+      "Do not create fake payment processing.",
+    ].join(" "),
   },
   {
-    id: 'lead-generation',
-    name: 'Lead Generation',
-    icon: '◎',
+    id: "lead-generation",
+    name: "Lead Generation",
+    icon: "◎",
     description:
-      'High-converting enquiry sections, WhatsApp and trust signals.',
-    features: [
-      'Lead forms',
-      'WhatsApp',
-      'Trust badges',
-      'Sticky CTA'
-    ],
+      "High-converting enquiry sections, WhatsApp and trust signals.",
+    features: ["Lead forms", "WhatsApp", "Trust badges", "Sticky CTA"],
     instruction: [
-      'Optimise the website for lead generation.',
-      'Add clear calls to action, an enquiry form, WhatsApp contact,',
-      'social proof, trust indicators, FAQs and mobile sticky actions.',
-      'Keep forms simple, accessible and conversion focused.'
-    ].join(' ')
+      "Optimise the website for lead generation.",
+      "Add clear calls to action, an enquiry form, WhatsApp contact,",
+      "social proof, trust indicators, FAQs and mobile sticky actions.",
+      "Keep forms simple, accessible and conversion focused.",
+    ].join(" "),
   },
   {
-    id: 'accessibility-plus',
-    name: 'Accessibility Plus',
-    icon: '◉',
+    id: "accessibility-plus",
+    name: "Accessibility Plus",
+    icon: "◉",
     description:
-      'Better contrast, keyboard support, labels and reduced-motion support.',
+      "Better contrast, keyboard support, labels and reduced-motion support.",
     features: [
-      'Keyboard access',
-      'ARIA labels',
-      'High contrast',
-      'Reduced motion'
+      "Keyboard access",
+      "ARIA labels",
+      "High contrast",
+      "Reduced motion",
     ],
     instruction: [
-      'Apply strong accessibility standards.',
-      'Use semantic HTML, visible focus states, proper form labels,',
-      'keyboard navigation, descriptive alt text, sufficient contrast',
-      'and prefers-reduced-motion support.'
-    ].join(' ')
+      "Apply strong accessibility standards.",
+      "Use semantic HTML, visible focus states, proper form labels,",
+      "keyboard navigation, descriptive alt text, sufficient contrast",
+      "and prefers-reduced-motion support.",
+    ].join(" "),
   },
   {
-    id: 'performance-max',
-    name: 'Performance Max',
-    icon: '⚡',
+    id: "performance-max",
+    name: "Performance Max",
+    icon: "⚡",
     description:
-      'Fast loading, lightweight effects and mobile-first optimisation.',
+      "Fast loading, lightweight effects and mobile-first optimisation.",
     features: [
-      'Fast loading',
-      'Mobile first',
-      'Lazy media',
-      'Lightweight code'
+      "Fast loading",
+      "Mobile first",
+      "Lazy media",
+      "Lightweight code",
     ],
     instruction: [
-      'Prioritise maximum website performance.',
-      'Use lightweight components, minimal dependencies, optimised CSS,',
-      'lazy-loaded media, responsive images and efficient animations.',
-      'Avoid unnecessary libraries and expensive rendering effects.'
-    ].join(' ')
-  }
+      "Prioritise maximum website performance.",
+      "Use lightweight components, minimal dependencies, optimised CSS,",
+      "lazy-loaded media, responsive images and efficient animations.",
+      "Avoid unnecessary libraries and expensive rendering effects.",
+    ].join(" "),
+  },
 ];
 
 const websiteTemplates: WebsiteTemplate[] = [
   {
-    id: 'premium-jewellery',
-    name: 'Luxury Jewellery',
-    category: 'Retail',
-    icon: '◆',
+    id: "premium-jewellery",
+    name: "Luxury Jewellery",
+    category: "Retail",
+    icon: "◆",
     description:
-      'Premium jewellery showroom with products, collections, WhatsApp and enquiries.',
-    features: [
-      'Product gallery',
-      'WhatsApp',
-      'Contact form',
-      'Luxury UI'
-    ],
+      "Premium jewellery showroom with products, collections, WhatsApp and enquiries.",
+    features: ["Product gallery", "WhatsApp", "Contact form", "Luxury UI"],
     prompt: [
-      'Create a premium luxury jewellery website.',
-      'Use an elegant black, ivory and gold visual theme.',
-      'Include a cinematic hero section, featured jewellery',
-      'collections, product cards, bridal collection, trust',
-      'section, testimonials, store information, WhatsApp',
-      'button, enquiry form, SEO and a mobile-first layout.',
-      'Use smooth premium animations and professional typography.'
-    ].join(' ')
+      "Create a premium luxury jewellery website.",
+      "Use an elegant black, ivory and gold visual theme.",
+      "Include a cinematic hero section, featured jewellery",
+      "collections, product cards, bridal collection, trust",
+      "section, testimonials, store information, WhatsApp",
+      "button, enquiry form, SEO and a mobile-first layout.",
+      "Use smooth premium animations and professional typography.",
+    ].join(" "),
   },
   {
-    id: 'modern-ecommerce',
-    name: 'Modern Ecommerce',
-    category: 'Commerce',
-    icon: '▣',
+    id: "modern-ecommerce",
+    name: "Modern Ecommerce",
+    category: "Commerce",
+    icon: "▣",
     description:
-      'Conversion-focused online store with categories, offers and product showcases.',
-    features: [
-      'Categories',
-      'Products',
-      'Offers',
-      'Mobile shop'
-    ],
+      "Conversion-focused online store with categories, offers and product showcases.",
+    features: ["Categories", "Products", "Offers", "Mobile shop"],
     prompt: [
-      'Create a modern high-converting ecommerce website.',
-      'Include an announcement bar, searchable navigation,',
-      'category cards, featured products, sale section, product',
-      'benefits, customer reviews, newsletter, contact form,',
-      'WhatsApp and SEO. Use a clean premium mobile-first design',
-      'with subtle animations and strong call-to-action buttons.'
-    ].join(' ')
+      "Create a modern high-converting ecommerce website.",
+      "Include an announcement bar, searchable navigation,",
+      "category cards, featured products, sale section, product",
+      "benefits, customer reviews, newsletter, contact form,",
+      "WhatsApp and SEO. Use a clean premium mobile-first design",
+      "with subtle animations and strong call-to-action buttons.",
+    ].join(" "),
   },
   {
-    id: 'restaurant-cafe',
-    name: 'Restaurant & Cafe',
-    category: 'Food',
-    icon: '◉',
+    id: "restaurant-cafe",
+    name: "Restaurant & Cafe",
+    category: "Food",
+    icon: "◉",
     description:
-      'Restaurant website with menu, reservations, gallery and location.',
-    features: [
-      'Food menu',
-      'Reservations',
-      'Gallery',
-      'Location'
-    ],
+      "Restaurant website with menu, reservations, gallery and location.",
+    features: ["Food menu", "Reservations", "Gallery", "Location"],
     prompt: [
-      'Create a cinematic restaurant and cafe website.',
-      'Include a full-screen food hero, menu categories, signature',
-      'dishes, chef story, restaurant gallery, opening hours,',
-      'reservation form, Google Maps location, WhatsApp ordering,',
-      'testimonials and SEO. Use warm premium colours and smooth',
-      'scroll animations while keeping the website mobile friendly.'
-    ].join(' ')
+      "Create a cinematic restaurant and cafe website.",
+      "Include a full-screen food hero, menu categories, signature",
+      "dishes, chef story, restaurant gallery, opening hours,",
+      "reservation form, Google Maps location, WhatsApp ordering,",
+      "testimonials and SEO. Use warm premium colours and smooth",
+      "scroll animations while keeping the website mobile friendly.",
+    ].join(" "),
   },
   {
-    id: 'smart-tuition',
-    name: 'Tuition Academy',
-    category: 'Education',
-    icon: '✦',
+    id: "smart-tuition",
+    name: "Tuition Academy",
+    category: "Education",
+    icon: "✦",
     description:
-      'Professional tuition-class website for courses, teachers and admissions.',
-    features: [
-      'Courses',
-      'Faculty',
-      'Results',
-      'Admissions'
-    ],
+      "Professional tuition-class website for courses, teachers and admissions.",
+    features: ["Courses", "Faculty", "Results", "Admissions"],
     prompt: [
-      'Create a professional tuition academy website for students',
-      'and parents. Include courses by standard and board, faculty',
-      'profiles, academic results, student testimonials, class',
-      'timings, notes and resources section, admission enquiry form,',
-      'WhatsApp contact, FAQs and SEO. Use a trustworthy modern',
-      'education theme with a clean responsive mobile layout.'
-    ].join(' ')
+      "Create a professional tuition academy website for students",
+      "and parents. Include courses by standard and board, faculty",
+      "profiles, academic results, student testimonials, class",
+      "timings, notes and resources section, admission enquiry form,",
+      "WhatsApp contact, FAQs and SEO. Use a trustworthy modern",
+      "education theme with a clean responsive mobile layout.",
+    ].join(" "),
   },
   {
-    id: 'creative-portfolio',
-    name: 'Creative Portfolio',
-    category: 'Personal',
-    icon: '◇',
+    id: "creative-portfolio",
+    name: "Creative Portfolio",
+    category: "Personal",
+    icon: "◇",
     description:
-      'Personal portfolio for developers, designers and creative professionals.',
-    features: [
-      'Projects',
-      'Skills',
-      'Experience',
-      'Contact'
-    ],
+      "Personal portfolio for developers, designers and creative professionals.",
+    features: ["Projects", "Skills", "Experience", "Contact"],
     prompt: [
-      'Create a highly polished personal portfolio website.',
-      'Include a strong introduction, skills, selected projects,',
-      'experience timeline, achievements, services, testimonials,',
-      'download resume button, social links and contact form.',
-      'Use a unique modern visual identity, smooth interactions,',
-      'excellent typography and a responsive mobile-first layout.'
-    ].join(' ')
+      "Create a highly polished personal portfolio website.",
+      "Include a strong introduction, skills, selected projects,",
+      "experience timeline, achievements, services, testimonials,",
+      "download resume button, social links and contact form.",
+      "Use a unique modern visual identity, smooth interactions,",
+      "excellent typography and a responsive mobile-first layout.",
+    ].join(" "),
   },
   {
-    id: 'saas-startup',
-    name: 'AI SaaS Startup',
-    category: 'Technology',
-    icon: '⬡',
+    id: "saas-startup",
+    name: "AI SaaS Startup",
+    category: "Technology",
+    icon: "⬡",
     description:
-      'Modern software startup landing page with pricing and product sections.',
-    features: [
-      'Product demo',
-      'Pricing',
-      'Features',
-      'FAQs'
-    ],
+      "Modern software startup landing page with pricing and product sections.",
+    features: ["Product demo", "Pricing", "Features", "FAQs"],
     prompt: [
-      'Create a premium AI SaaS startup landing page.',
-      'Include an impressive product hero, dashboard mockup area,',
-      'feature grid, workflow explanation, integrations, use cases,',
-      'pricing plans, customer logos, testimonials, FAQ, waitlist',
-      'form and SEO. Use a modern glassmorphism-inspired design',
-      'with tasteful animations and excellent mobile responsiveness.'
-    ].join(' ')
+      "Create a premium AI SaaS startup landing page.",
+      "Include an impressive product hero, dashboard mockup area,",
+      "feature grid, workflow explanation, integrations, use cases,",
+      "pricing plans, customer logos, testimonials, FAQ, waitlist",
+      "form and SEO. Use a modern glassmorphism-inspired design",
+      "with tasteful animations and excellent mobile responsiveness.",
+    ].join(" "),
   },
   {
-    id: 'real-estate',
-    name: 'Real Estate Agency',
-    category: 'Property',
-    icon: '⌂',
+    id: "real-estate",
+    name: "Real Estate Agency",
+    category: "Property",
+    icon: "⌂",
     description:
-      'Property agency website with listings, agents and enquiry features.',
-    features: [
-      'Listings',
-      'Property search',
-      'Agents',
-      'Enquiries'
-    ],
+      "Property agency website with listings, agents and enquiry features.",
+    features: ["Listings", "Property search", "Agents", "Enquiries"],
     prompt: [
-      'Create a premium real estate agency website.',
-      'Include property search filters, featured listings, property',
-      'cards with pricing and location, agent profiles, neighbourhood',
-      'guides, buying and selling services, testimonials, WhatsApp,',
-      'property enquiry form and SEO. Use a sophisticated spacious',
-      'design that works perfectly on mobile and desktop.'
-    ].join(' ')
+      "Create a premium real estate agency website.",
+      "Include property search filters, featured listings, property",
+      "cards with pricing and location, agent profiles, neighbourhood",
+      "guides, buying and selling services, testimonials, WhatsApp,",
+      "property enquiry form and SEO. Use a sophisticated spacious",
+      "design that works perfectly on mobile and desktop.",
+    ].join(" "),
   },
   {
-    id: 'global-export',
-    name: 'Global Export Business',
-    category: 'Business',
-    icon: '◎',
+    id: "global-export",
+    name: "Global Export Business",
+    category: "Business",
+    icon: "◎",
     description:
-      'International export company website with products and global reach.',
-    features: [
-      'Products',
-      'Countries',
-      'Certifications',
-      'Trade enquiries'
-    ],
+      "International export company website with products and global reach.",
+    features: ["Products", "Countries", "Certifications", "Trade enquiries"],
     prompt: [
-      'Create a professional international export business website.',
-      'Include company introduction, export product categories,',
-      'countries served, global supply network, quality assurance,',
-      'certifications, packaging process, logistics, trade enquiry',
-      'form, WhatsApp contact and SEO. Use a trustworthy premium',
-      'corporate design with strong international-business branding.'
-    ].join(' ')
-  }
+      "Create a professional international export business website.",
+      "Include company introduction, export product categories,",
+      "countries served, global supply network, quality assurance,",
+      "certifications, packaging process, logistics, trade enquiry",
+      "form, WhatsApp contact and SEO. Use a trustworthy premium",
+      "corporate design with strong international-business branding.",
+    ].join(" "),
+  },
 ];
 
-const ownerEmail = 'poojakpdoshi@gmail.com';
-const configKey = 'wmai-runtime-config';
-const userSessionKey = 'nexora-user-session';
-const themeKey = 'nexora-appearance';
-const adminLoginPath = '/admin/auth/login';
-const userLoginPath = '/auth/login';
+const ownerEmail = "poojakpdoshi@gmail.com";
+const configKey = "wmai-runtime-config";
+const userSessionKey = "nexora-user-session";
+const adminLoginPath = "/admin/auth/login";
+const userLoginPath = "/auth/login";
 
-function initialAppMode(): 'user' | 'admin-login' {
-  return window.location.pathname.replace(/\/+$/, '') === adminLoginPath
-    ? 'admin-login'
-    : 'user';
+function initialAppMode(): "user" | "admin-login" {
+  return window.location.pathname.replace(/\/+$/, "") === adminLoginPath
+    ? "admin-login"
+    : "user";
 }
 
 function replaceAppPath(pathname: string): void {
   if (window.location.pathname === pathname) return;
-  window.history.replaceState(null, '', `${pathname}${window.location.search}`);
+  window.history.replaceState(null, "", `${pathname}${window.location.search}`);
 }
 
-
-function formatQuotaReset(
-  resetAt: string,
-  now: number
-): string {
-  const remaining =
-    new Date(resetAt).getTime() - now;
+function formatQuotaReset(resetAt: string, now: number): string {
+  const remaining = new Date(resetAt).getTime() - now;
 
   if (!Number.isFinite(remaining) || remaining <= 0) {
-    return 'Resetting now';
+    return "Resetting now";
   }
 
-  const totalMinutes = Math.ceil(
-    remaining / 60000
-  );
+  const totalMinutes = Math.ceil(remaining / 60000);
 
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
@@ -476,52 +456,6 @@ function formatQuotaReset(
   return `Resets in ${minutes}m`;
 }
 
-function formatSubscriptionRemaining(
-  expiresAt: string | null | undefined,
-  now: number
-): string {
-  if (!expiresAt) {
-    return 'Lifetime / no expiry';
-  }
-
-  const expiry = new Date(expiresAt).getTime();
-
-  if (!Number.isFinite(expiry)) {
-    return 'Expiry unavailable';
-  }
-
-  const remaining = expiry - now;
-
-  if (remaining <= 0) {
-    return 'Expired';
-  }
-
-  const totalMinutes = Math.floor(
-    remaining / 60000
-  );
-
-  const days = Math.floor(
-    totalMinutes / 1440
-  );
-
-  const hours = Math.floor(
-    (totalMinutes % 1440) / 60
-  );
-
-  const minutes = totalMinutes % 60;
-
-  if (days > 0) {
-    return `${days}d ${hours}h remaining`;
-  }
-
-  if (hours > 0) {
-    return `${hours}h ${minutes}m remaining`;
-  }
-
-  return `${Math.max(1, minutes)}m remaining`;
-}
-
-
 function zipCrc32(data: Uint8Array): number {
   let crc = 0xffffffff;
 
@@ -529,9 +463,7 @@ function zipCrc32(data: Uint8Array): number {
     crc ^= byte;
 
     for (let bit = 0; bit < 8; bit += 1) {
-      crc =
-        (crc >>> 1) ^
-        (crc & 1 ? 0xedb88320 : 0);
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
     }
   }
 
@@ -550,16 +482,11 @@ function zipDosTime(date: Date): {
       (date.getMinutes() << 5) |
       Math.floor(date.getSeconds() / 2),
 
-    day:
-      ((year - 1980) << 9) |
-      ((date.getMonth() + 1) << 5) |
-      date.getDate()
+    day: ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate(),
   };
 }
 
-function zipHeader(
-  size: number
-): {
+function zipHeader(size: number): {
   bytes: Uint8Array;
   view: DataView;
 } {
@@ -567,13 +494,11 @@ function zipHeader(
 
   return {
     bytes,
-    view: new DataView(bytes.buffer)
+    view: new DataView(bytes.buffer),
   };
 }
 
-function createSourceZip(
-  files: ProjectSourceFile[]
-): Blob {
+function createSourceZip(files: ProjectSourceFile[]): Blob {
   const encoder = new TextEncoder();
   const now = zipDosTime(new Date());
 
@@ -627,8 +552,7 @@ function createSourceZip(
 
     centralParts.push(central.bytes);
 
-    localOffset +=
-      local.bytes.length + content.length;
+    localOffset += local.bytes.length + content.length;
   }
 
   const centralSize = centralParts.reduce(
@@ -647,16 +571,9 @@ function createSourceZip(
   end.view.setUint32(16, localOffset, true);
   end.view.setUint16(20, 0, true);
 
-  const parts = [
-    ...localParts,
-    ...centralParts,
-    end.bytes
-  ];
+  const parts = [...localParts, ...centralParts, end.bytes];
 
-  const totalSize = parts.reduce(
-    (total, part) => total + part.length,
-    0
-  );
+  const totalSize = parts.reduce((total, part) => total + part.length, 0);
 
   const output = new Uint8Array(totalSize);
   let offset = 0;
@@ -666,32 +583,31 @@ function createSourceZip(
     offset += part.length;
   }
 
-  return new Blob(
-    [output.buffer],
-    { type: 'application/zip' }
-  );
+  return new Blob([output.buffer], { type: "application/zip" });
 }
 
 function safeDownloadName(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60) || 'nexora-project';
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60) || "nexora-project"
+  );
 }
 
 function defaultConfig(): RuntimeConfig {
   return {
-    apiBase: (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, ''),
-    supabaseUrl: import.meta.env.VITE_SUPABASE_URL || '',
-    supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+    apiBase: (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, ""),
+    supabaseUrl: import.meta.env.VITE_SUPABASE_URL || "",
+    supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY || "",
   };
 }
 
 function loadConfig(): RuntimeConfig {
   const bundled = defaultConfig();
-  const allowStoredOverride = import.meta.env.DEV ||
-    !validRuntimeConfig(bundled);
+  const allowStoredOverride =
+    import.meta.env.DEV || !validRuntimeConfig(bundled);
 
   return resolveRuntimeConfig(
     bundled,
@@ -701,208 +617,197 @@ function loadConfig(): RuntimeConfig {
 }
 
 function createInstallationId(): string {
-  const stored = localStorage.getItem('wmai-installation-id');
+  const stored = localStorage.getItem("wmai-installation-id");
   if (stored) return stored;
-  const value = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => {
-    const random = Math.floor(Math.random() * 16);
-    return (character === 'x' ? random : (random & 0x3) | 0x8).toString(16);
-  });
-  localStorage.setItem('wmai-installation-id', value);
+  const value =
+    typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (character) => {
+          const random = Math.floor(Math.random() * 16);
+          return (character === "x" ? random : (random & 0x3) | 0x8).toString(
+            16
+          );
+        });
+  localStorage.setItem("wmai-installation-id", value);
   return value;
 }
 
 const installationId = createInstallationId();
 
-const runtimeConfigOverrideAllowed = import.meta.env.DEV ||
-  !validRuntimeConfig(defaultConfig());
+const runtimeConfigOverrideAllowed =
+  import.meta.env.DEV || !validRuntimeConfig(defaultConfig());
 
 const validConfig = validRuntimeConfig;
 
 export default function App() {
   const [config, setConfig] = useState<RuntimeConfig>(loadConfig);
   const [showSetup, setShowSetup] = useState(() => !validConfig(loadConfig()));
-  const [mode, setMode] = useState<'user' | 'admin-login' | 'admin-dashboard'>(initialAppMode);
+  const [mode, setMode] = useState<"user" | "admin-login" | "admin-dashboard">(
+    initialAppMode
+  );
   const [forceUserLogin, setForceUserLogin] = useState(false);
-  const supabase = useMemo<SupabaseClient | null>(() => validConfig(config) ? createClient(config.supabaseUrl, config.supabaseAnonKey) : null, [config]);
+  const supabase = useMemo<SupabaseClient | null>(
+    () =>
+      validConfig(config)
+        ? createClient(config.supabaseUrl, config.supabaseAnonKey)
+        : null,
+    [config]
+  );
 
   const [email, setEmail] = useState(ownerEmail);
   const [session, setSession] = useState<Session | null>(null);
-  const [userSession, setUserSession] =
-    useState<UsernameSession | null>(() => {
-      try {
-        const stored = localStorage.getItem(userSessionKey);
-        return stored ? JSON.parse(stored) : null;
-      } catch {
-        return null;
-      }
-    });
-  const [appTheme, setAppTheme] =
-    useState<AppTheme>(() => {
-      const stored = localStorage.getItem(themeKey);
+  const [userSession, setUserSession] = useState<UsernameSession | null>(() => {
+    try {
+      const stored = localStorage.getItem(userSessionKey);
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [appearance, setAppearance] = useState<AppearanceSettings>(() =>
+    loadAppearance()
+  );
+  const [appearanceDraft, setAppearanceDraft] = useState<AppearanceSettings>(
+    () => loadAppearance()
+  );
+  const [appearanceSaving, setAppearanceSaving] = useState(false);
+  const [websitePalette, setWebsitePalette] = useState<WebsitePalette>(() => {
+    const id = localStorage.getItem("nexora-website-palette") || "auto";
+    return (
+      websitePalettes.find((palette) => palette.id === id) || websitePalettes[0]
+    );
+  });
 
-      return stored === 'dark' ||
-        stored === 'light' ||
-        stored === 'system'
-        ? stored
-        : 'system';
-    });
-
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [showLoginPassword, setShowLoginPassword] =
-    useState(false);
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newAccountPassword, setNewAccountPassword] = useState('');
-  const [confirmAccountPassword, setConfirmAccountPassword] = useState('');
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newAccountPassword, setNewAccountPassword] = useState("");
+  const [confirmAccountPassword, setConfirmAccountPassword] = useState("");
   const [passwordChanging, setPasswordChanging] = useState(false);
 
   const [approved, setApproved] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
-  const [otp, setOtp] = useState('');
+  const [otp, setOtp] = useState("");
   const [access, setAccess] = useState<AccessResponse | null>(null);
-  const [prompt, setPrompt] = useState('Create a premium modern website for a jewellery shop named Raj Jewels with products, WhatsApp number +919876543210, gallery, enquiry form and SEO.');
+  const [prompt, setPrompt] = useState(
+    "Create a premium modern website for a jewellery shop named Raj Jewels with products, WhatsApp number +919876543210, gallery, enquiry form and SEO."
+  );
   const [thinkMaxEnabled, setThinkMaxEnabled] = useState(false);
   const generationInFlightRef = useRef(false);
   const launchedGenerationJobsRef = useRef(new Set<string>());
 
-  const [templateSearch, setTemplateSearch] =
-    useState('');
+  const [templateSearch, setTemplateSearch] = useState("");
 
-  const [
-    selectedCapabilityIds,
-    setSelectedCapabilityIds
-  ] = useState<string[]>(() => {
-    try {
-      const stored = localStorage.getItem(
-        'nexora-capability-packs'
-      );
+  const [selectedCapabilityIds, setSelectedCapabilityIds] = useState<string[]>(
+    () => {
+      try {
+        const stored = localStorage.getItem("nexora-capability-packs");
 
-      return stored
-        ? JSON.parse(stored) as string[]
-        : [];
-    } catch {
-      return [];
+        return stored ? (JSON.parse(stored) as string[]) : [];
+      } catch {
+        return [];
+      }
     }
-  });
+  );
 
-
-const [editInstruction, setEditInstruction] = useState('');
+  const [editInstruction, setEditInstruction] = useState("");
   const [loading, setLoading] = useState(false);
   const [activity, setActivity] = useState<LiveBuildActivity | null>(null);
   const [loginLoading, setLoginLoading] = useState(false);
   const [publishing, setPublishing] = useState(false);
 
-  const [
-    downloadingProjectId,
-    setDownloadingProjectId
-  ] = useState<string | null>(null);
+  const [downloadingProjectId, setDownloadingProjectId] = useState<
+    string | null
+  >(null);
 
-const [result, setResult] = useState<GenerateResponse | null>(null);
+  const [result, setResult] = useState<GenerateResponse | null>(null);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [backendVerified, setBackendVerified] = useState(false);
 
-  const [analytics, setAnalytics] =
-    useState<AnalyticsData | null>(null);
+  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
 
+  const [usage, setUsage] = useState<UsageData | null>(null);
 
-  const [usage, setUsage] =
-    useState<UsageData | null>(null);
+  const [usageLoading, setUsageLoading] = useState(false);
 
-  const [usageLoading, setUsageLoading] =
-    useState(false);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
 
-const [analyticsLoading, setAnalyticsLoading] =
-    useState(false);
-
-const [connections, setConnections] = useState<IntegrationStatus>({ github: null, vercel: null });
-  const [githubToken, setGithubToken] = useState('');
-  const [vercelToken, setVercelToken] = useState('');
-  const [connectingProvider, setConnectingProvider] =
-    useState<'github' | 'vercel' | null>(null);
+  const [connections, setConnections] = useState<IntegrationStatus>({
+    github: null,
+    vercel: null,
+  });
+  const [githubToken, setGithubToken] = useState("");
+  const [vercelToken, setVercelToken] = useState("");
+  const [connectingProvider, setConnectingProvider] = useState<
+    "github" | "vercel" | null
+  >(null);
   const [showSetupGuide, setShowSetupGuide] = useState(false);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
   const [tab, setTab] = useState<
-    | 'chat'
-    | 'create'
-    | 'templates'
-    | 'packs'
-    | 'preview'
-    | 'projects'
-    | 'analytics'
-    | 'connect'
-    | 'account' | 'cms'>('chat');
+    | "chat"
+    | "create"
+    | "templates"
+    | "packs"
+    | "preview"
+    | "projects"
+    | "live-sites"
+    | "analytics"
+    | "connect"
+    | "account"
+    | "cms"
+  >("chat");
 
-
-  const [subscriptionClock, setSubscriptionClock] =
-    useState(() => Date.now());
-
-const token = userSession?.token || session?.access_token || '';
+  const token = userSession?.token || session?.access_token || "";
   useEffect(() => {
-    if (mode !== 'user') return;
+    if (mode !== "user") return;
 
     if (!approved || forceUserLogin) {
       replaceAppPath(userLoginPath);
-    } else if (
-      window.location.pathname.replace(/\/+$/, '') === userLoginPath
-    ) {
-      replaceAppPath('/');
+    } else if (window.location.pathname.replace(/\/+$/, "") === userLoginPath) {
+      replaceAppPath("/");
     }
   }, [approved, forceUserLogin, mode]);
 
   useEffect(() => {
-    const timer = window.setInterval(
-      () => setSubscriptionClock(Date.now()),
-      60000
-    );
-
-    return () => window.clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
-    const systemTheme = window.matchMedia(
-      '(prefers-color-scheme: dark)'
-    );
+    const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
 
     const applyTheme = () => {
-      const resolvedTheme =
-        appTheme === 'system'
-          ? systemTheme.matches
-            ? 'dark'
-            : 'light'
-          : appTheme;
-
-      document.documentElement.dataset.nexoraTheme =
-        resolvedTheme;
-
-      document.documentElement.style.colorScheme =
-        resolvedTheme;
-
-      localStorage.setItem(themeKey, appTheme);
+      applyAppearance(
+        appearance,
+        document.documentElement,
+        systemTheme.matches
+      );
+      saveAppearance(appearance);
     };
 
     applyTheme();
 
-    systemTheme.addEventListener('change', applyTheme);
+    systemTheme.addEventListener("change", applyTheme);
 
     return () => {
-      systemTheme.removeEventListener(
-        'change',
-        applyTheme
-      );
+      systemTheme.removeEventListener("change", applyTheme);
     };
-  }, [appTheme]);
+  }, [appearance]);
+
+  useEffect(() => {
+    localStorage.setItem("nexora-website-palette", websitePalette.id);
+  }, [websitePalette]);
+
+  useEffect(() => {
+    setBackendVerified(false);
+  }, [result?.projectId]);
 
   useEffect(() => {
     localStorage.setItem(
-      'nexora-capability-packs',
+      "nexora-capability-packs",
       JSON.stringify(selectedCapabilityIds)
     );
   }, [selectedCapabilityIds]);
 
   const filteredTemplates = useMemo(() => {
-    const search = templateSearch
-      .trim()
-      .toLowerCase();
+    const search = templateSearch.trim().toLowerCase();
 
     if (!search) {
       return websiteTemplates;
@@ -913,43 +818,43 @@ const token = userSession?.token || session?.access_token || '';
         template.name,
         template.category,
         template.description,
-        ...template.features
-      ].some((value) =>
-        value.toLowerCase().includes(search)
-      )
+        ...template.features,
+      ].some((value) => value.toLowerCase().includes(search))
     );
   }, [templateSearch]);
 
-  const status = useMemo(() => result ? `${result.plan.businessName} • ${result.framework} • ${result.fileCount} files • ${result.mode === 'ai' ? 'Gemini-assisted brain' : 'Built-in brain'}` : 'No website generated yet', [result]);
+  const status = useMemo(
+    () =>
+      result
+        ? `${result.plan.businessName} • ${result.framework} • ${
+            result.fileCount
+          } files • ${
+            result.mode === "ai" ? "Gemini-assisted brain" : "Built-in brain"
+          }`
+        : "No website generated yet",
+    [result]
+  );
 
   async function readResponse(response: Response) {
-    const data = await response
-      .json()
-      .catch(() => ({
-        error:
-          'The server returned an invalid response.'
-      }));
+    const data = await response.json().catch(() => ({
+      error: "The server returned an invalid response.",
+    }));
 
     if (!response.ok) {
-      const securityErrors =
-        Array.isArray(data?.securityAudit?.errors)
-          ? data.securityAudit.errors.filter(
-              (item: unknown) =>
-                typeof item === 'string'
-            )
-          : [];
+      const securityErrors = Array.isArray(data?.securityAudit?.errors)
+        ? data.securityAudit.errors.filter(
+            (item: unknown) => typeof item === "string"
+          )
+        : [];
 
       const securityDetails =
         securityErrors.length > 0
-          ? `\n\nSecurity issues:\n• ${securityErrors.join(
-              '\n• '
-            )}`
-          : '';
+          ? `\n\nSecurity issues:\n• ${securityErrors.join("\n• ")}`
+          : "";
 
       throw new Error(
         `${
-          data.error ||
-          `Request failed (${response.status})`
+          data.error || `Request failed (${response.status})`
         }${securityDetails}`
       );
     }
@@ -958,15 +863,78 @@ const token = userSession?.token || session?.access_token || '';
   }
 
   function authHeaders(activeToken = token) {
-    return { Authorization: `Bearer ${activeToken}`, 'X-Device-Id': installationId };
+    return {
+      Authorization: `Bearer ${activeToken}`,
+      "X-Device-Id": installationId,
+    };
   }
 
-  async function clearGenerationState(jobId: string): Promise<void> {
-    if (localStorage.getItem(activeGenerationJobKey) === jobId) {
+  async function loadAppearancePreference(activeToken = token): Promise<void> {
+    if (!activeToken) return;
+    const response = await fetch(`${config.apiBase}/preferences/appearance`, {
+      headers: authHeaders(activeToken),
+    });
+    const data = (await readResponse(response)) as {
+      appearance: AppearanceSettings;
+    };
+    const restored = saveAppearance(data.appearance);
+    setAppearance(restored);
+    setAppearanceDraft(restored);
+  }
+
+  async function applyAppearancePreference(): Promise<void> {
+    const accent = resolveAccent(appearanceDraft);
+    const contrast = contrastForAccent(accent);
+    if (!contrast.accessible) {
+      setError("Choose an accent with WCAG AA contrast before applying.");
+      return;
+    }
+    setAppearanceSaving(true);
+    setError("");
+    const applied = saveAppearance(appearanceDraft);
+    setAppearance(applied);
+    try {
+      const response = await fetch(`${config.apiBase}/preferences/appearance`, {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          ...authHeaders(),
+        },
+        body: JSON.stringify(applied),
+      });
+      const data = (await readResponse(response)) as {
+        appearance: AppearanceSettings;
+      };
+      const saved = saveAppearance(data.appearance);
+      setAppearance(saved);
+      setAppearanceDraft(saved);
+      setMessage("Appearance saved locally and to your Nexora account.");
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error
+          ? `${saveError.message} The theme is still saved on this device.`
+          : "The theme is saved locally, but account sync failed."
+      );
+    } finally {
+      setAppearanceSaving(false);
+    }
+  }
+
+  async function clearGenerationState(
+    jobId: string,
+    removeLaunch = true,
+    removeActive = true
+  ): Promise<void> {
+    if (
+      removeActive &&
+      localStorage.getItem(activeGenerationJobKey) === jobId
+    ) {
       localStorage.removeItem(activeGenerationJobKey);
     }
 
-    await removeGenerationLaunch(jobId).catch(() => undefined);
+    if (removeLaunch) {
+      await removeGenerationLaunch(jobId).catch(() => undefined);
+    }
   }
 
   async function launchGenerationJob(
@@ -975,12 +943,12 @@ const token = userSession?.token || session?.access_token || '';
     activeToken: string
   ): Promise<void> {
     const response = await fetch(`${config.apiBase}/generate`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'content-type': 'application/json',
-        ...authHeaders(activeToken)
+        "content-type": "application/json",
+        ...authHeaders(activeToken),
       },
-      body: JSON.stringify({ ...payload, jobId })
+      body: JSON.stringify({ ...payload, jobId }),
     });
 
     if (response.status === 409) return;
@@ -994,14 +962,15 @@ const token = userSession?.token || session?.access_token || '';
   ): Promise<boolean> {
     if (launchedGenerationJobsRef.current.has(jobId)) return true;
 
-    const payload = fallbackPayload || await loadGenerationLaunch(jobId).catch(() => null);
+    const payload =
+      fallbackPayload || (await loadGenerationLaunch(jobId).catch(() => null));
     if (!payload) return false;
 
     launchedGenerationJobsRef.current.add(jobId);
     void launchGenerationJob(jobId, payload, activeToken)
       .catch(() => {
         setMessage(
-          'The generation connection was interrupted. Nexora.Ai is reconnecting to the saved task.'
+          "The generation connection was interrupted. Nexora.Ai is reconnecting to the saved task."
         );
       })
       .finally(() => {
@@ -1021,10 +990,7 @@ const token = userSession?.token || session?.access_token || '';
     for (let attempt = 0; attempt < 5; attempt += 1) {
       let response: Response;
       const controller = new AbortController();
-      const timeout = window.setTimeout(
-        () => controller.abort(),
-        15000
-      );
+      const timeout = window.setTimeout(() => controller.abort(), 15000);
 
       try {
         response = await fetch(
@@ -1032,28 +998,29 @@ const token = userSession?.token || session?.access_token || '';
             `?email=${encodeURIComponent(activeEmail)}`,
           {
             headers: authHeaders(activeToken),
-            signal: controller.signal
+            signal: controller.signal,
           }
         );
       } catch (statusError) {
         lastError = controller.signal.aborted
-          ? new Error('The generation status request timed out.')
+          ? new Error("The generation status request timed out.")
           : statusError instanceof Error
-            ? statusError
-            : new Error('Could not reach the generation service.');
+          ? statusError
+          : new Error("Could not reach the generation service.");
         await waitForGenerationPoll(Math.min(8000, 750 * 2 ** attempt));
         continue;
       } finally {
         window.clearTimeout(timeout);
       }
 
-      const retryable = response.status === 408 ||
+      const retryable =
+        response.status === 408 ||
         response.status === 425 ||
         response.status === 429 ||
         response.status >= 500;
 
       if (!retryable) {
-        return await readResponse(response) as GenerationStatusResponse;
+        return (await readResponse(response)) as GenerationStatusResponse;
       }
 
       lastError = new Error(
@@ -1062,9 +1029,8 @@ const token = userSession?.token || session?.access_token || '';
       await waitForGenerationPoll(Math.min(8000, 750 * 2 ** attempt));
     }
 
-    const error = lastError || new Error(
-      'Could not reconnect to the generation service.'
-    );
+    const error =
+      lastError || new Error("Could not reconnect to the generation service.");
     Object.assign(error, { retryable: true });
     throw error;
   }
@@ -1072,7 +1038,7 @@ const token = userSession?.token || session?.access_token || '';
   async function loadCompletedGeneration(
     jobId: string,
     projectId: string,
-    events: LiveBuildActivity['events'],
+    events: LiveBuildActivity["events"],
     activeEmail: string,
     activeToken: string
   ): Promise<GenerateResponse> {
@@ -1081,7 +1047,7 @@ const token = userSession?.token || session?.access_token || '';
         `?email=${encodeURIComponent(activeEmail)}`,
       { headers: authHeaders(activeToken) }
     );
-    const projectData = await readResponse(projectResponse) as {
+    const projectData = (await readResponse(projectResponse)) as {
       project: { id: string; name: string; framework: string };
       version: {
         version_number: number;
@@ -1090,17 +1056,17 @@ const token = userSession?.token || session?.access_token || '';
       };
     };
     const eventsWithMetadata = events as Array<
-      LiveBuildActivity['events'][number] & {
+      LiveBuildActivity["events"][number] & {
         metadata?: { fileCount?: number };
       }
     >;
     const fileEvent = [...eventsWithMetadata]
       .reverse()
-      .find((event) => event.title === 'Project files created');
+      .find((event) => event.title === "Project files created");
 
     if (!projectData.version.preview_html) {
       throw new Error(
-        'Generation completed, but the website preview is unavailable.'
+        "Generation completed, but the website preview is unavailable."
       );
     }
 
@@ -1110,9 +1076,9 @@ const token = userSession?.token || session?.access_token || '';
       versionNumber: projectData.version.version_number,
       plan: projectData.version.plan,
       previewHtml: projectData.version.preview_html,
-      framework: 'vite-react',
+      framework: "vite-react",
       fileCount: Number(fileEvent?.metadata?.fileCount || 0),
-      mode: 'ai'
+      mode: "ai",
     };
   }
 
@@ -1143,7 +1109,7 @@ const token = userSession?.token || session?.access_token || '';
         reconnectFailures += 1;
         setMessage(
           `Connection interrupted. Reconnecting to the saved task${
-            reconnectFailures > 1 ? ` (attempt ${reconnectFailures})` : ''
+            reconnectFailures > 1 ? ` (attempt ${reconnectFailures})` : ""
           }â€¦`
         );
         await waitForGenerationPoll(
@@ -1164,42 +1130,47 @@ const token = userSession?.token || session?.access_token || '';
           : 0,
         currentAgent: data.job.current_agent,
         currentStep: data.job.current_step,
-        events: data.events || []
+        errorMessage: data.job.error_message,
+        failedStage: data.job.failed_stage,
+        retryable: Boolean(data.job.retryable),
+        startedAt: data.job.started_at,
+        completedAt: data.job.completed_at,
+        durationMs:
+          typeof data.job.duration_ms === "number"
+            ? data.job.duration_ms
+            : null,
+        events: data.events || [],
       });
 
-      if (state === 'queued') {
+      if (state === "queued") {
         const launched = await ensureGenerationLaunched(
           options.jobId,
           options.activeToken
         );
         setMessage(
           launched
-            ? 'Nexora.Ai is connecting the saved task to the generation workerâ€¦'
-            : 'The generation task is queued and waiting for its worker.'
+            ? "Nexora.Ai is connecting the saved task to the generation workerâ€¦"
+            : "The generation task is queued and waiting for its worker."
         );
-      } else if (state === 'failed') {
-        await clearGenerationState(options.jobId);
+      } else if (state === "failed") {
+        await clearGenerationState(options.jobId, false, false);
+        throw new Error(data.job.error_message || "Website generation failed.");
+      } else if (state === "cancelled") {
+        await clearGenerationState(options.jobId, false);
         throw new Error(
-          data.job.error_message || 'Website generation failed.'
+          data.job.error_message || "Website generation was cancelled."
         );
-      } else if (state === 'cancelled') {
-        await clearGenerationState(options.jobId);
-        throw new Error(
-          data.job.error_message || 'Website generation was cancelled.'
-        );
-      } else if (state === 'unknown') {
+      } else if (state === "unknown") {
         await clearGenerationState(options.jobId);
         throw new Error(
           `The backend returned an unknown generation status: ${
-            data.job.status || 'empty status'
+            data.job.status || "empty status"
           }.`
         );
-      } else if (state === 'completed') {
+      } else if (state === "completed") {
         if (!data.job.project_id) {
           await clearGenerationState(options.jobId);
-          throw new Error(
-            'Generation completed without a project identifier.'
-          );
+          throw new Error("Generation completed without a project identifier.");
         }
 
         const generated = await loadCompletedGeneration(
@@ -1219,16 +1190,116 @@ const token = userSession?.token || session?.access_token || '';
     return null;
   }
 
-  async function checkAccess(activeEmail: string, activeToken: string) {
-    const response = await fetch(`${config.apiBase}/auth/check-access`, {
-      method: 'POST', headers: { 'content-type': 'application/json', Authorization: `Bearer ${activeToken}` },
-      body: JSON.stringify({ email: activeEmail, installationId, deviceName: navigator.platform || 'Android device', androidVersion: navigator.userAgent.slice(0, 150) })
-    });
-    const data = await readResponse(response) as AccessResponse;
-    setAccess(data); setApproved(true); return data;
+  async function cancelGeneration(): Promise<void> {
+    if (!activity || !["queued", "running"].includes(activity.status)) return;
+    setError("");
+    try {
+      const response = await fetch(
+        `${config.apiBase}/generation-jobs/${activity.jobId}/cancel`,
+        {
+          method: "POST",
+          headers: authHeaders(),
+        }
+      );
+      const data = (await readResponse(response)) as { status: string };
+      setMessage(
+        data.status === "cancelled"
+          ? "Generation cancelled and its unused token reservation was refunded."
+          : "Cancellation requested. The bounded remote stage will stop at its next safe checkpoint."
+      );
+    } catch (cancelError) {
+      setError(
+        cancelError instanceof Error
+          ? cancelError.message
+          : "Could not cancel generation."
+      );
+    }
   }
 
+  async function retryGeneration(): Promise<void> {
+    if (!activity || activity.status !== "failed" || !activity.retryable)
+      return;
+    setError("");
+    setLoading(true);
+    generationInFlightRef.current = true;
+    try {
+      const response = await fetch(
+        `${config.apiBase}/generation-jobs/${activity.jobId}/retry`,
+        {
+          method: "POST",
+          headers: authHeaders(),
+        }
+      );
+      const data = (await readResponse(response)) as {
+        jobId: string;
+        status: string;
+        progress: number;
+        resumeFromStage: string;
+      };
+      localStorage.setItem(activeGenerationJobKey, data.jobId);
+      setActivity({
+        ...activity,
+        status: data.status,
+        progress: data.progress,
+        currentAgent: "Orchestrator",
+        currentStep: "retry_queued",
+        errorMessage: null,
+        failedStage: null,
+        retryable: false,
+      });
+      setMessage(
+        `Retrying from ${data.resumeFromStage} without another token charge…`
+      );
+      const payload = await loadGenerationLaunch(data.jobId);
+      if (!payload) {
+        throw new Error(
+          "The saved generation request is unavailable on this device. Start a new generation."
+        );
+      }
+      await ensureGenerationLaunched(data.jobId, token, payload);
+      const generated = await pollGenerationJob({
+        jobId: data.jobId,
+        activeEmail: email,
+        activeToken: token,
+        publishActivity: setActivity,
+      });
+      if (generated) {
+        setResult(generated);
+        setMessage(`${generated.plan.businessName} is ready.`);
+        await loadProjects();
+        setTab("preview");
+      }
+    } catch (retryError) {
+      setError(
+        retryError instanceof Error
+          ? retryError.message
+          : "Could not retry generation."
+      );
+    } finally {
+      generationInFlightRef.current = false;
+      setLoading(false);
+    }
+  }
 
+  async function checkAccess(activeEmail: string, activeToken: string) {
+    const response = await fetch(`${config.apiBase}/auth/check-access`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        Authorization: `Bearer ${activeToken}`,
+      },
+      body: JSON.stringify({
+        email: activeEmail,
+        installationId,
+        deviceName: navigator.platform || "Android device",
+        androidVersion: navigator.userAgent.slice(0, 150),
+      }),
+    });
+    const data = (await readResponse(response)) as AccessResponse;
+    setAccess(data);
+    setApproved(true);
+    return data;
+  }
 
   async function loadUsage() {
     if (!email || !token) return;
@@ -1237,23 +1308,20 @@ const token = userSession?.token || session?.access_token || '';
 
     try {
       const response = await fetch(
-        `${config.apiBase}/usage?email=${
-          encodeURIComponent(email)
-        }`,
+        `${config.apiBase}/usage?email=${encodeURIComponent(email)}`,
         {
-          headers: authHeaders(token)
+          headers: authHeaders(token),
         }
       );
 
-      const data =
-        await readResponse(response) as UsageData;
+      const data = (await readResponse(response)) as UsageData;
 
       setUsage(data);
     } catch (usageError) {
       setError(
         usageError instanceof Error
           ? usageError.message
-          : 'Could not load daily usage.'
+          : "Could not load daily usage."
       );
     } finally {
       setUsageLoading(false);
@@ -1264,64 +1332,84 @@ const token = userSession?.token || session?.access_token || '';
     if (!email || !token) return;
 
     setAnalyticsLoading(true);
-    setError('');
+    setError("");
 
     try {
       const response = await fetch(
-        `${config.apiBase}/analytics?email=${
-          encodeURIComponent(email)
-        }`,
+        `${config.apiBase}/analytics?email=${encodeURIComponent(email)}`,
         {
-          headers: authHeaders(token)
+          headers: authHeaders(token),
         }
       );
 
-      const data =
-        await readResponse(response) as AnalyticsData;
+      const data = (await readResponse(response)) as AnalyticsData;
 
       setAnalytics(data);
     } catch (analyticsError) {
       setError(
         analyticsError instanceof Error
           ? analyticsError.message
-          : 'Could not load analytics.'
+          : "Could not load analytics."
       );
     } finally {
       setAnalyticsLoading(false);
     }
   }
 
-async function loadProjects(activeEmail = email, activeToken = token) {
+  async function loadProjects(activeEmail = email, activeToken = token) {
     if (!activeEmail || !activeToken) return;
-    const response = await fetch(`${config.apiBase}/projects?email=${encodeURIComponent(activeEmail)}`, { headers: authHeaders(activeToken) });
-    const data = await readResponse(response) as { projects: ProjectSummary[] };
+    const response = await fetch(
+      `${config.apiBase}/projects?email=${encodeURIComponent(activeEmail)}`,
+      { headers: authHeaders(activeToken) }
+    );
+    const data = (await readResponse(response)) as {
+      projects: ProjectSummary[];
+    };
     setProjects(data.projects || []);
   }
 
   async function loadConnections(activeEmail = email, activeToken = token) {
     if (!activeEmail || !activeToken) return;
-    const response = await fetch(`${config.apiBase}/integrations/status?email=${encodeURIComponent(activeEmail)}`, { headers: authHeaders(activeToken) });
-    const data = await readResponse(response) as IntegrationStatus;
+    const response = await fetch(
+      `${config.apiBase}/integrations/status?email=${encodeURIComponent(
+        activeEmail
+      )}`,
+      { headers: authHeaders(activeToken) }
+    );
+    const data = (await readResponse(response)) as IntegrationStatus;
     setConnections(data);
   }
 
   async function bootstrap(activeSession: Session) {
     const activeEmail = activeSession.user.email?.toLowerCase();
-    if (!activeEmail) throw new Error('Your Supabase account has no email address.');
-    setSession(activeSession); setEmail(activeEmail);
+    if (!activeEmail)
+      throw new Error("Your Supabase account has no email address.");
+    setSession(activeSession);
+    setEmail(activeEmail);
     await checkAccess(activeEmail, activeSession.access_token);
-    await Promise.all([loadProjects(activeEmail, activeSession.access_token), loadConnections(activeEmail, activeSession.access_token)]);
+    await Promise.all([
+      loadProjects(activeEmail, activeSession.access_token),
+      loadConnections(activeEmail, activeSession.access_token),
+      loadAppearancePreference(activeSession.access_token),
+    ]);
   }
 
   useEffect(() => {
     if (!supabase) return;
-    void supabase.auth.getSession().then(({ data }) => { if (data.session) void bootstrap(data.session).catch(() => void supabase.auth.signOut()); });
-    const { data } = supabase.auth.onAuthStateChange((_event, activeSession) => {
-      if (!activeSession) { setSession(null); setApproved(false); }
+    void supabase.auth.getSession().then(({ data }) => {
+      if (data.session)
+        void bootstrap(data.session).catch(() => void supabase.auth.signOut());
     });
+    const { data } = supabase.auth.onAuthStateChange(
+      (_event, activeSession) => {
+        if (!activeSession) {
+          setSession(null);
+          setApproved(false);
+        }
+      }
+    );
     return () => data.subscription.unsubscribe();
   }, [supabase]);
-
 
   // RESTORE_USERNAME_SESSION
   useEffect(() => {
@@ -1340,20 +1428,17 @@ async function loadProjects(activeEmail = email, activeToken = token) {
     void requestJson<UsernameSession>(`${config.apiBase}/auth/me`, {
       headers: {
         Authorization: `Bearer ${saved.token}`,
-        'X-Device-Id': installationId
-      }
+        "X-Device-Id": installationId,
+      },
     })
       .then(async (data) => {
         const refreshed: UsernameSession = {
           ...saved,
           ...data,
-          token: saved.token
+          token: saved.token,
         };
 
-        localStorage.setItem(
-          userSessionKey,
-          JSON.stringify(refreshed)
-        );
+        localStorage.setItem(userSessionKey, JSON.stringify(refreshed));
 
         setUserSession(refreshed);
         setSession(null);
@@ -1363,67 +1448,54 @@ async function loadProjects(activeEmail = email, activeToken = token) {
           approved: true,
           role: refreshed.role,
           maxDevices: refreshed.maxDevices,
-          activeDevices: refreshed.activeDevices
+          activeDevices: refreshed.activeDevices,
         });
 
         setApproved(true);
 
-        const guideKey =
-          `nexora-token-guide-seen:${refreshed.username.toLowerCase()}`;
+        const guideKey = `nexora-token-guide-seen:${refreshed.username.toLowerCase()}`;
 
         if (!localStorage.getItem(guideKey)) {
           setShowSetupGuide(true);
-          setTab('connect');
+          setTab("connect");
         }
 
         await Promise.all([
-          loadProjects(
-            refreshed.internalEmail,
-            refreshed.token
-          ),
-          loadConnections(
-            refreshed.internalEmail,
-            refreshed.token
-          )
+          loadProjects(refreshed.internalEmail, refreshed.token),
+          loadConnections(refreshed.internalEmail, refreshed.token),
+          loadAppearancePreference(refreshed.token),
         ]);
       })
       .catch((startupError: unknown) => {
-      if (
-        startupError instanceof ApiRequestError &&
-        startupError.kind === 'unauthorized'
-      ) {
-        localStorage.removeItem(userSessionKey);
-        setUserSession(null);
+        if (
+          startupError instanceof ApiRequestError &&
+          startupError.kind === "unauthorized"
+        ) {
+          localStorage.removeItem(userSessionKey);
+          setUserSession(null);
+          setSession(null);
+          setApproved(false);
+          return;
+        }
+
+        setUserSession(saved);
         setSession(null);
+        setEmail(saved.internalEmail);
         setApproved(false);
-        return;
-      }
-
-      setUserSession(saved);
-      setSession(null);
-      setEmail(saved.internalEmail);
-      setApproved(false);
-      setError(
-        startupError instanceof Error
-          ? startupError.message
-          : 'Cannot verify the saved session. Check your connection and try again.'
-      );
-    });
+        setError(
+          startupError instanceof Error
+            ? startupError.message
+            : "Cannot verify the saved session. Check your connection and try again."
+        );
+      });
   }, [config.apiBase]);
-
 
   // RESUME_ACTIVE_GENERATION_JOB
   useEffect(() => {
     const jobId = localStorage.getItem(activeGenerationJobKey);
-    const activeToken = userSession?.token || session?.access_token || '';
+    const activeToken = userSession?.token || session?.access_token || "";
 
-    if (
-      !jobId ||
-      !approved ||
-      !activeToken ||
-      !email ||
-      !config.apiBase
-    ) {
+    if (!jobId || !approved || !activeToken || !email || !config.apiBase) {
       return;
     }
 
@@ -1433,8 +1505,8 @@ async function loadProjects(activeEmail = email, activeToken = token) {
     async function resumeGeneration(): Promise<void> {
       generationInFlightRef.current = true;
       setLoading(true);
-      setMessage('Restoring your active Nexora task…');
-      setError('');
+      setMessage("Restoring your active Nexora task…");
+      setError("");
 
       try {
         const generated = await pollGenerationJob({
@@ -1442,7 +1514,7 @@ async function loadProjects(activeEmail = email, activeToken = token) {
           activeEmail: email,
           activeToken,
           publishActivity: setActivity,
-          shouldStop: () => cancelled
+          shouldStop: () => cancelled,
         });
 
         if (!generated || cancelled) return;
@@ -1450,7 +1522,7 @@ async function loadProjects(activeEmail = email, activeToken = token) {
         setResult(generated);
         setMessage(`${generated.plan.businessName} is ready.`);
         await loadProjects(email, activeToken);
-        setTab('preview');
+        setTab("preview");
       } finally {
         if (!cancelled) {
           generationInFlightRef.current = false;
@@ -1465,7 +1537,7 @@ async function loadProjects(activeEmail = email, activeToken = token) {
       const errorMessage =
         resumeError instanceof Error
           ? resumeError.message
-          : 'Could not restore the active task.';
+          : "Could not restore the active task.";
 
       setError(errorMessage);
       setLoading(false);
@@ -1480,72 +1552,93 @@ async function loadProjects(activeEmail = email, activeToken = token) {
     config.apiBase,
     email,
     userSession?.token,
-    session?.access_token
+    session?.access_token,
   ]);
 
   function saveRuntimeConfig(next: RuntimeConfig) {
     if (!runtimeConfigOverrideAllowed) {
       setShowSetup(false);
-      setError('This release uses its verified build-time backend configuration.');
+      setError(
+        "This release uses its verified build-time backend configuration."
+      );
       return;
     }
 
     const clean = cleanRuntimeConfig(next);
-    if (!validConfig(clean)) { setError('Enter a valid API URL, Supabase project URL, and Supabase anon key.'); return; }
+    if (!validConfig(clean)) {
+      setError(
+        "Enter a valid API URL, Supabase project URL, and Supabase anon key."
+      );
+      return;
+    }
     localStorage.setItem(configKey, JSON.stringify(clean));
-    setConfig(clean); setShowSetup(false); setError(''); setMessage('Configuration saved inside the APK.');
+    setConfig(clean);
+    setShowSetup(false);
+    setError("");
+    setMessage("Configuration saved inside the APK.");
   }
 
   async function handleLogin(event: FormEvent) {
-    event.preventDefault(); setError(''); setMessage('');
-    if (!supabase) { setShowSetup(true); setError('Configure Supabase and the backend first.'); return; }
-    if (email.trim().toLowerCase() !== ownerEmail) { setError('Email OTP is reserved for the owner. Normal users must use username and password.'); return; }
+    event.preventDefault();
+    setError("");
+    setMessage("");
+    if (!supabase) {
+      setShowSetup(true);
+      setError("Configure Supabase and the backend first.");
+      return;
+    }
+    if (email.trim().toLowerCase() !== ownerEmail) {
+      setError(
+        "Email OTP is reserved for the owner. Normal users must use username and password."
+      );
+      return;
+    }
     setLoginLoading(true);
     try {
       if (!otpSent) {
-        const { error: sendError } = await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
+        const { error: sendError } = await supabase.auth.signInWithOtp({
+          email,
+          options: { shouldCreateUser: false },
+        });
         if (sendError) throw sendError;
-        setOtpSent(true); setMessage('OTP sent to your approved email.'); return;
+        setOtpSent(true);
+        setMessage("OTP sent to your approved email.");
+        return;
       }
-      if (!/^\d{6,8}$/.test(otp.trim())) throw new Error('Enter the OTP sent to your email.');
-      const { data, error: verifyError } = await supabase.auth.verifyOtp({ email, token: otp.trim(), type: 'email' });
-      if (verifyError || !data.session) throw verifyError || new Error('OTP verification failed.');
+      if (!/^\d{6,8}$/.test(otp.trim()))
+        throw new Error("Enter the OTP sent to your email.");
+      const { data, error: verifyError } = await supabase.auth.verifyOtp({
+        email,
+        token: otp.trim(),
+        type: "email",
+      });
+      if (verifyError || !data.session)
+        throw verifyError || new Error("OTP verification failed.");
       await bootstrap(data.session);
-    } catch (loginError) { setError(loginError instanceof Error ? loginError.message : 'Login failed.'); }
-    finally { setLoginLoading(false); }
+    } catch (loginError) {
+      setError(
+        loginError instanceof Error ? loginError.message : "Login failed."
+      );
+    } finally {
+      setLoginLoading(false);
+    }
   }
-
 
   async function handleUsernameLogin(event: FormEvent) {
     event.preventDefault();
     setLoginLoading(true);
-    setError('');
-    setMessage('');
+    setError("");
+    setMessage("");
 
     const loginPayload = {
       username: username.trim(),
       password,
       installationId,
-      deviceName: navigator.platform || 'Android device',
-      androidVersion: navigator.userAgent.slice(0, 150)
+      deviceName: navigator.platform || "Android device",
+      androidVersion: navigator.userAgent.slice(0, 150),
     };
 
     try {
-      if (username.trim().includes("@")) {
-        const admin = await loginAdmin(config.apiBase, {
-          username: username.trim(),
-          password
-        });
-
-        localStorage.removeItem(userSessionKey);
-        localStorage.setItem("wmai-admin-session", admin.token);
-        setPassword("");
-        setForceUserLogin(false);
-        setMode("admin-dashboard");
-        replaceAppPath(adminLoginPath);
-        return;
-      }
-
       const data = await loginNormalUser(config.apiBase, loginPayload);
 
       if (supabase) {
@@ -1553,7 +1646,7 @@ async function loadProjects(activeEmail = email, activeToken = token) {
       }
 
       localStorage.setItem(userSessionKey, JSON.stringify(data));
-      localStorage.removeItem('wmai-admin-session');
+      localStorage.removeItem("wmai-admin-session");
 
       setUserSession(data);
       setSession(null);
@@ -1562,29 +1655,24 @@ async function loadProjects(activeEmail = email, activeToken = token) {
         approved: true,
         role: data.role,
         maxDevices: data.maxDevices,
-        activeDevices: data.activeDevices
+        activeDevices: data.activeDevices,
       });
       setApproved(true);
       setForceUserLogin(false);
-      setPassword('');
-      setTab('chat');
-      replaceAppPath('/');
+      setPassword("");
+      setTab("chat");
+      replaceAppPath("/");
 
       await Promise.all([
         loadProjects(data.internalEmail, data.token),
-        loadConnections(data.internalEmail, data.token)
+        loadConnections(data.internalEmail, data.token),
       ]);
     } catch (loginError) {
-      if (
-        loginError instanceof ApiRequestError &&
-        loginError.status === 401
-      ) {
-        setError('Incorrect username or password.');
+      if (loginError instanceof ApiRequestError && loginError.status === 401) {
+        setError("Incorrect username or password.");
       } else {
         setError(
-          loginError instanceof Error
-            ? loginError.message
-            : 'Login failed.'
+          loginError instanceof Error ? loginError.message : "Login failed."
         );
       }
     } finally {
@@ -1592,14 +1680,16 @@ async function loadProjects(activeEmail = email, activeToken = token) {
     }
   }
 
-  function handleAdminMode(nextMode: 'user' | 'admin-login' | 'admin-dashboard') {
-    setError('');
-    setMessage('');
-    setPassword('');
+  function handleAdminMode(
+    nextMode: "user" | "admin-login" | "admin-dashboard"
+  ) {
+    setError("");
+    setMessage("");
+    setPassword("");
     setShowLoginPassword(false);
-    setForceUserLogin(nextMode === 'user');
+    setForceUserLogin(nextMode === "user");
     setMode(nextMode);
-    replaceAppPath(nextMode === 'user' ? userLoginPath : adminLoginPath);
+    replaceAppPath(nextMode === "user" ? userLoginPath : adminLoginPath);
   }
 
   async function generateWebsite(
@@ -1609,73 +1699,48 @@ async function loadProjects(activeEmail = email, activeToken = token) {
       name: string;
       dataUrl: string;
     } | null,
-    generationOptions?: GenerationModeOptions | null,
     activityListener?: (activity: LiveBuildActivity) => void
   ): Promise<GenerateResponse | null> {
-    const basePrompt =
-      (customPrompt || prompt).trim();
+    const basePrompt = (customPrompt || prompt).trim();
 
-    const capabilityInstruction =
-      capabilityPacks
-        .filter((pack) =>
-          selectedCapabilityIds.includes(pack.id)
-        )
-        .map((pack) =>
-          `[${pack.name}] ${pack.instruction}`
-        )
-        .join('\n');
-
-    const motionInstruction =
-      generationOptions?.mode === 'saas-motion'
-        ? [
-            '\n\n[SAAS MOTION MODE — HIGH DETAIL]',
-            'The attached image is a chronological contact sheet extracted locally',
-            `from ${generationOptions.motionFrameCount || 6} keyframes of a`,
-            `${generationOptions.motionDurationSeconds?.toFixed(1) || 'short'} second animation reference.`,
-            'Study the visual rhythm, direction of movement, depth, easing,',
-            'layering, transitions, dashboard motion and camera-like movement.',
-            'Recreate the motion language with performant CSS and React.',
-            'Do not copy trademarks, logos, text or copyrighted brand assets.',
-            `User motion brief: ${generationOptions.motionBrief || 'Create an original SaaS experience using this motion language.'}`
-          ].join('\n')
-        : '';
+    const capabilityInstruction = capabilityPacks
+      .filter((pack) => selectedCapabilityIds.includes(pack.id))
+      .map((pack) => `[${pack.name}] ${pack.instruction}`)
+      .join("\n");
 
     const activePrompt = [
       basePrompt,
       capabilityInstruction
         ? `\nEnabled capability packs:\n${capabilityInstruction}`
-        : '',
-      motionInstruction
+        : "",
     ]
-      .join('')
+      .join("")
       .slice(0, 6000);
 
-    const imageMatch = image?.dataUrl.match(
-      /^data:([^;]+);base64,(.+)$/s
-    );
+    const imageMatch = image?.dataUrl.match(/^data:([^;]+);base64,(.+)$/s);
 
     const visionImage = imageMatch
       ? {
           mimeType: imageMatch[1],
           data: imageMatch[2],
-          name: image?.name || 'reference-image'
+          name: image?.name || "reference-image",
         }
       : undefined;
 
     if (!approved || activePrompt.length < 20) {
-      setError('Please enter a detailed website request.');
+      setError("Please enter a detailed website request.");
       return null;
     }
 
     if (generationInFlightRef.current) {
-      setError('A website build is already running.');
+      setError("A website build is already running.");
       return null;
     }
 
     generationInFlightRef.current = true;
     setLoading(true);
-    setError('');
-    setMessage('Nexora Council is starting…');
+    setError("");
+    setMessage("Nexora Council is starting…");
 
     const publishActivity = (next: LiveBuildActivity): void => {
       setActivity(next);
@@ -1686,55 +1751,53 @@ async function loadProjects(activeEmail = email, activeToken = token) {
       installationId,
       prompt: activePrompt,
       image: visionImage,
-      generationMode: generationOptions?.mode || 'standard',
-      ...(generationOptions?.motionBrief
-        ? { motionBrief: generationOptions.motionBrief }
+      ...(thinkMaxEnabled ? { thinkMax: true } : {}),
+      ...(websitePalette.id !== "auto"
+        ? {
+            websitePalette: {
+              id: websitePalette.id,
+              label: websitePalette.label,
+              primary: websitePalette.primary,
+              secondary: websitePalette.secondary,
+              background: websitePalette.background,
+              text: websitePalette.text,
+            },
+          }
         : {}),
-      ...(typeof generationOptions?.motionFrameCount === 'number'
-        ? { motionFrameCount: generationOptions.motionFrameCount }
-        : {}),
-      ...(typeof generationOptions?.motionDurationSeconds === 'number'
-        ? { motionDurationSeconds: generationOptions.motionDurationSeconds }
-        : {}),
-      ...(thinkMaxEnabled ? { thinkMax: true } : {})
     };
 
     try {
       const startResponse = await fetch(
         `${config.apiBase}/generation-jobs/start`,
         {
-          method: 'POST',
+          method: "POST",
           headers: {
-            'content-type': 'application/json',
-            ...authHeaders()
+            "content-type": "application/json",
+            ...authHeaders(),
           },
-          body: JSON.stringify(launchPayload)
+          body: JSON.stringify(launchPayload),
         }
       );
 
-      const started = await readResponse(startResponse) as {
+      const started = (await readResponse(startResponse)) as {
         jobId: string;
         status: string;
         progress: number;
       };
 
-      localStorage.setItem(
-        activeGenerationJobKey,
-        started.jobId
-      );
+      localStorage.setItem(activeGenerationJobKey, started.jobId);
 
-      await saveGenerationLaunch(
-        started.jobId,
-        launchPayload
-      ).catch(() => undefined);
+      await saveGenerationLaunch(started.jobId, launchPayload).catch(
+        () => undefined
+      );
 
       publishActivity({
         jobId: started.jobId,
         status: started.status,
         progress: started.progress,
-        currentAgent: 'Orchestrator',
-        currentStep: 'request_received',
-        events: []
+        currentAgent: "Orchestrator",
+        currentStep: "request_received",
+        events: [],
       });
 
       await ensureGenerationLaunched(started.jobId, token, launchPayload);
@@ -1742,24 +1805,24 @@ async function loadProjects(activeEmail = email, activeToken = token) {
         jobId: started.jobId,
         activeEmail: email,
         activeToken: token,
-        publishActivity
+        publishActivity,
       });
 
       if (!generated) {
-        throw new Error('Generation tracking ended before completion.');
+        throw new Error("Generation tracking ended before completion.");
       }
 
       setResult(generated);
       setMessage(`${generated.plan.businessName} is ready.`);
       await loadProjects();
 
-      if (!returnResult) setTab('preview');
+      if (!returnResult) setTab("preview");
       return generated;
     } catch (generationError) {
       const generationMessage =
         generationError instanceof Error
           ? generationError.message
-          : 'Website generation failed.';
+          : "Website generation failed.";
 
       setError(generationMessage);
 
@@ -1776,100 +1839,100 @@ async function loadProjects(activeEmail = email, activeToken = token) {
 
   async function editWebsite() {
     if (!result || !editInstruction.trim()) return;
-    setLoading(true); setError(''); setMessage('The AI editor is applying your changes…');
+    setLoading(true);
+    setError("");
+    setMessage("The AI editor is applying your changes…");
     try {
-      const response = await fetch(`${config.apiBase}/projects/${result.projectId}/edit`, { method: 'POST', headers: { 'content-type': 'application/json', ...authHeaders() }, body: JSON.stringify({ email, installationId, instruction: editInstruction }) });
-      const data = await readResponse(response) as GenerateResponse;
-      setResult(data); setEditInstruction(''); setMessage(`Version ${data.versionNumber || 'new'} created.`); await loadProjects();
-    } catch (editError) { setError(editError instanceof Error ? editError.message : 'Editing failed.'); }
-    finally { setLoading(false); }
+      const response = await fetch(
+        `${config.apiBase}/projects/${result.projectId}/edit`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", ...authHeaders() },
+          body: JSON.stringify({
+            email,
+            installationId,
+            instruction: editInstruction,
+          }),
+        }
+      );
+      const data = (await readResponse(response)) as GenerateResponse;
+      setResult(data);
+      setEditInstruction("");
+      setMessage(`Version ${data.versionNumber || "new"} created.`);
+      await loadProjects();
+    } catch (editError) {
+      setError(
+        editError instanceof Error ? editError.message : "Editing failed."
+      );
+    } finally {
+      setLoading(false);
+    }
   }
 
-
-  async function downloadProjectSource(
-    projectId: string
-  ) {
+  async function downloadProjectSource(projectId: string) {
     if (!email || !token) return;
 
     setDownloadingProjectId(projectId);
-    setError('');
-    setMessage('');
+    setError("");
+    setMessage("");
 
     try {
       const response = await fetch(
-        `${config.apiBase}/projects/${
-          encodeURIComponent(projectId)
-        }/source?email=${
-          encodeURIComponent(email)
-        }`,
+        `${config.apiBase}/projects/${encodeURIComponent(
+          projectId
+        )}/source?email=${encodeURIComponent(email)}`,
         {
-          headers: authHeaders(token)
+          headers: authHeaders(token),
         }
       );
 
-      const source =
-        await readResponse(
-          response
-        ) as ProjectSourceResponse;
+      const source = (await readResponse(response)) as ProjectSourceResponse;
 
       const zip = createSourceZip(source.files);
 
-      const filename =
-        `${safeDownloadName(
-          source.projectName
-        )}-v${source.versionNumber}.zip`;
+      const filename = `${safeDownloadName(source.projectName)}-v${
+        source.versionNumber
+      }.zip`;
 
-      const file = new File(
-        [zip],
-        filename,
-        {
-          type: 'application/zip'
-        }
-      );
+      const file = new File([zip], filename, {
+        type: "application/zip",
+      });
 
-      const sharingNavigator =
-        navigator as Navigator & {
-          canShare?: (
-            data?: ShareData
-          ) => boolean;
-        };
+      const sharingNavigator = navigator as Navigator & {
+        canShare?: (data?: ShareData) => boolean;
+      };
 
       if (
-        typeof navigator.share === 'function' &&
+        typeof navigator.share === "function" &&
         sharingNavigator.canShare?.({
-          files: [file]
+          files: [file],
         })
       ) {
         await navigator.share({
           title: `${source.projectName} source code`,
-          text: 'Nexora.Ai React project source',
-          files: [file]
+          text: "Nexora.Ai React project source",
+          files: [file],
         });
       } else {
         const url = URL.createObjectURL(zip);
-        const anchor = document.createElement('a');
+        const anchor = document.createElement("a");
 
         anchor.href = url;
         anchor.download = filename;
-        anchor.style.display = 'none';
+        anchor.style.display = "none";
 
         document.body.appendChild(anchor);
         anchor.click();
         anchor.remove();
 
-        window.setTimeout(
-          () => URL.revokeObjectURL(url),
-          30000
-        );
+        window.setTimeout(() => URL.revokeObjectURL(url), 30000);
       }
 
-      setMessage(
-        `${source.projectName} source ZIP is ready.`
-      );
+      setMessage(`${source.projectName} source ZIP is ready.`);
     } catch (downloadError) {
       if (
         downloadError instanceof DOMException &&
-        downloadError.name === 'AbortError'
+        downloadError.name === "AbortError"
       ) {
         return;
       }
@@ -1877,71 +1940,103 @@ async function loadProjects(activeEmail = email, activeToken = token) {
       setError(
         downloadError instanceof Error
           ? downloadError.message
-          : 'Could not download project source.'
+          : "Could not download project source."
       );
     } finally {
       setDownloadingProjectId(null);
     }
   }
 
-async function openProject(projectId: string) {
-    setLoading(true); setError('');
+  async function openProject(projectId: string) {
+    setLoading(true);
+    setError("");
     try {
-      const response = await fetch(`${config.apiBase}/projects/${projectId}?email=${encodeURIComponent(email)}`, { headers: authHeaders() });
-      const data = await readResponse(response) as { version: { version_number: number; plan: WebsitePlan; preview_html: string; full_stack_report?: FullStackReport | null } };
-      setResult({ projectId, versionNumber: data.version.version_number, plan: data.version.plan, previewHtml: data.version.preview_html, framework: 'vite-react', fileCount: 9, mode: 'built-in' }); setTab('preview');
-    } catch (projectError) { setError(projectError instanceof Error ? projectError.message : 'Could not open project.'); }
-    finally { setLoading(false); }
+      const response = await fetch(
+        `${config.apiBase}/projects/${projectId}?email=${encodeURIComponent(
+          email
+        )}`,
+        { headers: authHeaders() }
+      );
+      const data = (await readResponse(response)) as {
+        version: {
+          version_number: number;
+          plan: WebsitePlan;
+          preview_html: string;
+          full_stack_report?: FullStackReport | null;
+        };
+      };
+      setResult({
+        projectId,
+        versionNumber: data.version.version_number,
+        plan: data.version.plan,
+        previewHtml: data.version.preview_html,
+        framework: "vite-react",
+        fileCount: 9,
+        mode: "built-in",
+      });
+      setTab("preview");
+    } catch (projectError) {
+      setError(
+        projectError instanceof Error
+          ? projectError.message
+          : "Could not open project."
+      );
+    } finally {
+      setLoading(false);
+    }
   }
 
-
   async function connectWithToken(
-    provider: 'github' | 'vercel',
+    provider: "github" | "vercel",
     rawToken: string
   ) {
     const cleanToken = rawToken.trim();
 
     if (cleanToken.length < 10) {
-      setError(`Paste a valid ${provider === 'github' ? 'GitHub' : 'Vercel'} access token.`);
+      setError(
+        `Paste a valid ${
+          provider === "github" ? "GitHub" : "Vercel"
+        } access token.`
+      );
       return;
     }
 
     setConnectingProvider(provider);
-    setError('');
+    setError("");
     setMessage(`Checking ${provider} token…`);
 
     try {
       const response = await fetch(
         `${config.apiBase}/integrations/${provider}/token`,
         {
-          method: 'POST',
+          method: "POST",
           headers: {
-            'content-type': 'application/json',
-            ...authHeaders()
+            "content-type": "application/json",
+            ...authHeaders(),
           },
           body: JSON.stringify({
             email,
             installationId,
-            token: cleanToken
-          })
+            token: cleanToken,
+          }),
         }
       );
 
-      const data = await readResponse(response) as {
+      const data = (await readResponse(response)) as {
         accountName?: string;
       };
 
-      if (provider === 'github') {
-        setGithubToken('');
+      if (provider === "github") {
+        setGithubToken("");
       } else {
-        setVercelToken('');
+        setVercelToken("");
       }
 
       await loadConnections();
 
       setMessage(
-        `${provider === 'github' ? 'GitHub' : 'Vercel'} connected${
-          data.accountName ? ` as ${data.accountName}` : ''
+        `${provider === "github" ? "GitHub" : "Vercel"} connected${
+          data.accountName ? ` as ${data.accountName}` : ""
         }.`
       );
     } catch (connectionError) {
@@ -1956,64 +2051,92 @@ async function openProject(projectId: string) {
   }
 
   async function refreshConnections() {
-    setError('');
-    try { await loadConnections(); setMessage('Connection status refreshed.'); }
-    catch (connectionError) { setError(connectionError instanceof Error ? connectionError.message : 'Could not refresh connections.'); }
+    setError("");
+    try {
+      await loadConnections();
+      setMessage("Connection status refreshed.");
+    } catch (connectionError) {
+      setError(
+        connectionError instanceof Error
+          ? connectionError.message
+          : "Could not refresh connections."
+      );
+    }
   }
 
   async function publishWebsite() {
     if (!result) return;
-    setPublishing(true); setError(''); setMessage('Running final checks, GitHub push, and Vercel preview…');
+    setPublishing(true);
+    setError("");
+    setMessage("Running final checks, GitHub push, and Vercel preview…");
     try {
-      const response = await fetch(`${config.apiBase}/projects/${result.projectId}/publish`, { method: 'POST', headers: { 'content-type': 'application/json', ...authHeaders() }, body: JSON.stringify({ email, installationId }) });
-      const data = await readResponse(response) as { productionUrl: string; state: string };
-      setMessage(`Published. Vercel state: ${data.state}`); await loadProjects(); if (data.productionUrl) await Browser.open({ url: data.productionUrl });
-    } catch (publishError) { setError(publishError instanceof Error ? publishError.message : 'Publishing failed.'); }
-    finally { setPublishing(false); }
+      const response = await fetch(
+        `${config.apiBase}/projects/${result.projectId}/publish`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", ...authHeaders() },
+          body: JSON.stringify({ email, installationId }),
+        }
+      );
+      const data = (await readResponse(response)) as {
+        productionUrl: string;
+        state: string;
+      };
+      setMessage(`Published. Vercel state: ${data.state}`);
+      await loadProjects();
+      if (data.productionUrl) await Browser.open({ url: data.productionUrl });
+    } catch (publishError) {
+      setError(
+        publishError instanceof Error
+          ? publishError.message
+          : "Publishing failed."
+      );
+    } finally {
+      setPublishing(false);
+    }
   }
 
   async function changeOwnPassword(event: FormEvent) {
     event.preventDefault();
 
     if (!userSession?.token) {
-      setError('Password changes are available for username accounts.');
+      setError("Password changes are available for username accounts.");
       return;
     }
 
     if (newAccountPassword !== confirmAccountPassword) {
-      setError('The new password confirmation does not match.');
+      setError("The new password confirmation does not match.");
       return;
     }
 
     setPasswordChanging(true);
-    setError('');
-    setMessage('');
+    setError("");
+    setMessage("");
 
     try {
-      await requestJson<{ changed: true }>(
-        `${config.apiBase}/auth/password`,
-        {
-          method: 'PATCH',
-          headers: {
-            'content-type': 'application/json',
-            Authorization: `Bearer ${userSession.token}`
-          },
-          body: JSON.stringify({
-            currentPassword,
-            newPassword: newAccountPassword
-          })
-        }
-      );
+      await requestJson<{ changed: true }>(`${config.apiBase}/auth/password`, {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+          Authorization: `Bearer ${userSession.token}`,
+        },
+        body: JSON.stringify({
+          currentPassword,
+          newPassword: newAccountPassword,
+        }),
+      });
 
-      setCurrentPassword('');
-      setNewAccountPassword('');
-      setConfirmAccountPassword('');
-      setMessage('Password changed. Other logged-in devices must sign in again.');
+      setCurrentPassword("");
+      setNewAccountPassword("");
+      setConfirmAccountPassword("");
+      setMessage(
+        "Password changed. Other logged-in devices must sign in again."
+      );
     } catch (changeError) {
       setError(
         changeError instanceof Error
           ? changeError.message
-          : 'Could not change the password.'
+          : "Could not change the password."
       );
     } finally {
       setPasswordChanging(false);
@@ -2023,10 +2146,10 @@ async function openProject(projectId: string) {
   async function logout() {
     if (userSession?.token) {
       await fetch(`${config.apiBase}/auth/logout`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          Authorization: `Bearer ${userSession.token}`
-        }
+          Authorization: `Bearer ${userSession.token}`,
+        },
       }).catch(() => undefined);
     }
 
@@ -2035,6 +2158,7 @@ async function openProject(projectId: string) {
     }
 
     localStorage.removeItem(userSessionKey);
+    localStorage.removeItem(activeGenerationJobKey);
 
     setUserSession(null);
     setForceUserLogin(false);
@@ -2042,26 +2166,44 @@ async function openProject(projectId: string) {
     setAccess(null);
     setSession(null);
     setEmail(ownerEmail);
-    setUsername('');
-    setPassword('');
-    setCurrentPassword('');
-    setNewAccountPassword('');
-    setConfirmAccountPassword('');
-    setOtp('');
+    setUsername("");
+    setPassword("");
+    setCurrentPassword("");
+    setNewAccountPassword("");
+    setConfirmAccountPassword("");
+    setOtp("");
     setOtpSent(false);
     setResult(null);
     setProjects([]);
     setConnections({
       github: null,
-      vercel: null
+      vercel: null,
     });
-    setTab('chat');
-    setError('');
-    setMessage('');
+    setTab("chat");
+    setError("");
+    setMessage("");
   }
 
-  if (showSetup) return <SetupScreen config={config} onSave={saveRuntimeConfig} onCancel={validConfig(config) ? () => setShowSetup(false) : undefined} error={error} />;
-  if (mode === 'admin-login' || mode === 'admin-dashboard') return <AdminPanelV5 apiBase={config.apiBase} initialMode={mode} onMode={handleAdminMode} onSetup={runtimeConfigOverrideAllowed ? () => setShowSetup(true) : undefined} />;
+  if (showSetup)
+    return (
+      <SetupScreen
+        config={config}
+        onSave={saveRuntimeConfig}
+        onCancel={validConfig(config) ? () => setShowSetup(false) : undefined}
+        error={error}
+      />
+    );
+  if (mode === "admin-login" || mode === "admin-dashboard")
+    return (
+      <AdminPanelV5
+        apiBase={config.apiBase}
+        initialMode={mode}
+        onMode={handleAdminMode}
+        onSetup={
+          runtimeConfigOverrideAllowed ? () => setShowSetup(true) : undefined
+        }
+      />
+    );
 
   if (!approved || forceUserLogin) {
     return (
@@ -2093,7 +2235,7 @@ async function openProject(projectId: string) {
                 <input
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
-                  type={showLoginPassword ? 'text' : 'password'}
+                  type={showLoginPassword ? "text" : "password"}
                   autoComplete="current-password"
                   disabled={loginLoading}
                   required
@@ -2101,12 +2243,14 @@ async function openProject(projectId: string) {
                 <button
                   type="button"
                   className="password-visibility-toggle"
-                  aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                  aria-label={
+                    showLoginPassword ? "Hide password" : "Show password"
+                  }
                   aria-pressed={showLoginPassword}
                   disabled={loginLoading}
                   onClick={() => setShowLoginPassword((visible) => !visible)}
                 >
-                  {showLoginPassword ? 'Hide' : 'Show'}
+                  {showLoginPassword ? "Hide" : "Show"}
                 </button>
               </span>
             </label>
@@ -2117,438 +2261,600 @@ async function openProject(projectId: string) {
               aria-busy={loginLoading}
               disabled={loginLoading}
             >
-              {loginLoading ? 'Signing in…' : 'Log In'}
+              {loginLoading ? "Signing in…" : "Log In"}
             </button>
           </form>
 
           {message && <p className="success">{message}</p>}
-          {error && <p className="error" role="alert">{error}</p>}
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
 
-          <p className="login-security-note">
-            Protected workspace access
-          </p>
+          <p className="login-security-note">Protected workspace access</p>
         </section>
       </main>
     );
   }
 
-  return <main
-    className={
-      tab === 'chat'
-        ? 'app-shell chat-page-active'
-        : 'app-shell'
-    }
-  >
-    <header><div><p className="eyebrow">Nexora.Ai</p><h1>Build and publish without coding</h1></div></header>
-    <nav className="nexora-app-nav">
-      <button
-        className={tab === 'chat' ? 'active' : ''}
-        onClick={() => setTab('chat')}
-      >
-        Chat
-      </button>
-
-      <button
-        className={tab === 'create' ? 'active' : ''}
-        onClick={() => setTab('create')}
-      >
-        Create
-      </button>
-
-      <button
-        className={tab === 'packs' ? 'active' : ''}
-        onClick={() => setTab('packs')}
-      >
-        Packs
-        {selectedCapabilityIds.length > 0 && (
-          <small className="pack-nav-count">
-            {selectedCapabilityIds.length}
-          </small>
-        )}
-      </button>
-
-      <button
-        className={tab === 'templates' ? 'active' : ''}
-        onClick={() => setTab('templates')}
-      >
-        Templates
-      </button>
-
-      <button
-        className={tab === 'preview' ? 'active' : ''}
-        onClick={() => setTab('preview')}
-      >
-        Preview
-      </button>
-
-      <button
-        className={tab === 'projects' ? 'active my-webs-tab' : 'my-webs-tab'}
-        onClick={() => {
-          setTab('projects');
-          void loadProjects();
-        }}
-      >
-        <span>Projects</span>
-        {projects.length > 0 && (
-          <small className="my-webs-count">
-            {projects.length}
-          </small>
-        )}
-      </button>
-
-      <button
-        className={tab === 'analytics' ? 'active' : ''}
-        onClick={() => {
-          setTab('analytics');
-          void loadAnalytics();
-        }}
-      >
-        Analytics
-      </button>
-
-      <button
-        className={tab === 'connect' ? 'active' : ''}
-        onClick={() => setTab('connect')}
-      >
-        Connect
-      </button>
-
-      <button
-              type="button"
-              className={tab === 'cms' ? 'active' : ''}
-              onClick={() => setTab('cms')}
-            >
-              CMS
-            </button>
-
-            <button
-        className={tab === 'account' ? 'active' : ''}
-        onClick={() => setTab('account')}
-      >
-        Account
-      </button>
-    </nav>
-    {message && <p className="success notice-wide">{message}</p>}{error && <p className="error notice-wide" role="alert">{error}</p>}
-    <div
-      className={
-        tab === 'chat'
-          ? 'nexora-main-content chat-content'
-          : 'nexora-main-content'
-      }
+  return (
+    <main
+      className={tab === "chat" ? "app-shell chat-page-active" : "app-shell"}
     >
-    {tab === 'chat' && (
-      <ChatStudio
-        busy={loading}
-        userKey={userSession?.internalEmail || session?.user?.email || email}
-        activity={activity}
-        thinkMaxEnabled={thinkMaxEnabled}
-        onThinkMaxChange={setThinkMaxEnabled}
-        onOpenPreview={() => setTab('preview')}
-        onNavigate={(nextTab) => {
-          setTab(nextTab);
+      <header>
+        <div>
+          <p className="eyebrow">Nexora.Ai</p>
+          <h1>Build and publish without coding</h1>
+        </div>
+      </header>
+      <nav className="nexora-app-nav">
+        <button
+          className={tab === "chat" ? "active" : ""}
+          onClick={() => setTab("chat")}
+        >
+          Chat
+        </button>
 
-          if (nextTab === 'projects') {
-            void loadProjects();
-          }
-        }}
-        onChat={async (chatPrompt, chatHistory, attachment) => {
-          if (!token) throw new Error('Please log in again.');
-          const response = await fetch(`${config.apiBase}/assistant/chat`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json', Authorization: `Bearer ${token}`, 'X-Device-Id': installationId },
-            body: JSON.stringify({
-              message: chatPrompt,
-              username: userSession?.username || username || email.split('@')[0],
-              history: chatHistory.map((item) => ({ role: item.role, text: item.text })),
-              email: userSession?.internalEmail || session?.user?.email || email,
-              installationId,
-                    attachment: attachment ? { name: attachment.name, dataUrl: attachment.dataUrl } : null
-            })
-          });
-          const data = await response.json() as {
-            reply?: string;
-            error?: string;
-            providerErrors?: string[];
-            processingDurationMs?: number;
-            usage?: ChatAssistantReply['tokenUsage'];
-          };
-          if (!response.ok || !data.reply) throw new Error(data.error || data.providerErrors?.join(' | ') || 'Assistant request failed.');
-          return {
-            text: data.reply,
-            processingDurationMs:
-              typeof data.processingDurationMs === 'number'
-                ? data.processingDurationMs
-                : null,
-            tokenUsage: data.usage || null
-          };
-        }}
-        onGenerate={async (
-          chatPrompt,
-          chatImage,
-          generationOptions,
-          activityListener
-        ) => {
-          const generated = await generateWebsite(
-            chatPrompt,
-            true,
-            chatImage,
-            generationOptions,
-            activityListener
-          );
+        <button
+          className={tab === "create" ? "active" : ""}
+          onClick={() => setTab("create")}
+        >
+          Create
+        </button>
 
-          return generated
-            ? { projectName: generated.plan.businessName }
-            : null;
-        }}
-      />
-    )}
-
-    {tab === 'packs' && (
-      <section className="panel capability-panel">
-        <div className="capability-heading">
-          <div>
-            <p className="eyebrow">
-              WEBSITE POWER-UPS
-            </p>
-
-            <h2>Capability packs</h2>
-
-            <p className="muted">
-              Select extra capabilities that the AI council
-              must include in every generated website.
-            </p>
-          </div>
-
+        <button
+          className={tab === "packs" ? "active" : ""}
+          onClick={() => setTab("packs")}
+        >
+          Packs
           {selectedCapabilityIds.length > 0 && (
-            <button
-              type="button"
-              className="refresh"
-              onClick={() =>
-                setSelectedCapabilityIds([])
-              }
-            >
-              Clear all
-            </button>
+            <small className="pack-nav-count">
+              {selectedCapabilityIds.length}
+            </small>
           )}
-        </div>
+        </button>
 
-        <div className="capability-summary">
-          <strong>
-            {selectedCapabilityIds.length}
-          </strong>
+        <button
+          className={tab === "templates" ? "active" : ""}
+          onClick={() => setTab("templates")}
+        >
+          Templates
+        </button>
 
-          <span>
-            active capability
-            {selectedCapabilityIds.length === 1
-              ? ''
-              : ' packs'}
-          </span>
-        </div>
+        <button
+          className={tab === "preview" ? "active" : ""}
+          onClick={() => setTab("preview")}
+        >
+          Preview
+        </button>
 
-        <div className="capability-grid">
-          {capabilityPacks.map((pack) => {
-            const selected =
-              selectedCapabilityIds.includes(
-                pack.id
-              );
+        <button
+          className={tab === "projects" ? "active my-webs-tab" : "my-webs-tab"}
+          onClick={() => {
+            setTab("projects");
+            void loadProjects();
+          }}
+        >
+          <span>Projects</span>
+          {projects.length > 0 && (
+            <small className="my-webs-count">{projects.length}</small>
+          )}
+        </button>
 
-            return (
-              <article
-                className={
-                  selected
-                    ? 'capability-card selected'
-                    : 'capability-card'
-                }
-                key={pack.id}
-              >
-                <div className="capability-card-top">
-                  <span>{pack.icon}</span>
+        <button
+          className={tab === "live-sites" ? "active" : ""}
+          onClick={() => setTab("live-sites")}
+        >
+          My Live Websites
+        </button>
 
-                  <button
-                    type="button"
-                    className="capability-toggle"
-                    aria-pressed={selected}
-                    onClick={() => {
-                      setSelectedCapabilityIds(
-                        (current) =>
-                          current.includes(pack.id)
-                            ? current.filter(
-                                (id) => id !== pack.id
-                              )
-                            : [...current, pack.id]
-                      );
-                    }}
-                  >
-                    {selected ? 'Enabled' : 'Enable'}
-                  </button>
-                </div>
+        <button
+          className={tab === "analytics" ? "active" : ""}
+          onClick={() => {
+            setTab("analytics");
+            void loadAnalytics();
+          }}
+        >
+          Analytics
+        </button>
 
-                <div>
-                  <h3>{pack.name}</h3>
-                  <p>{pack.description}</p>
-                </div>
-
-                <div className="capability-features">
-                  {pack.features.map((feature) => (
-                    <span key={feature}>
-                      {feature}
-                    </span>
-                  ))}
-                </div>
-              </article>
-            );
-          })}
-        </div>
+        <button
+          className={tab === "connect" ? "active" : ""}
+          onClick={() => setTab("connect")}
+        >
+          Connect
+        </button>
 
         <button
           type="button"
-          className="primary capability-continue"
-          onClick={() => setTab('create')}
+          className={tab === "cms" ? "active" : ""}
+          onClick={() => setTab("cms")}
         >
-          Continue to website builder
+          CMS
         </button>
-      </section>
-    )}
 
-    {tab === 'templates' && (
-      <section className="panel templates-panel">
-        <div className="templates-heading">
-          <div>
-            <p className="eyebrow">
-              READY-TO-BUILD DESIGNS
-            </p>
-
-            <h2>Template library</h2>
-
-            <p className="muted">
-              Choose a professional starting point,
-              customise the prompt and generate your website.
-            </p>
-          </div>
-
-          <label className="template-search">
-            <span>Search templates</span>
-
-            <input
-              value={templateSearch}
-              onChange={(event) =>
-                setTemplateSearch(event.target.value)
-              }
-              placeholder="Jewellery, ecommerce, tuition…"
-              type="search"
-            />
-          </label>
-        </div>
-
-        <div className="template-results">
-          <span>
-            {filteredTemplates.length}
-            {' '}
-            template
-            {filteredTemplates.length === 1
-              ? ''
-              : 's'}
-          </span>
-        </div>
-
-        <div className="template-grid">
-          {filteredTemplates.map((template) => (
-            <article
-              className="template-card"
-              key={template.id}
-            >
-              <div className="template-card-top">
-                <span className="template-icon">
-                  {template.icon}
-                </span>
-
-                <small>
-                  {template.category}
-                </small>
-              </div>
-
-              <div>
-                <h3>{template.name}</h3>
-
-                <p>{template.description}</p>
-              </div>
-
-              <div className="template-features">
-                {template.features.map((feature) => (
-                  <span key={feature}>
-                    {feature}
-                  </span>
-                ))}
-              </div>
-
+      <button
+        className={tab === "account" ? "active" : ""}
+        onClick={() => setTab("account")}
+      >
+        Settings
+      </button>
+      </nav>
+      {message && <p className="success notice-wide">{message}</p>}
+      {error && (
+        <p className="error notice-wide" role="alert">
+          {error}
+        </p>
+      )}
+      {activity &&
+        ["queued", "running", "failed"].includes(activity.status) && (
+          <section
+            className="generation-control-bar"
+            aria-label="Generation controls"
+          >
+            <div>
+              <strong>
+                {activity.status === "failed"
+                  ? `Generation failed${
+                      activity.failedStage ? ` at ${activity.failedStage}` : ""
+                    }`
+                  : `Generation ${activity.status} · ${Math.round(
+                      activity.progress
+                    )}%`}
+              </strong>
+              {activity.errorMessage && <small>{activity.errorMessage}</small>}
+            </div>
+            {["queued", "running"].includes(activity.status) && (
+              <button type="button" onClick={() => void cancelGeneration()}>
+                Cancel generation
+              </button>
+            )}
+            {activity.status === "failed" && activity.retryable && (
               <button
                 type="button"
-                onClick={() => {
-                  setPrompt(template.prompt);
-                  setTab('create');
-
-                  setMessage(
-                    `${template.name} template selected.`
-                  );
-
-                  setError('');
-                }}
+                onClick={() => void retryGeneration()}
+                disabled={loading}
               >
-                Use this template
+                Retry failed stage
               </button>
-            </article>
-          ))}
-        </div>
-
-        {!filteredTemplates.length && (
-          <div className="empty compact">
-            No matching templates found.
-          </div>
+            )}
+          </section>
         )}
-      </section>
-    )}
+      <div
+        className={
+          tab === "chat"
+            ? "nexora-main-content chat-content"
+            : "nexora-main-content"
+        }
+      >
+        {tab === "chat" && (
+          <ChatStudio
+            busy={loading}
+            userKey={
+              userSession?.internalEmail || session?.user?.email || email
+            }
+            apiBase={config.apiBase}
+            token={token}
+            installationId={installationId}
+            activity={activity}
+            thinkMaxEnabled={thinkMaxEnabled}
+            onThinkMaxChange={setThinkMaxEnabled}
+            onOpenPreview={() => setTab("preview")}
+            onNavigate={(nextTab) => {
+              setTab(nextTab);
 
-    {tab === 'create' && (
-      <section className="panel">
-        <p className="eyebrow">ORCHESTRATED AI BRAIN</p>
-        <h2>Describe the complete website</h2>
-        <p className="muted">
-          Gemini assists with planning and content. The orchestrator,
-          templates, validators, and build system remain in control.
-        </p>
-        <div className="chips">
-          <span>React source</span>
-          <span>Auto logo</span>
-          <span>SEO</span>
-          <span>Database form</span>
-          <span>Double validation</span>
-          <span>Vercel publish</span>
-        </div>
-        <textarea
-          value={prompt}
-          onChange={(event) => setPrompt(event.target.value)}
-          rows={10}
-          maxLength={6000}
-        />
-        <p className="prompt-count">{prompt.length}/6000</p>
-        <ThinkMaxControl
-          enabled={thinkMaxEnabled}
-          onChange={setThinkMaxEnabled}
-          disabled={loading}
-          description="Deeper planning and architecture review. Builds may take longer."
-          descriptionId="advanced-thinkmax-description"
-        />
-        <button
-          className="primary"
-          onClick={() => void generateWebsite()}
-          disabled={loading || prompt.trim().length < 20}
-        >
-          {loading ? 'Building project…' : 'Generate website'}
-        </button>
-      </section>
-    )}
-    {tab === 'preview' && <section className="panel preview-panel">{result ? <><div className="preview-top"><div><p className="eyebrow">LIVE PREVIEW</p><h2>{status}</h2></div><div className="preview-actions"><button onClick={() => void downloadProjectSource(result.projectId)} disabled={downloadingProjectId === result.projectId}>{downloadingProjectId === result.projectId ? 'Preparing ZIP…' : 'Download Source ZIP'}</button><button onClick={publishWebsite} disabled={publishing || !connections.github || !connections.vercel}>{publishing ? 'Publishing…' : 'Push + deploy'}</button></div></div>{(!connections.github || !connections.vercel) && <p className="notice">Connect GitHub and Vercel before publishing.</p>}<iframe title="Generated website preview" sandbox="allow-forms allow-scripts allow-popups" srcDoc={result.previewHtml} /><div className="editor-box"><h3>AI website editor</h3><textarea value={editInstruction} onChange={(event) => setEditInstruction(event.target.value)} rows={4} placeholder="Change the theme, add pricing, remove a section…" /><button onClick={editWebsite} disabled={loading || !editInstruction.trim()}>{loading ? 'Applying changes…' : 'Apply edit'}</button></div></> : <div className="empty">Generate or open a project first.</div>}</section>}
-    {tab === 'cms' && (
+              if (nextTab === "projects") {
+                void loadProjects();
+              }
+            }}
+            onChat={async (
+              chatPrompt,
+              chatHistory,
+              attachment,
+              messageIdentity
+            ) => {
+              if (!token) throw new Error("Please log in again.");
+              const requestBody = JSON.stringify({
+                message: chatPrompt,
+                history: chatHistory.map((item) => ({
+                  role: item.role,
+                  text: item.text,
+                })),
+                installationId,
+                ...messageIdentity,
+                attachment: attachment
+                  ? { name: attachment.name, dataUrl: attachment.dataUrl }
+                  : null,
+              });
+              let response: Response | null = null;
+              let networkError: unknown;
+              for (let attempt = 0; attempt < 2; attempt += 1) {
+                try {
+                  response = await fetch(`${config.apiBase}/assistant/chat`, {
+                    method: "POST",
+                    headers: {
+                      "content-type": "application/json",
+                      Authorization: `Bearer ${token}`,
+                      "X-Device-Id": installationId,
+                    },
+                    body: requestBody,
+                  });
+                  break;
+                } catch (requestError) {
+                  networkError = requestError;
+                }
+              }
+              if (!response) {
+                throw networkError instanceof Error
+                  ? networkError
+                  : new Error("Assistant request failed.");
+              }
+              const data = (await response.json()) as {
+                reply?: string;
+                error?: string;
+                providerErrors?: string[];
+                processingDurationMs?: number;
+                usage?: ChatAssistantReply["tokenUsage"];
+                provider?: string | null;
+                model?: string | null;
+              };
+              if (!response.ok || !data.reply)
+                throw new Error(
+                  data.error ||
+                    data.providerErrors?.join(" | ") ||
+                    "Assistant request failed."
+                );
+              return {
+                text: data.reply,
+                processingDurationMs:
+                  typeof data.processingDurationMs === "number"
+                    ? data.processingDurationMs
+                    : null,
+                tokenUsage: data.usage || null,
+                provider: data.provider || null,
+                model: data.model || null,
+              };
+            }}
+            onGenerate={async (chatPrompt, chatImage, activityListener) => {
+              const generated = await generateWebsite(
+                chatPrompt,
+                true,
+                chatImage,
+                activityListener
+              );
+
+              return generated
+                ? {
+                    projectName: generated.plan.businessName,
+                    jobId: generated.jobId
+                  }
+                : null;
+            }}
+          />
+        )}
+
+        {tab === "packs" && (
+          <section className="panel capability-panel">
+            <div className="capability-heading">
+              <div>
+                <p className="eyebrow">WEBSITE POWER-UPS</p>
+
+                <h2>Capability packs</h2>
+
+                <p className="muted">
+                  Select extra capabilities that the AI council must include in
+                  every generated website.
+                </p>
+              </div>
+
+              {selectedCapabilityIds.length > 0 && (
+                <button
+                  type="button"
+                  className="refresh"
+                  onClick={() => setSelectedCapabilityIds([])}
+                >
+                  Clear all
+                </button>
+              )}
+            </div>
+
+            <div className="capability-summary">
+              <strong>{selectedCapabilityIds.length}</strong>
+
+              <span>
+                active capability
+                {selectedCapabilityIds.length === 1 ? "" : " packs"}
+              </span>
+            </div>
+
+            <div className="capability-grid">
+              {capabilityPacks.map((pack) => {
+                const selected = selectedCapabilityIds.includes(pack.id);
+
+                return (
+                  <article
+                    className={
+                      selected ? "capability-card selected" : "capability-card"
+                    }
+                    key={pack.id}
+                  >
+                    <div className="capability-card-top">
+                      <span>{pack.icon}</span>
+
+                      <button
+                        type="button"
+                        className="capability-toggle"
+                        aria-pressed={selected}
+                        onClick={() => {
+                          setSelectedCapabilityIds((current) =>
+                            current.includes(pack.id)
+                              ? current.filter((id) => id !== pack.id)
+                              : [...current, pack.id]
+                          );
+                        }}
+                      >
+                        {selected ? "Enabled" : "Enable"}
+                      </button>
+                    </div>
+
+                    <div>
+                      <h3>{pack.name}</h3>
+                      <p>{pack.description}</p>
+                    </div>
+
+                    <div className="capability-features">
+                      {pack.features.map((feature) => (
+                        <span key={feature}>{feature}</span>
+                      ))}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              className="primary capability-continue"
+              onClick={() => setTab("create")}
+            >
+              Continue to website builder
+            </button>
+          </section>
+        )}
+
+        {tab === "templates" && (
+          <section className="panel templates-panel">
+            <div className="templates-heading">
+              <div>
+                <p className="eyebrow">READY-TO-BUILD DESIGNS</p>
+
+                <h2>Template library</h2>
+
+                <p className="muted">
+                  Choose a professional starting point, customise the prompt and
+                  generate your website.
+                </p>
+              </div>
+
+              <label className="template-search">
+                <span>Search templates</span>
+
+                <input
+                  value={templateSearch}
+                  onChange={(event) => setTemplateSearch(event.target.value)}
+                  placeholder="Jewellery, ecommerce, tuition…"
+                  type="search"
+                />
+              </label>
+            </div>
+
+            <div className="template-results">
+              <span>
+                {filteredTemplates.length} template
+                {filteredTemplates.length === 1 ? "" : "s"}
+              </span>
+            </div>
+
+            <div className="template-grid">
+              {filteredTemplates.map((template) => (
+                <article className="template-card" key={template.id}>
+                  <div className="template-card-top">
+                    <span className="template-icon">{template.icon}</span>
+
+                    <small>{template.category}</small>
+                  </div>
+
+                  <div>
+                    <h3>{template.name}</h3>
+
+                    <p>{template.description}</p>
+                  </div>
+
+                  <div className="template-features">
+                    {template.features.map((feature) => (
+                      <span key={feature}>{feature}</span>
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPrompt(template.prompt);
+                      setTab("create");
+
+                      setMessage(`${template.name} template selected.`);
+
+                      setError("");
+                    }}
+                  >
+                    Use this template
+                  </button>
+                </article>
+              ))}
+            </div>
+
+            {!filteredTemplates.length && (
+              <div className="empty compact">No matching templates found.</div>
+            )}
+          </section>
+        )}
+
+        {tab === "create" && (
+          <section className="panel">
+            <p className="eyebrow">ORCHESTRATED AI BRAIN</p>
+            <h2>Describe the complete website</h2>
+            <p className="muted">
+              Gemini assists with planning and content. The orchestrator,
+              templates, validators, and build system remain in control.
+            </p>
+            <div className="chips">
+              <span>React source</span>
+              <span>Auto logo</span>
+              <span>SEO</span>
+              <span>Database form</span>
+              <span>Double validation</span>
+              <span>Vercel publish</span>
+            </div>
+            <textarea
+              value={prompt}
+              onChange={(event) => setPrompt(event.target.value)}
+              rows={10}
+              maxLength={6000}
+            />
+            <p className="prompt-count">{prompt.length}/6000</p>
+            <section
+              className="website-palette-picker"
+              aria-labelledby="website-palette-title"
+            >
+              <div>
+                <h3 id="website-palette-title">Website colour palette</h3>
+                <p className="muted">
+                  Optional. This controls the generated website and is separate
+                  from the Nexora app appearance.
+                </p>
+              </div>
+              <div className="website-palette-options">
+                {websitePalettes.map((palette) => (
+                  <button
+                    type="button"
+                    key={palette.id}
+                    className={
+                      websitePalette.id === palette.id ? "selected" : ""
+                    }
+                    onClick={() => setWebsitePalette(palette)}
+                    aria-pressed={websitePalette.id === palette.id}
+                  >
+                    {palette.id !== "auto" && (
+                      <span
+                        className="palette-swatch"
+                        style={{
+                          background: `linear-gradient(135deg, ${palette.primary} 50%, ${palette.secondary} 50%)`,
+                        }}
+                      />
+                    )}
+                    <span>{palette.label}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+            <ThinkMaxControl
+              enabled={thinkMaxEnabled}
+              onChange={setThinkMaxEnabled}
+              disabled={loading}
+              description="Deeper planning and architecture review. Builds may take longer."
+              descriptionId="advanced-thinkmax-description"
+            />
+            <button
+              className="primary"
+              onClick={() => void generateWebsite()}
+              disabled={loading || prompt.trim().length < 20}
+            >
+              {loading ? "Building project…" : "Generate website"}
+            </button>
+          </section>
+        )}
+        {tab === "preview" && (
+          <section className="panel preview-panel">
+            {result ? (
+              <>
+                <div className="preview-top">
+                  <div>
+                    <p className="eyebrow">PROJECT STUDIO</p>
+                    <h2>{status}</h2>
+                  </div>
+                  <div className="preview-actions">
+                    <button
+                      onClick={() =>
+                        void downloadProjectSource(result.projectId)
+                      }
+                      disabled={downloadingProjectId === result.projectId}
+                    >
+                      {downloadingProjectId === result.projectId
+                        ? "Preparing ZIP…"
+                        : "Download Source ZIP"}
+                    </button>
+                    <button
+                      onClick={publishWebsite}
+                      disabled={
+                        publishing ||
+                        !connections.github ||
+                        !connections.vercel ||
+                        !backendVerified
+                      }
+                    >
+                      {publishing ? "Publishing…" : "Publish Live"}
+                    </button>
+                  </div>
+                </div>
+                {(!connections.github || !connections.vercel) && (
+                  <p className="notice">
+                    Connect GitHub and Vercel before publishing.
+                  </p>
+                )}
+                {!backendVerified && (
+                  <p className="notice">
+                    Review and verify Backend &amp; Database before publishing.
+                  </p>
+                )}
+                <iframe
+                  title="Generated website preview"
+                  sandbox="allow-forms allow-scripts allow-popups"
+                  srcDoc={result.previewHtml}
+                />
+                <div className="editor-box">
+                  <h3>AI website editor</h3>
+                  <textarea
+                    value={editInstruction}
+                    onChange={(event) => setEditInstruction(event.target.value)}
+                    rows={4}
+                    placeholder="Change the theme, add pricing, remove a section…"
+                  />
+                  <button
+                    onClick={editWebsite}
+                    disabled={loading || !editInstruction.trim()}
+                  >
+                    {loading ? "Applying changes…" : "Apply edit"}
+                  </button>
+                </div>
+                <BackendWizard
+                  apiBase={config.apiBase}
+                  projectId={result.projectId}
+                  token={token}
+                  backendRequired={Boolean(
+                    result.plan.appSpec?.backend?.required,
+                  )}
+                  onStateChange={(backend) =>
+                    setBackendVerified(backend?.status === "verified")
+                  }
+                />
+              </>
+            ) : (
+              <div className="empty">Generate or open a project first.</div>
+            )}
+          </section>
+        )}
+        {tab === "cms" && (
           <CmsStudio
             apiBase={config.apiBase}
             email={email}
@@ -2558,560 +2864,788 @@ async function openProject(projectId: string) {
           />
         )}
 
-        {tab === 'analytics' && (
-      <section className="panel analytics-panel">
-        <div className="analytics-heading">
-          <div>
-            <p className="eyebrow">
-              PERFORMANCE DASHBOARD
-            </p>
+        {tab === "analytics" && (
+          <section className="panel analytics-panel">
+            <div className="analytics-heading">
+              <div>
+                <p className="eyebrow">PERFORMANCE DASHBOARD</p>
 
-            <h2>Website analytics</h2>
+                <h2>Website analytics</h2>
 
-            <p className="muted">
-              Track builds, published websites,
-              enquiries and AI generation success.
-            </p>
-          </div>
+                <p className="muted">
+                  Track builds, published websites, enquiries and AI generation
+                  success.
+                </p>
+              </div>
 
-          <button
-            className="refresh"
-            onClick={() => void loadAnalytics()}
-            disabled={analyticsLoading}
-          >
-            {analyticsLoading
-              ? 'Refreshing…'
-              : 'Refresh analytics'}
-          </button>
-        </div>
-
-        {analytics ? (
-          <>
-            <div className="analytics-grid">
-              <article>
-                <span>Total websites</span>
-                <strong>
-                  {analytics.totalWebsites}
-                </strong>
-                <small>
-                  All generated projects
-                </small>
-              </article>
-
-              <article>
-                <span>Live websites</span>
-                <strong>
-                  {analytics.liveWebsites}
-                </strong>
-                <small>
-                  Successfully published
-                </small>
-              </article>
-
-              <article>
-                <span>AI builds</span>
-                <strong>
-                  {analytics.totalBuilds}
-                </strong>
-                <small>
-                  {analytics.buildsToday} today
-                </small>
-              </article>
-
-              <article>
-                <span>Success rate</span>
-                <strong>
-                  {analytics.successRate}%
-                </strong>
-                <small>
-                  {analytics.completedBuilds} completed
-                </small>
-              </article>
-
-              <article>
-                <span>Failed builds</span>
-                <strong>
-                  {analytics.failedBuilds}
-                </strong>
-                <small>
-                  Validation or provider failures
-                </small>
-              </article>
-
-              <article>
-                <span>Enquiries</span>
-                <strong>
-                  {analytics.enquiries}
-                </strong>
-                <small>
-                  Website form submissions
-                </small>
-              </article>
+              <button
+                className="refresh"
+                onClick={() => void loadAnalytics()}
+                disabled={analyticsLoading}
+              >
+                {analyticsLoading ? "Refreshing…" : "Refresh analytics"}
+              </button>
             </div>
 
-            <div className="analytics-layout">
-              <article className="analytics-chart-card">
-                <div>
-                  <span>LAST 7 DAYS</span>
-                  <h3>Generation activity</h3>
+            {analytics ? (
+              <>
+                <div className="analytics-grid">
+                  <article>
+                    <span>Total websites</span>
+                    <strong>{analytics.totalWebsites}</strong>
+                    <small>All generated projects</small>
+                  </article>
+
+                  <article>
+                    <span>Live websites</span>
+                    <strong>{analytics.liveWebsites}</strong>
+                    <small>Successfully published</small>
+                  </article>
+
+                  <article>
+                    <span>AI builds</span>
+                    <strong>{analytics.totalBuilds}</strong>
+                    <small>{analytics.buildsToday} today</small>
+                  </article>
+
+                  <article>
+                    <span>Success rate</span>
+                    <strong>{analytics.successRate}%</strong>
+                    <small>{analytics.completedBuilds} completed</small>
+                  </article>
+
+                  <article>
+                    <span>Failed builds</span>
+                    <strong>{analytics.failedBuilds}</strong>
+                    <small>Validation or provider failures</small>
+                  </article>
+
+                  <article>
+                    <span>Enquiries</span>
+                    <strong>{analytics.enquiries}</strong>
+                    <small>Website form submissions</small>
+                  </article>
                 </div>
 
-                <div className="analytics-bars">
-                  {analytics.dailyBuilds.map(
-                    (item) => {
-                      const peak = Math.max(
-                        1,
-                        ...analytics.dailyBuilds.map(
-                          (point) => point.count
-                        )
-                      );
+                <div className="analytics-layout">
+                  <article className="analytics-chart-card">
+                    <div>
+                      <span>LAST 7 DAYS</span>
+                      <h3>Generation activity</h3>
+                    </div>
 
-                      const height = Math.max(
-                        8,
-                        Math.round(
-                          (item.count / peak) * 100
-                        )
-                      );
+                    <div className="analytics-bars">
+                      {analytics.dailyBuilds.map((item) => {
+                        const peak = Math.max(
+                          1,
+                          ...analytics.dailyBuilds.map((point) => point.count)
+                        );
 
-                      return (
-                        <div
-                          className="analytics-bar-item"
-                          key={item.date}
-                        >
-                          <strong>{item.count}</strong>
+                        const height = Math.max(
+                          8,
+                          Math.round((item.count / peak) * 100)
+                        );
 
-                          <div className="analytics-bar-track">
-                            <span
-                              style={{
-                                height: `${height}%`
-                              }}
-                            />
+                        return (
+                          <div className="analytics-bar-item" key={item.date}>
+                            <strong>{item.count}</strong>
+
+                            <div className="analytics-bar-track">
+                              <span
+                                style={{
+                                  height: `${height}%`,
+                                }}
+                              />
+                            </div>
+
+                            <small>{item.label}</small>
                           </div>
+                        );
+                      })}
+                    </div>
+                  </article>
 
-                          <small>{item.label}</small>
-                        </div>
-                      );
-                    }
-                  )}
-                </div>
-              </article>
+                  <article className="analytics-types-card">
+                    <div>
+                      <span>POPULAR CATEGORIES</span>
+                      <h3>Website types</h3>
+                    </div>
 
-              <article className="analytics-types-card">
-                <div>
-                  <span>POPULAR CATEGORIES</span>
-                  <h3>Website types</h3>
+                    <div className="analytics-type-list">
+                      {analytics.topWebsiteTypes.length ? (
+                        analytics.topWebsiteTypes.map((item) => (
+                          <div key={item.name}>
+                            <span>{item.name}</span>
+                            <strong>{item.count}</strong>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="muted">No category data yet.</p>
+                      )}
+                    </div>
+                  </article>
                 </div>
-
-                <div className="analytics-type-list">
-                  {analytics.topWebsiteTypes.length ? (
-                    analytics.topWebsiteTypes.map(
-                      (item) => (
-                        <div key={item.name}>
-                          <span>{item.name}</span>
-                          <strong>{item.count}</strong>
-                        </div>
-                      )
-                    )
-                  ) : (
-                    <p className="muted">
-                      No category data yet.
-                    </p>
-                  )}
-                </div>
-              </article>
-            </div>
-          </>
-        ) : (
-          <div className="empty compact">
-            {analyticsLoading
-              ? 'Loading analytics…'
-              : 'Tap refresh to load analytics.'}
-          </div>
+              </>
+            ) : (
+              <div className="empty compact">
+                {analyticsLoading
+                  ? "Loading analytics…"
+                  : "Tap refresh to load analytics."}
+              </div>
+            )}
+          </section>
         )}
-      </section>
-    )}
 
-    {tab === 'projects' && (
-      <section className="panel my-webs-panel">
-        <div className="my-webs-heading">
-          <div>
-            <p className="eyebrow">MY WEBS</p>
-            <h2>All your websites</h2>
-            <p className="muted">
-              Open, edit or visit every website created from this account.
-            </p>
-          </div>
+        {tab === "projects" && (
+          <section className="panel my-webs-panel">
+            <div className="my-webs-heading">
+              <div>
+                <p className="eyebrow">MY WEBS</p>
+                <h2>All your websites</h2>
+                <p className="muted">
+                  Open, edit or visit every website created from this account.
+                </p>
+              </div>
 
-          <button
-            className="my-webs-refresh"
-            onClick={() => void loadProjects()}
-            disabled={loading}
-          >
-            {loading ? 'Loading…' : 'Refresh'}
-          </button>
-        </div>
-
-        <div className="my-webs-summary">
-          <span>Total websites</span>
-          <strong>{projects.length}</strong>
-        </div>
-
-        <div className="project-list my-webs-list">
-          {projects.length ? (
-            projects.map((project) => (
-              <article key={project.id}>
-                <div className="my-web-details">
-                  <strong>{project.name}</strong>
-
-                  <span>
-                    {project.website_type}
-                    {' • '}
-                    {project.framework}
-                    {' • '}
-                    {project.status}
-                  </span>
-
-                  {project.production_url && (
-                    <small>Live website available</small>
-                  )}
-                </div>
-
-                <div className="project-actions">
-                  <button
-                    onClick={() => void openProject(project.id)}
-                  >
-                    Open
-                  </button>
-
-                  <button
-                    onClick={() =>
-                      void downloadProjectSource(project.id)
-                    }
-                    disabled={
-                      downloadingProjectId === project.id
-                    }
-                  >
-                    {downloadingProjectId === project.id
-                      ? 'Preparing…'
-                      : 'Download ZIP'}
-                  </button>
-
-                  {project.production_url && (
-                    <a
-                      href={project.production_url}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      View Live
-                    </a>
-                  )}
-
-                  {project.github_repository && (
-                    <a
-                      href={project.github_repository}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      GitHub
-                    </a>
-                  )}
-                </div>
-              </article>
-            ))
-          ) : (
-            <div className="empty compact my-webs-empty">
-              <strong>No websites yet</strong>
-              <span>
-                Create your first website and it will appear here.
-              </span>
+              <button
+                className="my-webs-refresh"
+                onClick={() => void loadProjects()}
+                disabled={loading}
+              >
+                {loading ? "Loading…" : "Refresh"}
+              </button>
             </div>
-          )}
-        </div>
-      </section>
-    )}
 
-    {tab === 'connect' && (
-      <section className="panel">
-        <p className="eyebrow">PUBLISHING ACCOUNTS</p>
-        <h2>Paste access tokens</h2>
-        <p className="muted">
-          Tokens are sent to the backend, verified, encrypted and stored for this Nexora account.
-        </p>
+            <div className="my-webs-summary">
+              <span>Total websites</span>
+              <strong>{projects.length}</strong>
+            </div>
 
-        <button
-          type="button"
-          className="refresh"
-          onClick={() => setShowSetupGuide((current) => !current)}
-        >
-          {showSetupGuide ? 'Hide setup guide' : 'Open setup guide'}
-        </button>
+            <div className="project-list my-webs-list">
+              {projects.length ? (
+                projects.map((project) => (
+                  <article key={project.id}>
+                    <div className="my-web-details">
+                      <strong>{project.name}</strong>
 
-        {showSetupGuide && (
-          <section className="panel token-setup-guide">
-            <p className="eyebrow">NEW USER SETUP</p>
-            <h2>GitHub and Vercel token setup</h2>
+                      <span>
+                        {project.website_type}
+                        {" • "}
+                        {project.framework}
+                        {" • "}
+                        {project.status}
+                      </span>
 
+                      {project.production_url && (
+                        <small>Live website available</small>
+                      )}
+                    </div>
+
+                    <div className="project-actions">
+                      <button onClick={() => void openProject(project.id)}>
+                        Open
+                      </button>
+
+                      <button
+                        onClick={() => void downloadProjectSource(project.id)}
+                        disabled={downloadingProjectId === project.id}
+                      >
+                        {downloadingProjectId === project.id
+                          ? "Preparing…"
+                          : "Download ZIP"}
+                      </button>
+
+                      {project.production_url && (
+                        <a
+                          href={project.production_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          View Live
+                        </a>
+                      )}
+
+                      {project.github_repository && (
+                        <a
+                          href={project.github_repository}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          GitHub
+                        </a>
+                      )}
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <div className="empty compact my-webs-empty">
+                  <strong>No websites yet</strong>
+                  <span>
+                    Create your first website and it will appear here.
+                  </span>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {tab === "live-sites" && (
+          <LiveWebsites
+            apiBase={config.apiBase}
+            token={token}
+            email={email}
+            installationId={installationId}
+            onOpenProject={async (projectId) => {
+              await openProject(projectId);
+              setTab("preview");
+            }}
+          />
+        )}
+
+        {tab === "connect" && (
+          <section className="panel">
+            <p className="eyebrow">PUBLISHING ACCOUNTS</p>
+            <h2>Paste access tokens</h2>
             <p className="muted">
-              Use personal access tokens. Do not paste account passwords,
-              OAuth Client IDs or OAuth Client Secrets.
+              Tokens are sent to the backend, verified, encrypted and stored for
+              this Nexora account.
             </p>
 
-            <article>
-              <h3>1. Create your GitHub token</h3>
+            <button
+              type="button"
+              className="refresh"
+              onClick={() => setShowSetupGuide((current) => !current)}
+            >
+              {showSetupGuide ? "Hide setup guide" : "Open setup guide"}
+            </button>
 
-              <ol>
-                <li>Tap the direct GitHub button below and sign in.</li>
-                <li>Keep the description as Nexora.Ai.</li>
-                <li>Select an expiration date.</li>
-                <li>Enable the public_repo permission.</li>
-                <li>Generate and copy the token immediately.</li>
-                <li>Return to Nexora.Ai and paste it in the GitHub field.</li>
-              </ol>
+            {showSetupGuide && (
+              <section className="panel token-setup-guide">
+                <p className="eyebrow">NEW USER SETUP</p>
+                <h2>GitHub and Vercel token setup</h2>
 
-              <button
-                type="button"
-                onClick={() =>
-                  void Browser.open({
-                    url: 'https://github.com/settings/tokens/new?scopes=public_repo&description=Nexora.Ai'
-                  })
-                }
+                <p className="muted">
+                  Use personal access tokens. Do not paste account passwords,
+                  OAuth Client IDs or OAuth Client Secrets.
+                </p>
+
+                <article>
+                  <h3>1. Create your GitHub token</h3>
+
+                  <ol>
+                    <li>Tap the direct GitHub button below and sign in.</li>
+                    <li>Keep the description as Nexora.Ai.</li>
+                    <li>Select an expiration date.</li>
+                    <li>Enable the public_repo permission.</li>
+                    <li>Generate and copy the token immediately.</li>
+                    <li>
+                      Return to Nexora.Ai and paste it in the GitHub field.
+                    </li>
+                  </ol>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void Browser.open({
+                        url: "https://github.com/settings/tokens/new?scopes=public_repo&description=Nexora.Ai",
+                      })
+                    }
+                  >
+                    Open GitHub Token Page
+                  </button>
+                </article>
+
+                <article>
+                  <h3>2. Create your Vercel token</h3>
+
+                  <ol>
+                    <li>Tap the direct Vercel button below and sign in.</li>
+                    <li>Tap Create Token.</li>
+                    <li>Name the token Nexora.Ai.</li>
+                    <li>Select the account where websites should deploy.</li>
+                    <li>Select an expiration date and create the token.</li>
+                    <li>
+                      Copy it, return here and paste it in the Vercel field.
+                    </li>
+                  </ol>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void Browser.open({
+                        url: "https://vercel.com/account/settings/tokens",
+                      })
+                    }
+                  >
+                    Open Vercel Token Page
+                  </button>
+                </article>
+
+                <article>
+                  <h3>3. Connect both accounts</h3>
+
+                  <ol>
+                    <li>Paste and connect the GitHub token.</li>
+                    <li>Paste and connect the Vercel token.</li>
+                    <li>Both cards must show Connected before publishing.</li>
+                    <li>Never share either token with another person.</li>
+                  </ol>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const accountName = (
+                        userSession?.username || email
+                      ).toLowerCase();
+
+                      localStorage.setItem(
+                        `nexora-token-guide-seen:${accountName}`,
+                        "1"
+                      );
+
+                      setShowSetupGuide(false);
+                    }}
+                  >
+                    Got it - Continue
+                  </button>
+                </article>
+              </section>
+            )}
+
+            <div className="connection-grid">
+              <article className={connections.github ? "connected" : ""}>
+                <h3>GitHub</h3>
+                <p>
+                  {connections.github
+                    ? `Connected as ${
+                        connections.github.external_account_name ||
+                        "GitHub user"
+                      }`
+                    : "Paste a GitHub personal access token with repository access."}
+                </p>
+
+                <input
+                  type="password"
+                  value={githubToken}
+                  onChange={(event) => setGithubToken(event.target.value)}
+                  placeholder="Paste GitHub access token"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+
+                <button
+                  onClick={() => void connectWithToken("github", githubToken)}
+                  disabled={
+                    connectingProvider !== null ||
+                    githubToken.trim().length < 10
+                  }
+                >
+                  {connectingProvider === "github"
+                    ? "Checking GitHub…"
+                    : connections.github
+                    ? "Replace GitHub Token"
+                    : "Connect GitHub Token"}
+                </button>
+              </article>
+
+              <article className={connections.vercel ? "connected" : ""}>
+                <h3>Vercel</h3>
+                <p>
+                  {connections.vercel
+                    ? `Connected to ${
+                        connections.vercel.external_account_name || "Vercel"
+                      }`
+                    : "Paste a Vercel access token for live deployment."}
+                </p>
+
+                <input
+                  type="password"
+                  value={vercelToken}
+                  onChange={(event) => setVercelToken(event.target.value)}
+                  placeholder="Paste Vercel access token"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+
+                <button
+                  onClick={() => void connectWithToken("vercel", vercelToken)}
+                  disabled={
+                    connectingProvider !== null ||
+                    vercelToken.trim().length < 10
+                  }
+                >
+                  {connectingProvider === "vercel"
+                    ? "Checking Vercel…"
+                    : connections.vercel
+                    ? "Replace Vercel Token"
+                    : "Connect Vercel Token"}
+                </button>
+              </article>
+            </div>
+
+            <button
+              className="refresh"
+              onClick={refreshConnections}
+              disabled={connectingProvider !== null}
+            >
+              Refresh connections
+            </button>
+          </section>
+        )}
+        {tab === "account" && (
+          <section className="panel">
+            <p className="eyebrow">ACCOUNT</p>
+            <h2>{userSession?.username || email}</h2>
+
+            <div className="account-grid">
+              <article>
+                <span>Role</span>
+                <strong>{access?.role}</strong>
+              </article>
+              <article>
+                <span>Devices</span>
+                <strong>
+                  {access?.activeDevices}/{access?.maxDevices}
+                </strong>
+              </article>
+              <article>
+                <span>Token entitlement</span>
+                <strong>Non-expiring</strong>
+              </article>
+              <article>
+                <span>GitHub</span>
+                <strong>
+                  {connections.github ? "Connected" : "Not connected"}
+                </strong>
+              </article>
+              <article>
+                <span>Vercel</span>
+                <strong>
+                  {connections.vercel ? "Connected" : "Not connected"}
+                </strong>
+              </article>
+            </div>
+
+            <TokenWalletPanel
+              apiBase={config.apiBase}
+              email={
+                userSession?.internalEmail || session?.user?.email || email
+              }
+              token={token}
+              installationId={installationId}
+            />
+
+            {userSession && (
+              <section
+                className="account-password-card"
+                aria-labelledby="account-password-title"
               >
-                Open GitHub Token Page
-              </button>
-            </article>
+                <div>
+                  <span>Security</span>
+                  <h3 id="account-password-title">Change password</h3>
+                  <small>
+                    Other sessions are revoked after a successful change. This
+                    device stays signed in.
+                  </small>
+                </div>
 
-            <article>
-              <h3>2. Create your Vercel token</h3>
+                <form onSubmit={changeOwnPassword}>
+                  <label>
+                    Current password
+                    <input
+                      type="password"
+                      value={currentPassword}
+                      onChange={(event) =>
+                        setCurrentPassword(event.target.value)
+                      }
+                      autoComplete="current-password"
+                      disabled={passwordChanging}
+                      required
+                    />
+                  </label>
 
-              <ol>
-                <li>Tap the direct Vercel button below and sign in.</li>
-                <li>Tap Create Token.</li>
-                <li>Name the token Nexora.Ai.</li>
-                <li>Select the account where websites should deploy.</li>
-                <li>Select an expiration date and create the token.</li>
-                <li>Copy it, return here and paste it in the Vercel field.</li>
-              </ol>
+                  <label>
+                    New password
+                    <input
+                      type="password"
+                      value={newAccountPassword}
+                      onChange={(event) =>
+                        setNewAccountPassword(event.target.value)
+                      }
+                      autoComplete="new-password"
+                      minLength={10}
+                      pattern="(?=.*[A-Za-z])(?=.*[0-9]).{10,}"
+                      title="Use at least 10 characters with a letter and a number."
+                      disabled={passwordChanging}
+                      required
+                    />
+                  </label>
 
-              <button
-                type="button"
-                onClick={() =>
-                  void Browser.open({
-                    url: 'https://vercel.com/account/settings/tokens'
-                  })
-                }
-              >
-                Open Vercel Token Page
-              </button>
-            </article>
+                  <label>
+                    Confirm new password
+                    <input
+                      type="password"
+                      value={confirmAccountPassword}
+                      onChange={(event) =>
+                        setConfirmAccountPassword(event.target.value)
+                      }
+                      autoComplete="new-password"
+                      minLength={10}
+                      disabled={passwordChanging}
+                      required
+                    />
+                  </label>
 
-            <article>
-              <h3>3. Connect both accounts</h3>
+                  <button type="submit" disabled={passwordChanging}>
+                    {passwordChanging
+                      ? "Changing password…"
+                      : "Change password"}
+                  </button>
+                </form>
+              </section>
+            )}
 
-              <ol>
-                <li>Paste and connect the GitHub token.</li>
-                <li>Paste and connect the Vercel token.</li>
-                <li>Both cards must show Connected before publishing.</li>
-                <li>Never share either token with another person.</li>
-              </ol>
+            <section className="theme-setting">
+              <div className="appearance-heading">
+                <div>
+                  <span>Settings → Appearance</span>
+                  <small>
+                    Preview first, then apply locally and sync to your account.
+                  </small>
+                </div>
+                <span className="appearance-sync-state">
+                  {appearanceSaving ? "Saving…" : "Account synced"}
+                </span>
+              </div>
+              <div className="theme-choice">
+                {(["system", "light", "dark"] as const).map((modeOption) => (
+                  <button
+                    type="button"
+                    key={modeOption}
+                    className={
+                      appearanceDraft.appearanceMode === modeOption
+                        ? "selected"
+                        : ""
+                    }
+                    onClick={() =>
+                      setAppearanceDraft((current) => ({
+                        ...current,
+                        appearanceMode: modeOption,
+                      }))
+                    }
+                  >
+                    {modeOption.slice(0, 1).toUpperCase() +
+                      modeOption.slice(1)}
+                  </button>
+                ))}
+              </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  const accountName = (
-                    userSession?.username || email
-                  ).toLowerCase();
+              <div className="accent-choice" aria-label="Accent themes">
+                {accentPresets.map((preset) => (
+                  <button
+                    type="button"
+                    key={preset.id}
+                    className={
+                      appearanceDraft.accentPreset === preset.id
+                        ? "selected"
+                        : ""
+                    }
+                    onClick={() =>
+                      setAppearanceDraft((current) => ({
+                        ...current,
+                        accentPreset: preset.id,
+                      }))
+                    }
+                  >
+                    <span style={{ backgroundColor: preset.colour }} />
+                    {preset.label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  className={
+                    appearanceDraft.accentPreset === "custom" ? "selected" : ""
+                  }
+                  onClick={() =>
+                    setAppearanceDraft((current) => ({
+                      ...current,
+                      accentPreset: "custom",
+                      customAccent: current.customAccent || "#06b6d4",
+                    }))
+                  }
+                >
+                  <span
+                    style={{
+                      backgroundColor:
+                        appearanceDraft.customAccent || "#06b6d4",
+                    }}
+                  />
+                  Custom colour
+                </button>
+              </div>
 
-                  localStorage.setItem(
-                    `nexora-token-guide-seen:${accountName}`,
-                    '1'
-                  );
+              {appearanceDraft.accentPreset === "custom" && (
+                <label>
+                  Custom accent
+                  <input
+                    type="color"
+                    value={appearanceDraft.customAccent || "#06b6d4"}
+                    onChange={(event) =>
+                      setAppearanceDraft((current) => ({
+                        ...current,
+                        customAccent: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              )}
 
-                  setShowSetupGuide(false);
+              <div
+                className="appearance-live-preview"
+                style={{
+                  background:
+                    appearanceDraft.appearanceMode === "light"
+                      ? "#f8fafc"
+                      : "#07101f",
+                  color:
+                    appearanceDraft.appearanceMode === "light"
+                      ? "#0f172a"
+                      : "#f8fafc",
+                  borderColor: resolveAccent(appearanceDraft),
                 }}
               >
-                Got it - Continue
+                <span>LIVE PREVIEW</span>
+                <h3>Nexora project card</h3>
+                <p>Buttons, focus states and navigation use this accent.</p>
+                <button
+                  type="button"
+                  style={{
+                    background: resolveAccent(appearanceDraft),
+                    color: contrastForAccent(resolveAccent(appearanceDraft))
+                      .text,
+                  }}
+                >
+                  Primary action
+                </button>
+              </div>
+
+              <p
+                className={
+                  contrastForAccent(resolveAccent(appearanceDraft)).accessible
+                    ? "success"
+                    : "error"
+                }
+              >
+                Contrast{" "}
+                {contrastForAccent(
+                  resolveAccent(appearanceDraft),
+                ).ratio.toFixed(2)}
+                :1 ·{" "}
+                {contrastForAccent(resolveAccent(appearanceDraft)).accessible
+                  ? "WCAG AA"
+                  : "Does not meet WCAG AA"}
+              </p>
+
+              <button
+                type="button"
+                onClick={() => void applyAppearancePreference()}
+                disabled={
+                  appearanceSaving ||
+                  !contrastForAccent(resolveAccent(appearanceDraft)).accessible
+                }
+              >
+                {appearanceSaving ? "Applying…" : "Apply appearance"}
               </button>
-            </article>
+            </section>
+
+            <button className="logout" onClick={() => void logout()}>
+              Log out
+            </button>
           </section>
         )}
-
-        <div className="connection-grid">
-          <article className={connections.github ? 'connected' : ''}>
-            <h3>GitHub</h3>
-            <p>
-              {connections.github
-                ? `Connected as ${connections.github.external_account_name || 'GitHub user'}`
-                : 'Paste a GitHub personal access token with repository access.'}
-            </p>
-
-            <input
-              type="password"
-              value={githubToken}
-              onChange={(event) => setGithubToken(event.target.value)}
-              placeholder="Paste GitHub access token"
-              autoComplete="off"
-              spellCheck={false}
-            />
-
-            <button
-              onClick={() => void connectWithToken('github', githubToken)}
-              disabled={
-                connectingProvider !== null ||
-                githubToken.trim().length < 10
-              }
-            >
-              {connectingProvider === 'github'
-                ? 'Checking GitHub…'
-                : connections.github
-                  ? 'Replace GitHub Token'
-                  : 'Connect GitHub Token'}
-            </button>
-          </article>
-
-          <article className={connections.vercel ? 'connected' : ''}>
-            <h3>Vercel</h3>
-            <p>
-              {connections.vercel
-                ? `Connected to ${connections.vercel.external_account_name || 'Vercel'}`
-                : 'Paste a Vercel access token for live deployment.'}
-            </p>
-
-            <input
-              type="password"
-              value={vercelToken}
-              onChange={(event) => setVercelToken(event.target.value)}
-              placeholder="Paste Vercel access token"
-              autoComplete="off"
-              spellCheck={false}
-            />
-
-            <button
-              onClick={() => void connectWithToken('vercel', vercelToken)}
-              disabled={
-                connectingProvider !== null ||
-                vercelToken.trim().length < 10
-              }
-            >
-              {connectingProvider === 'vercel'
-                ? 'Checking Vercel…'
-                : connections.vercel
-                  ? 'Replace Vercel Token'
-                  : 'Connect Vercel Token'}
-            </button>
-          </article>
-        </div>
-
-        <button
-          className="refresh"
-          onClick={refreshConnections}
-          disabled={connectingProvider !== null}
-        >
-          Refresh connections
-        </button>
-      </section>
-    )}
-    {tab === 'account' && (
-      <section className="panel">
-        <p className="eyebrow">ACCOUNT</p>
-        <h2>{userSession?.username || email}</h2>
-
-        <div className="account-grid">
-          <article><span>Role</span><strong>{access?.role}</strong></article>
-          <article><span>Devices</span><strong>{access?.activeDevices}/{access?.maxDevices}</strong></article>
-          <article><span>Subscription</span><strong>{formatSubscriptionRemaining(userSession?.subscriptionExpiresAt ?? access?.subscriptionExpiresAt, subscriptionClock)}</strong></article>
-          <article><span>GitHub</span><strong>{connections.github ? 'Connected' : 'Not connected'}</strong></article>
-          <article><span>Vercel</span><strong>{connections.vercel ? 'Connected' : 'Not connected'}</strong></article>
-        </div>
-
-        <TokenWalletPanel
-          apiBase={config.apiBase}
-          email={userSession?.internalEmail || session?.user?.email || email}
-          token={token}
-          installationId={installationId}
-        />
-
-        {userSession && (
-          <section className="account-password-card" aria-labelledby="account-password-title">
-            <div>
-              <span>Security</span>
-              <h3 id="account-password-title">Change password</h3>
-              <small>
-                Other sessions are revoked after a successful change. This device stays signed in.
-              </small>
-            </div>
-
-            <form onSubmit={changeOwnPassword}>
-              <label>
-                Current password
-                <input
-                  type="password"
-                  value={currentPassword}
-                  onChange={(event) => setCurrentPassword(event.target.value)}
-                  autoComplete="current-password"
-                  disabled={passwordChanging}
-                  required
-                />
-              </label>
-
-              <label>
-                New password
-                <input
-                  type="password"
-                  value={newAccountPassword}
-                  onChange={(event) => setNewAccountPassword(event.target.value)}
-                  autoComplete="new-password"
-                  minLength={10}
-                  pattern="(?=.*[A-Za-z])(?=.*[0-9]).{10,}"
-                  title="Use at least 10 characters with a letter and a number."
-                  disabled={passwordChanging}
-                  required
-                />
-              </label>
-
-              <label>
-                Confirm new password
-                <input
-                  type="password"
-                  value={confirmAccountPassword}
-                  onChange={(event) => setConfirmAccountPassword(event.target.value)}
-                  autoComplete="new-password"
-                  minLength={10}
-                  disabled={passwordChanging}
-                  required
-                />
-              </label>
-
-              <button type="submit" disabled={passwordChanging}>
-                {passwordChanging ? 'Changing password…' : 'Change password'}
-              </button>
-            </form>
-          </section>
-        )}
-
-        <section className="theme-setting">
-          <div>
-            <span>Appearance</span>
-            <small>Choose how Nexora.Ai looks on this device.</small>
-          </div>
-          <div className="theme-choice">
-            <button type="button" className={appTheme === 'dark' ? 'selected' : ''} onClick={() => setAppTheme('dark')}>Dark</button>
-            <button type="button" className={appTheme === 'light' ? 'selected' : ''} onClick={() => setAppTheme('light')}>Light</button>
-            <button type="button" className={appTheme === 'system' ? 'selected' : ''} onClick={() => setAppTheme('system')}>System</button>
-          </div>
-        </section>
-
-        <button className="logout" onClick={() => void logout()}>Log out</button>
-      </section>
-    )}
-    <footer>Nexora.Ai · Made by Poojak Doshi</footer>
-    </div>
-  </main>;
+        <footer>Nexora.Ai · Made by Poojak Doshi</footer>
+      </div>
+    </main>
+  );
 }
 
-function SetupScreen({ config, onSave, onCancel, error }: { config: RuntimeConfig; onSave: (config: RuntimeConfig) => void; onCancel?: () => void; error: string }) {
+function SetupScreen({
+  config,
+  onSave,
+  onCancel,
+  error,
+}: {
+  config: RuntimeConfig;
+  onSave: (config: RuntimeConfig) => void;
+  onCancel?: () => void;
+  error: string;
+}) {
   const [draft, setDraft] = useState(config);
-  return <main className="login-shell"><section className="login-card"><div className="brand-mark logo-shell"><img src="/nexora-logo.png" alt="Nexora.Ai" /></div><p className="eyebrow">ONE-TIME APP SETUP</p><h1>Connect the APK</h1><p className="muted">Paste the public backend URL and the two public Supabase values. These can be changed later without rebuilding the APK.</p><form onSubmit={(event) => { event.preventDefault(); onSave(draft); }}><label>Backend API URL<input value={draft.apiBase} onChange={(event) => setDraft({ ...draft, apiBase: event.target.value })} placeholder="https://your-api.workers.dev" /></label><label>Supabase Project URL<input value={draft.supabaseUrl} onChange={(event) => setDraft({ ...draft, supabaseUrl: event.target.value })} placeholder="https://xxxxx.supabase.co" /></label><label>Supabase anon/public key<input value={draft.supabaseAnonKey} onChange={(event) => setDraft({ ...draft, supabaseAnonKey: event.target.value })} placeholder="eyJ..." /></label><button className="nx-button nx-button--primary">Save and continue</button></form>{onCancel && <button className="nx-button nx-button--compact small-button" onClick={onCancel}>Cancel</button>}{error && <p className="error">{error}</p>}<p className="tiny">Never paste the Supabase service-role key or Gemini key here.</p></section></main>;
+  return (
+    <main className="login-shell">
+      <section className="login-card">
+        <div className="brand-mark logo-shell">
+          <img src="/nexora-logo.png" alt="Nexora.Ai" />
+        </div>
+        <p className="eyebrow">ONE-TIME APP SETUP</p>
+        <h1>Connect the APK</h1>
+        <p className="muted">
+          Paste the public backend URL and the two public Supabase values. These
+          can be changed later without rebuilding the APK.
+        </p>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSave(draft);
+          }}
+        >
+          <label>
+            Backend API URL
+            <input
+              value={draft.apiBase}
+              onChange={(event) =>
+                setDraft({ ...draft, apiBase: event.target.value })
+              }
+              placeholder="https://your-api.workers.dev"
+            />
+          </label>
+          <label>
+            Supabase Project URL
+            <input
+              value={draft.supabaseUrl}
+              onChange={(event) =>
+                setDraft({ ...draft, supabaseUrl: event.target.value })
+              }
+              placeholder="https://xxxxx.supabase.co"
+            />
+          </label>
+          <label>
+            Supabase anon/public key
+            <input
+              value={draft.supabaseAnonKey}
+              onChange={(event) =>
+                setDraft({ ...draft, supabaseAnonKey: event.target.value })
+              }
+              placeholder="eyJ..."
+            />
+          </label>
+          <button className="nx-button nx-button--primary">
+            Save and continue
+          </button>
+        </form>
+        {onCancel && (
+          <button
+            className="nx-button nx-button--compact small-button"
+            onClick={onCancel}
+          >
+            Cancel
+          </button>
+        )}
+        {error && <p className="error">{error}</p>}
+        <p className="tiny">
+          Never paste the Supabase service-role key or Gemini key here.
+        </p>
+      </section>
+    </main>
+  );
 }
-
-
-// NEXORA_SAAS_MOTION_MODE_V1
