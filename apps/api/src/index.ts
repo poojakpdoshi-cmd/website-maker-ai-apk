@@ -5157,6 +5157,7 @@ app.onError((error, c) => {
 });
 
 registerAssistantChatRoutes(app, {
+  identity: conversationIdentity,
   requireUser,
   requireSupabase
 });

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { askArcee } from './arcee-provider';
 import {
   NexoraTokenError,
   finalizeNexoraTokens,
@@ -12,8 +13,16 @@ import {
   type NexoraMode,
   type NexoraRoutePlan
 } from './nexora-system-prompt';
+import {
+  beginConversationTurn,
+  completeConversationTurn,
+  failConversationTurn
+} from './conversation-routes';
 
 type AssistantEnv = {
+  QA_PROVIDER?: string;
+  ARCEE_API_KEY?: string;
+  ARCEE_QA_MODEL?: string;
   GEMINI_API_KEY?: string;
   GEMINI_MODEL?: string;
   NEXORA_X0_MODEL?: string;
@@ -51,6 +60,39 @@ type ProviderReply = {
   usage: ProviderTokenUsage | null;
   sources: NexoraSource[];
 };
+
+const ASSISTANT_AI_MAX_ATTEMPTS = 2;
+
+async function executeAssistantProvider<T>(execute: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= ASSISTANT_AI_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await execute();
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("AI provider failed.");
+}
+
+const ASSISTANT_FETCH_TIMEOUT_MS = 30_000;
+
+async function assistantFetch(input: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), ASSISTANT_FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function assistantBindingRun(env: AssistantEnv, model: string, input: Record<string, unknown>): Promise<unknown> {
+  if (!env.AI) {
+    throw new Error("Cloudflare AI is not configured.");
+  }
+  return env.AI.run(model, input);
+}
 
 const requestWindows = new Map<
   string,
@@ -230,7 +272,7 @@ async function askGemini(
     requestBody.tools = [{ google_search: {} }];
   }
 
-  const response = await fetch(
+  const response = await assistantFetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
       model
     )}:generateContent`,
@@ -309,7 +351,7 @@ async function askGroq(
     throw new Error('Groq is not configured.');
   }
 
-  const response = await fetch(
+  const response = await assistantFetch(
     'https://api.groq.com/openai/v1/chat/completions',
     {
       method: 'POST',
@@ -376,7 +418,7 @@ async function askCloudflare(
     throw new Error('Cloudflare AI is not configured.');
   }
 
-  const result = await env.AI.run(
+  const result = await assistantBindingRun(env, 
     env.CLOUDFLARE_REPAIR_MODEL ||
       '@cf/meta/llama-3.1-8b-instruct',
     {
@@ -486,6 +528,7 @@ function appendSources(
 export function registerAssistantChatRoutes(
   app: { post: (...args: any[]) => unknown },
   deps: {
+    identity: (c: any) => Promise<{ accountId: string; email: string; username: string } | null>;
     requireUser: (
       c: any,
       email: string,
@@ -512,6 +555,10 @@ export function registerAssistantChatRoutes(
         installationId?: unknown;
         attachment?: unknown;
         mode?: unknown;
+        conversationId?: unknown;
+        userMessageId?: unknown;
+        assistantMessageId?: unknown;
+        idempotencyKey?: unknown;
       };
 
     const attachment =
@@ -569,10 +616,12 @@ export function registerAssistantChatRoutes(
       return c.json({ error: 'Message is required.' }, 400);
     }
 
-    const email =
-      typeof body.email === 'string'
-        ? body.email.trim().toLowerCase()
-        : '';
+    const identity = await deps.identity(c);
+    if (!identity) {
+      return c.json({ error: "Authentication required." }, 401);
+    }
+
+    const email = identity.email.trim().toLowerCase();
     const installationId =
       typeof body.installationId === 'string'
         ? body.installationId.slice(0, 200)
@@ -615,6 +664,67 @@ export function registerAssistantChatRoutes(
     }
 
     const route = chooseNexoraRoute(body.mode, message);
+    const requestStartedAt = Date.now();
+    const supabase = deps.requireSupabase(c.env);
+    const validUuid = (value: unknown): string =>
+      typeof value === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+        ? value
+        : crypto.randomUUID();
+
+    const conversationId = validUuid(body.conversationId);
+    const userMessageId = validUuid(body.userMessageId);
+    const requestedAssistantMessageId = validUuid(body.assistantMessageId);
+    const turnIdempotencyKey =
+      typeof body.idempotencyKey === 'string' && body.idempotencyKey.trim()
+        ? `chat:${body.idempotencyKey}`
+        : `chat:${crypto.randomUUID()}`;
+
+    let conversationTurn;
+    try {
+      conversationTurn = await beginConversationTurn(
+        supabase,
+        identity.accountId,
+        {
+          conversationId,
+          userMessageId,
+          assistantMessageId: requestedAssistantMessageId,
+          idempotencyKey: turnIdempotencyKey,
+          title: message.replace(/\s+/g, ' ').slice(0, 120) || 'New chat',
+          content: message,
+          conversationType: 'qa',
+          linkedProjectId: null,
+          linkedGenerationId: null
+        }
+      );
+    } catch {
+      return c.json({ error: 'Could not save the conversation.' }, 500);
+    }
+
+    const persistedAssistantMessageId =
+      conversationTurn.assistantMessageId || requestedAssistantMessageId;
+
+    if (
+      conversationTurn.existing &&
+      conversationTurn.status === 'completed' &&
+      conversationTurn.content
+    ) {
+      return c.json({
+        reply: conversationTurn.content,
+        provider: conversationTurn.provider || null,
+        model: conversationTurn.model || null,
+        mode: route.mode,
+        researched: false,
+        reviewed: false,
+        sources: [],
+        processingDurationMs: conversationTurn.durationMs || 0,
+        usage: {
+          inputTokens: conversationTurn.inputTokens ?? null,
+          outputTokens: conversationTurn.outputTokens ?? null,
+          totalTokens: conversationTurn.totalTokens ?? null
+        }
+      });
+    }
 
     if (isNexoraIdentityQuestion(message)) {
       return c.json({
@@ -630,7 +740,6 @@ export function registerAssistantChatRoutes(
       });
     }
 
-    const supabase = deps.requireSupabase(c.env);
     let chatReservationId: string | null = null;
 
     try {
@@ -652,10 +761,17 @@ export function registerAssistantChatRoutes(
         email,
         chatCost,
         'assistant_chat',
-        crypto.randomUUID(),
+        turnIdempotencyKey,
         `AI chat message (${route.mode})`
       )).reservationId;
     } catch (tokenError) {
+      await failConversationTurn(
+        supabase,
+        identity.accountId,
+        persistedAssistantMessageId,
+        'token_reservation_failed',
+        Date.now() - requestStartedAt
+      );
       return c.json(
         {
           error:
@@ -674,6 +790,9 @@ export function registerAssistantChatRoutes(
     const username = cleanUsername(body.username);
     const system = buildNexoraSystemPrompt(username, route);
     const messages = historyMessages(body.history, message);
+    const configuredProvider = (c.env.QA_PROVIDER || "arcee")
+      .trim()
+      .toLowerCase();
     const errors: string[] = [];
     const processingStartedAt = Date.now();
 
@@ -731,15 +850,70 @@ export function registerAssistantChatRoutes(
             ]
           ];
 
+
+    if (configuredProvider === "arcee") {
+      providers.unshift([
+        "arcee",
+        async () => {
+          const result = await askArcee(
+            {
+              apiKey: c.env.ARCEE_API_KEY,
+              model: c.env.ARCEE_QA_MODEL,
+              timeoutMs: 30_000,
+              maxAttempts: 2
+            },
+            system,
+            messages
+          );
+
+          return {
+            reply: result.reply,
+            usage: result.usage,
+            sources: []
+          };
+        }
+      ]);
+    }
+
     for (const [providerName, execute] of providers) {
       try {
-        const primary = await execute();
+        const primary = await executeAssistantProvider(execute);
         const reviewedReply = route.runCritic
           ? await runX0Critic(c.env, message, primary.reply)
           : primary.reply;
         const finalReply = appendSources(
           reviewedReply,
           primary.sources
+        );
+
+        const processingDurationMs = Math.max(
+          0,
+          Date.now() - processingStartedAt
+        );
+        const responseModel =
+          providerName === 'arcee'
+            ? c.env.ARCEE_QA_MODEL || null
+            : providerName === 'gemini'
+            ? geminiModel(c.env, route.mode)
+            : providerName === 'groq'
+              ? c.env.GROQ_CODER_MODEL || 'llama-3.3-70b-versatile'
+              : c.env.CLOUDFLARE_REPAIR_MODEL ||
+                '@cf/meta/llama-3.1-8b-instruct';
+
+        await completeConversationTurn(
+          supabase,
+          identity.accountId,
+          persistedAssistantMessageId,
+          {
+            content: finalReply,
+            provider: providerName,
+            model: responseModel,
+            finishReason: null,
+            inputTokens: primary.usage?.inputTokens ?? null,
+            outputTokens: primary.usage?.outputTokens ?? null,
+            totalTokens: primary.usage?.totalTokens ?? null,
+            durationMs: processingDurationMs
+          }
         );
 
         await finalizeNexoraTokens(
@@ -768,6 +942,14 @@ export function registerAssistantChatRoutes(
         );
       }
     }
+
+    await failConversationTurn(
+      supabase,
+      identity.accountId,
+      persistedAssistantMessageId,
+      'providers_unavailable',
+      Date.now() - requestStartedAt
+    );
 
     await refundNexoraTokens(
       supabase,
