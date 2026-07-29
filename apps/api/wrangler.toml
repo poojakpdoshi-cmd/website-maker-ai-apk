@@ -5,10 +5,11 @@ workers_dev = true
 
 [vars]
 APP_NAME = "Nexora.Ai"
+PUBLIC_API_BASE_URL = "https://website-maker-ai-api.poojakpdoshi.workers.dev"
 
 QA_PROVIDER = "arcee"
 # Set ARCEE_QA_MODEL to a verified model ID in the Worker environment.
-ARCEE_QA_MODEL = ""
+ARCEE_QA_MODEL = "trinity-mini"
 
 GROQ_CODER_MODEL = "openai/gpt-oss-120b"
 GROQ_REVIEWER_MODEL = "qwen/qwen3-32b"
